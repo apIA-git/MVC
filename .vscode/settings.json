@@ -1,0 +1,10 @@
+{
+    "totvsLanguageServer.welcomePage": false,
+    "totvsLanguageServer.editor.linter.includes": "C:\\Users\\henrique\\OneDrive - Ápia Consultoria e Sistemas\\Includes",
+    "[advpl]": {
+      "files.encoding": "windows1252"
+    },
+    "[tlpp]": {
+      "files.encoding": "windows1252"
+    }
+}

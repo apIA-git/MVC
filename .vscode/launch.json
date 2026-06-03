@@ -1,0 +1,48 @@
+{
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"type": "totvs_language_web_debug",
+			"request": "launch",
+			"name": "Smart Client Web Debug",
+			"program": "${command:AskForProgramName}",
+			"isMultiSession": true,
+			"enableTableSync": true,
+			"smartclientUrl": "http://10.0.0.3:1111/webapp/"
+		}
+	],
+	"lastPrograms": [
+		{
+			"args": [],
+			"label": "u_cadsza1"
+		},
+		{
+			"args": [],
+			"label": "U_ZA1_MVC"
+		},
+		{
+			"args": [],
+			"label": "u_TstGrvZA1"
+		},
+		{
+			"args": [],
+			"label": "u_TotvsApia"
+		},
+		{
+			"label": "apia.cns.chamados.registrosApia"
+		},
+		{
+			"args": [],
+			"label": "apia.cns.chamados.registrosApia.main"
+		},
+		{
+			"label": "VIEWDEF.apia.cns.chamados.registro"
+		},
+		{
+			"args": [],
+			"label": "VIEWDEF. apia.cns.chamados.registro.main"
+		}
+	],
+	"lastProgramExecuted": "u_TstGrvZA1",
+	"lastProgramArguments": []
+}

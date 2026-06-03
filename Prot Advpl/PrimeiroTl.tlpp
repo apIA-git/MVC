@@ -1,0 +1,48 @@
+#include "protheus.ch"
+#include "totvs.ch"
+
+namespace apia.fin.banco
+
+Class Banco
+    public data cNome           as string
+    public data cCPF            as string
+    public data cContaBancaria  as string
+    public data nSaldo          as numeric
+
+    public method New(cNome as string, cCPF as string, cContaBancaria as string, nSaldo as numeric) as object
+    public method MostraInfo() as void
+    public method Sacar() as void
+EndClass
+
+// --- Construtor ---
+Method New(cNome as string, cCPF as string, cContaBancaria as string, nSaldo as numeric) Class Banco as object
+    Self:cNome           := cNome
+    Self:cCPF            := cCPF
+    Self:cContaBancaria  := cContaBancaria
+    Self:nSaldo          := nSaldo
+Return Self
+
+// --- Exibição do Extrato ---
+Method MostraInfo() Class Banco as void
+    Local cMsg as string
+    
+    cMsg := "=== EXTRATO BANCÝRIO ===" + EnterInLine() +;
+            "Cliente: " + Self:cNome + EnterInLine() +;
+            "CPF: " + Self:cCPF + EnterInLine() +;
+            "Conta: " + Self:cContaBancaria + EnterInLine() +;
+            "Saldo Atual: R$ " + Transform(Self:nSaldo, "@E 999,999,999.92")
+
+    MsgInfo(cMsg, "Informações da Conta")
+Return
+
+// --- Lógica de Saque ---
+Method Sacar() Class Banco as void
+    Local nValorSaque as numeric := Val(FWInputBox("Digite o valor do saque:", "0"))
+
+    If (Self:nSaldo < nValorSaque)
+        MsgStop("Saldo insuficiente para realizar o saque!", "Erro de Operação")
+    Else
+        Self:nSaldo := Self:nSaldo - nValorSaque
+        MsgInfo("Saque realizado com sucesso!", "Sucesso")
+    EndIf
+Return

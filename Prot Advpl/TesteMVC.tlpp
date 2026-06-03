@@ -1,0 +1,169 @@
+#include "protheus.ch"
+#include "topconn.ch"
+#include "totvs.ch"
+#include "msobject.ch"
+#include "fwmvcdef.ch"
+#include "colors.ch"
+
+#define MODEL_OPERATION_CUSTOM 9
+
+User function ApiaTotvs()
+    apia.cns.chamados.registro():main()
+    Local l_oReg := Nil
+    l_oReg  := apia.cns.chamados.registro::New()
+    l_oReg:Main()
+return
+namespace apia.cns.chamados
+
+class registro
+    
+    static method main()      as variant
+        Local cArqZA1             as character
+        Local cArqZA2             as character
+        Local oBrowse             as object
+
+        Public CEMPANT   := " "
+        Public CFILANT   := " "
+        Public CGRUPOANT := " "
+
+        
+        RpcSetEnv("01", "01")
+
+        cArqZA1          := RetSQLName("ZA1")
+        cArqZA2          := RetSQLName("ZA2")
+
+        if Empty(cArqZA1)
+            MsgStop("Tabela ZA1 nao encontrada." + Chr(13) + ;
+                    "Verifique o dicionario de dados (SX2/SX3).", "Erro")
+            RpcClearEnv()
+            return
+        endif
+
+        if Empty(cArqZA2)
+            MsgStop("Tabela ZA2 nao encontrada." + Chr(13) + ;
+                    "Verifique o dicionario de dados (SX2/SX3).", "Erro")
+            RpcClearEnv()
+            return
+        endif
+
+        if Select("ZA1") == 0
+            dbUseArea(.T., "TOPCONN", cArqZA1, "ZA1", .T., .F.)
+        endif
+
+        if Select("ZA2") == 0
+            dbUseArea(.T., "TOPCONN", cArqZA2, "ZA2", .T., .F.)
+        endif
+
+        dbSelectArea("ZA2")
+        ZA2->(dbGoTop())
+
+        dbSelectArea("ZA1")
+        ZA1->(dbGoTop())
+
+        oBrowse          := registro():browseDef()
+
+        if ValType(oBrowse) == "O"
+            oBrowse:Activate()
+        else
+            MsgStop("Browse nao pode ser carregado!", "Erro")
+        endif
+
+        RpcClearEnv()
+    return
+
+    static method browseDef() as object
+        Local oBrowseObj          as object
+
+        oBrowseObj       := FWMBrowse()  :New()
+        oBrowseObj:SetAlias("ZA1")
+        oBrowseObj:SetDescription("Registro de Chamados")
+        oBrowseObj:SetMenuDef("apia.cns.chamados.registro.menuDef")
+
+        oBrowseObj:AddLegend( ;
+            "!Empty(ZA1->ZA1_RESP) .AND. AllTrim(ZA1->ZA1_RESP) != 'NAO DEFINIDO...' ", ;
+            "GREEN", "Chamado Assumido")
+
+        oBrowseObj:AddLegend( ;
+            "Empty(ZA1->ZA1_RESP) .OR. AllTrim(ZA1->ZA1_RESP) == 'NAO DEFINIDO...' ", ;
+            "RED", "Chamado sem Responsavel")
+
+    return oBrowseObj
+
+    static method modelDef()  as object
+        Local oModel              as object
+        Local oModelStPai         as object
+        Local oModelStFilho       as object
+        Local aRelacao            as array
+
+        aRelacao         := {}
+        oModelStPai      := FWFormStruct(1, "ZA1")
+        oModelStFilho    := FWFormStruct(1, "ZA2")
+
+        oModel           := MPFormModel():New("CHAMADOS")
+        oModel:AddFields("ZA1MASTER", , oModelStPai)
+        oModel:AddGrid("ZA2DETAIL", "ZA1MASTER", oModelStFilho)
+
+        aadd(aRelacao, {"ZA2_IDCH"  , "ZA1_IDCH"})
+
+        oModel:SetRelation("ZA2DETAIL", aRelacao, ZA2->(IndexKey(1)))
+        oModel:SetPrimaryKey({"ZA1_FILIAL", "ZA1_IDCH"})
+        oModel:SetDescription("Relacao de chamados - Modelo Pai/Filho")
+
+        oModel:GetModel("ZA1MASTER"):SetDescription("Registro de Chamados")
+        oModel:GetModel("ZA2DETAIL"):SetDescription("Interacoes gerais")
+
+    return oModel
+
+    static method viewDef()   as object
+        Local oView               as object
+        Local oViewStPai          as object
+        Local oViewStFilho        as object
+        Local oViewModel          as object
+
+        oViewStPai       := FWFormStruct(2, "ZA1")
+        oViewStFilho     := FWFormStruct(2, "ZA2")
+        oViewModel       := FwLoadModel("apia.cns.chamados.registro.modelDef")
+        oView            := nil
+
+        if ValType(oViewModel) != "O"
+            MsgStop("Modelo nao pode ser carregado!", "Erro")
+            return oView
+        endif
+
+        oView            := FwFormView() :New()
+        oView:SetModel(oViewModel)
+
+        oView:AddField("VIEW_ZA1", oViewStPai, "ZA1MASTER")
+        oView:AddGrid("VIEW_ZA2", oViewStFilho, "ZA2DETAIL")
+
+        oView:CreateHorizontalBox("CABEC", 70)
+        oView:CreateHorizontalBox("GRID", 30)
+
+        oView:SetOwnerView("VIEW_ZA1", "CABEC")
+        oView:SetOwnerView("VIEW_ZA2", "GRID")
+
+        oView:EnableTitleView("VIEW_ZA1", "Cabecalho do registro de chamados")
+        oView:EnableTitleView("VIEW_ZA2", "Interacoes")
+
+    return oView
+
+    static method menuDef()   as array
+        Local aRotina             as array
+        aRotina          := {}
+
+        ADD OPTION aRotina TITLE "Visualizar" ACTION "VIEWDEF.apia.cns.chamados.registro" OPERATION MODEL_OPERATION_VIEW ACCESS 0
+        ADD OPTION aRotina TITLE "Incluir" ACTION "VIEWDEF.apia.cns.chamados.registro" OPERATION MODEL_OPERATION_INSERT ACCESS 0
+        ADD OPTION aRotina TITLE "Alterar" ACTION "VIEWDEF.apia.cns.chamados.registro" OPERATION MODEL_OPERATION_UPDATE ACCESS 0
+        ADD OPTION aRotina TITLE "Excluir" ACTION "VIEWDEF.apia.cns.chamados.registro" OPERATION MODEL_OPERATION_DELETE ACCESS 0
+        ADD OPTION aRotina TITLE "Assumir" ACTION "apia.cns.chamados.assumir.main" OPERATION MODEL_OPERATION_CUSTOM ACCESS 0
+
+    return aRotina
+
+end class
+
+class assumir
+    static method main()      as variant
+        MsgStop("Funcao ASSUMIR em desenvolvimento. Contate o administrador.", "Indisponivel")
+    return
+
+end class

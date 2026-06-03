@@ -1,0 +1,78 @@
+#include "topconn.ch"
+#include "totvs.ch"
+#include "protheus.ch"
+#include "msobject.ch"
+#include "totvs.framework.treports.integratedprovider.th"
+  
+namespace exemplos.sv.fat.listaclientes
+ 
+@totvsFrameworkTReportsIntegratedProvider(active=.T., team="Ápia", tables="SA1", name="Cliente", country="ALL", initialRelease="12.1.2310")
+
+class ClienteON from totvs.framework.treports.integratedprovider.IntegratedProvider
+    public method new() as object
+    public method getData() as object
+    public method getSchema() as object
+    protected data aFields as array
+    protected data aStruct as array
+endclass
+  
+method new() class ClienteON
+_Super:new()
+
+self:appendArea("Customizados")
+self:setDisplayName("Exemplo SetQuery")
+self:setDescription("Exemplo SetQuery e ConvX3")
+
+self:aFields:={"A1_COD","A1_LOJA","A1_NOME","A1_NREDUZ","A1_PESSOA","A1_CGC","A1_PRICOM"}
+self:aStruct := u_ConvX3pSV(self:aFields)  
+ 
+return self
+ 
+method getData(nPage as numeric, oFilter as object) as object class ClienteON
+Local cCliDe as character
+Local cCliAte as character
+local cQuery as character
+
+jParams := oFilter:getParameters()
+cCliDe := jParams['01'][1]
+cCliAte:= jParams['02'][1]
+
+If Empty(cCliDe)
+	cCliDe := " "
+EndIf
+If Empty(cCliAte)
+	cCliAte := "ZZZZZZ"
+EndIf
+
+self:setPageSize(50)
+
+cQuery:="SELECT " + ArrTokStr(self:aFields, ",") +  ", "
+cQuery+="'VIRTUAL' AS XVIRTUAL "
+cQuery+="FROM "   + RetSQLName("SA1") + " "
+cQuery+="WHERE    D_E_L_E_T_ = ' ' "
+cQuery+="AND A1_COD BETWEEN '" + cCliDe + "' AND '" +  cCliAte + "' "
+
+self:setQuery(cQuery)
+
+return self:oData
+  
+method getSchema() as object class ClienteON
+Local nX as numeric
+ 
+for nX := 1 To Len(self:aStruct)
+    self:addProperty(self:aStruct[nX][1], self:aStruct[nX][2], self:aStruct[nX][3], self:aStruct[nX][4], self:aStruct[nX][5])
+Next nX
+
+self:addProperty("XVIRTUAL", "Col Virtual", "string", "Col Virtual", "XVIRTUAL")
+
+self:addParameter("01"  , "Cliente de",  "string", .F.)
+self:addParameter("02"  , "Cliente até", "string", .F.)
+// para usar o SX1, no método new()
+// self:setPergunte("Chave do SX1")
+
+
+self:setCustomURL("01", "api/framework/v1/genericLookupService/smartview/SA1", 2)
+self:setCustomURL("02", "api/framework/v1/genericLookupService/smartview/SA1", 2)
+
+return self:oSchema
+

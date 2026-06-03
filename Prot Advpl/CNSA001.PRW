@@ -133,7 +133,7 @@ User Function GETIDGRID()
     Local l_oZA2 := oModel:GetModel("ZA2DETAIL")
     Local nLines := l_oZA2:Length()
     Local nI     := 0
-    Local nSeq   := 0
+    Local nSeq   := 1
 
     For nI := 1 To nLines
         l_oZA2:GoLine(nI)
