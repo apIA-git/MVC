@@ -11,6 +11,8 @@
 User Function CNSA001()
 
     Local l_oBrowse := Nil
+    Local nUnread   := 0
+    Local cDesc     := ""
     Private aRotina := MenuDef()
     Private cConsultor := ""
     cConsultor := Posicione("AA1",4,xFilial("AA1")+__cUserId,"AA1_CODTEC")
@@ -19,8 +21,17 @@ User Function CNSA001()
 	l_oBrowse := FWMBrowse():New()
 	If l_oBrowse <> Nil
 
-		l_oBrowse:SetDescription("Registro de Chamados - OS") 
-        l_oBrowse:SetAlias("ZA1") 
+        nUnread := CNS_CHKMAIL()
+        cDesc   := "Registro de Chamados - OS"
+        If nUnread > 0
+            cDesc += " | " + cValToChar(nUnread) + " e-mail(s) nao lido(s) em suporte@apia"
+        ElseIf nUnread == 0
+            cDesc += " | Sem e-mails novos em suporte@apia"
+        EndIf
+        // nUnread < 0: erro de conexao - exibe descricao sem status de e-mail
+
+		l_oBrowse:SetDescription(cDesc)
+        l_oBrowse:SetAlias("ZA1")
 	
 		l_oBrowse:AddLegend( "ZA1->ZA1_STATUS == '1'", "GREEN",  "Aberto" )
         l_oBrowse:AddLegend( "ZA1->ZA1_STATUS == '2'", "YELLOW", "Pendente Apia" )
@@ -155,3 +166,92 @@ User Function SHOW_LEG()
         })
 
 Return
+
+////////////////////////////////////////////////////////////////////////////////////////////
+// VERIFICACAO DE EMAIL (IMAP)
+// Retorno: > 0 emails nao lidos | = 0 sem novos | -1 falha conexao | -2 falha autenticacao
+////////////////////////////////////////////////////////////////////////////////////////////
+Static Function CNS_CHKMAIL()
+
+    Local cServer := "10.0.0.3"
+    Local nPort   := 143
+    Local cUser   := "suporte@apia.com.br"
+    Local cPass   := "xptonk25@1900"
+
+Return _ImapGetUnseen(cServer, nPort, cUser, cPass)
+
+Static Function _ImapGetUnseen(cServer, nPort, cUser, cPass)
+
+    Local hSock   := HB_InetCreate()
+    Local cResp   := ""
+    Local nUnread := 0
+    Local nLen    := 0
+    Local cUIDs   := ""
+    Local nPos    := 0
+
+    HB_InetSetTimeout(hSock, 5000)
+    HB_InetConnect(cServer, nPort, hSock)
+
+    If HB_InetErrorCode(hSock) != 0
+        HB_InetClose(hSock)
+        Return -1
+    EndIf
+
+    HB_InetRecvLine(hSock, @nLen, 512)  // consome banner de boas-vindas
+
+    _ImapSend(hSock, 'T1 LOGIN "' + cUser + '" "' + cPass + '"')
+    cResp := _ImapRead(hSock, "T1")
+    If !("T1 OK" $ cResp)
+        _ImapSend(hSock, "T4 LOGOUT")
+        HB_InetClose(hSock)
+        Return -2
+    EndIf
+
+    _ImapSend(hSock, "T2 SELECT INBOX")
+    _ImapRead(hSock, "T2")
+
+    _ImapSend(hSock, "T3 SEARCH UNSEEN")
+    cResp := _ImapRead(hSock, "T3")
+
+    // Resposta: "* SEARCH 1 5 12" -> conta os UIDs
+    nPos := At("* SEARCH", cResp)
+    If nPos > 0
+        cUIDs := SubStr(cResp, nPos + 9)
+        cUIDs := Left(cUIDs, At(Chr(10), cUIDs + Chr(10)) - 1)
+        cUIDs := AllTrim(StrTran(cUIDs, Chr(13), ""))
+        If !Empty(cUIDs)
+            nUnread := Len(HB_ATokens(cUIDs, " "))
+        EndIf
+    EndIf
+
+    _ImapSend(hSock, "T4 LOGOUT")
+    HB_InetClose(hSock)
+
+Return nUnread
+
+Static Function _ImapSend(hSock, cCmd)
+    HB_InetSendAll(hSock, cCmd + Chr(13) + Chr(10))
+Return Nil
+
+Static Function _ImapRead(hSock, cTag)
+
+    Local cAll  := ""
+    Local cLine := ""
+    Local nLen  := 0
+    Local n     := 0
+
+    Do While n < 50
+        cLine := HB_InetRecvLine(hSock, @nLen, 2048)
+        If nLen <= 0 .And. HB_InetErrorCode(hSock) != 0
+            Exit
+        EndIf
+        cAll += cLine + Chr(13) + Chr(10)
+        If cTag + " OK"  $ cLine .Or. ;
+           cTag + " NO"  $ cLine .Or. ;
+           cTag + " BAD" $ cLine
+            Exit
+        EndIf
+        n++
+    EndDo
+
+Return cAll
