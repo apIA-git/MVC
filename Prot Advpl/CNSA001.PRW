@@ -1,8 +1,8 @@
-#INCLUDE "PROTHEUS.CH"
+#include "PROTHEUS.CH"
 #include "RWMAKE.CH"
-#INCLUDE "TOPCONN.CH"
+#include "TOPCONN.CH"
 #include "TOTVS.CH"
-#INCLUDE "FWMBROWSE.CH"
+#include "FWMBROWSE.CH"
 #include "FWMVCDEF.CH"
 #include "COLORS.CH"
 
@@ -11,26 +11,24 @@
 User Function CNSA001()
 
     Local l_oBrowse := Nil
-    Local nUnread   := 0
-    Local cDesc     := ""
+    Local nNaoLidos := 0
     Private aRotina := MenuDef()
     Private cConsultor := ""
     cConsultor := Posicione("AA1",4,xFilial("AA1")+__cUserId,"AA1_CODTEC")
 
+    nNaoLidos := CNS_CHKMAIL()
+    If nNaoLidos < 0
+        MsgAlert("Nao foi possivel verificar a caixa apia@apia.com.br no momento.", "E-mails")
+    ElseIf nNaoLidos == 0
+        MsgAlert("Sem e-mails novos em apia@apia.com.br.", "E-mails")
+    Else
+        MsgAlert("Existem " + cValToChar(nNaoLidos) + " e-mail(s) novo(s) em apia@apia.com.br!", "Novos E-mails")
+    EndIf
 
 	l_oBrowse := FWMBrowse():New()
 	If l_oBrowse <> Nil
 
-        nUnread := CNS_CHKMAIL()
-        cDesc   := "Registro de Chamados - OS"
-        If nUnread > 0
-            cDesc += " | " + cValToChar(nUnread) + " e-mail(s) nao lido(s) em suporte@apia"
-        ElseIf nUnread == 0
-            cDesc += " | Sem e-mails novos em suporte@apia"
-        EndIf
-        // nUnread < 0: erro de conexao - exibe descricao sem status de e-mail
-
-		l_oBrowse:SetDescription(cDesc)
+		l_oBrowse:SetDescription("Registro de Chamados - OS")
         l_oBrowse:SetAlias("ZA1")
 	
 		l_oBrowse:AddLegend( "ZA1->ZA1_STATUS == '1'", "GREEN",  "Aberto" )
@@ -94,7 +92,7 @@ Static Function ViewDef()
 
 Return l_oView
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-//MODELA��O
+//MODELACAO
 Static Function ModelDef()
 
     Local l_oModel  := Nil
@@ -139,12 +137,12 @@ Static Function FZA1CAN(p_oModel)
 Return .T.
 
 User Function GETIDGRID()
-
-    Local oModel := FWModelActive()
-    Local l_oZA2 := oModel:GetModel("ZA2DETAIL")
-    Local nLines := l_oZA2:Length()
-    Local nI     := 0
-    Local nSeq   := 1
+    Local oModel  := FWModelActive()
+    Local l_oZA2  := oModel:GetModel("ZA2DETAIL")
+    Local nLines  := l_oZA2:Length()
+    Local nLinAtu := l_oZA2:GetLine()   // guarda a linha atual
+    Local nI := 0
+    Local nSeq := 1
 
     For nI := 1 To nLines
         l_oZA2:GoLine(nI)
@@ -153,6 +151,7 @@ User Function GETIDGRID()
         EndIf
     Next nI
 
+    l_oZA2:GoLine(nLinAtu)   // restaura
 Return StrZero(nSeq, 3)
 
 User Function SHOW_LEG()
@@ -168,90 +167,122 @@ User Function SHOW_LEG()
 Return
 
 ////////////////////////////////////////////////////////////////////////////////////////////
-// VERIFICACAO DE EMAIL (IMAP)
-// Retorno: > 0 emails nao lidos | = 0 sem novos | -1 falha conexao | -2 falha autenticacao
+// Le a quantidade de e-mails NAO LIDOS da caixa de suporte (apia@apia.com.br)
+// direto da Microsoft Graph API, via REST (FWRest), sem servidor intermediario.
+//
+// Pre-requisito (Entra ID / Azure AD), feito uma unica vez:
+//   1. App registration -> gera Tenant ID, Client ID e um Client Secret
+//   2. API permissions -> Microsoft Graph -> Application permissions -> Mail.Read
+//   3. Grant admin consent
+//
+// Retorno: quantidade de nao lidos (>= 0), ou -1 em caso de erro.
 ////////////////////////////////////////////////////////////////////////////////////////////
 Static Function CNS_CHKMAIL()
 
-    Local cServer := "10.0.0.3"
-    Local nPort   := 143
-    Local cUser   := "suporte@apia.com.br"
-    Local cPass   := "xptonk25@1900"
+    // ---- CONFIGURACAO: preencha com os dados do app registrado no Entra ID ----
+    // OBS.: em producao o ideal e mover estes valores (principalmente o secret)
+    //       para parametros SX6 (MV_...) e ler via SuperGetMV(), para nao deixar
+    //       o segredo fixo no fonte compilado.
+    Local cTenant := "148b1301-21e9-4477-9897-64d9cf905086"
+    Local cClient := "SEU_CLIENT_ID"
+    Local cSecret := "SEU_CLIENT_SECRET"
+    Local cCaixa  := "apia@apia.com.br"
+    // ---------------------------------------------------------------------------
 
-Return _ImapGetUnseen(cServer, nPort, cUser, cPass)
+    Local oRest    := Nil
+    Local oJson    := Nil
+    Local cErro    := ""
+    Local cBody    := ""
+    Local cToken   := ""
+    Local cResp    := ""
+    Local aHeader  := {}
+    Local nNaoLido := -1
 
-Static Function _ImapGetUnseen(cServer, nPort, cUser, cPass)
+    // 1) Obtem o token OAuth2 (client_credentials) no Entra ID
+    cBody := "grant_type=client_credentials"
+    cBody += "&client_id="     + CnsUrlEnc(cClient)
+    cBody += "&client_secret=" + CnsUrlEnc(cSecret)
+    cBody += "&scope="         + CnsUrlEnc("https://graph.microsoft.com/.default")
 
-    Local hSock   := HB_InetCreate()
-    Local cResp   := ""
-    Local nUnread := 0
-    Local nLen    := 0
-    Local cUIDs   := ""
-    Local nPos    := 0
+    oRest := FWRest():New("https://login.microsoftonline.com")
+    oRest:setPath("/" + cTenant + "/oauth2/v2.0/token")
+    oRest:SetPostParams(cBody)
 
-    HB_InetSetTimeout(hSock, 5000)
-    HB_InetConnect(cServer, nPort, hSock)
+    aHeader := {}
+    aAdd(aHeader, "Content-Type: application/x-www-form-urlencoded")
 
-    If HB_InetErrorCode(hSock) != 0
-        HB_InetClose(hSock)
+    If !oRest:Post(aHeader)
         Return -1
     EndIf
 
-    HB_InetRecvLine(hSock, @nLen, 512)  // consome banner de boas-vindas
+    cResp := oRest:GetResult()
+    oRest := Nil
 
-    _ImapSend(hSock, 'T1 LOGIN "' + cUser + '" "' + cPass + '"')
-    cResp := _ImapRead(hSock, "T1")
-    If !("T1 OK" $ cResp)
-        _ImapSend(hSock, "T4 LOGOUT")
-        HB_InetClose(hSock)
-        Return -2
+    oJson := JsonObject():New()
+    cErro := oJson:FromJson(cResp)
+    If !Empty(cErro) .Or. ValType(oJson["access_token"]) <> "C"
+        FreeObj(oJson)
+        Return -1
+    EndIf
+    cToken := oJson["access_token"]
+    FreeObj(oJson)
+
+    If Empty(cToken)
+        Return -1
     EndIf
 
-    _ImapSend(hSock, "T2 SELECT INBOX")
-    _ImapRead(hSock, "T2")
+    // 2) Consulta a pasta INBOX da caixa via Graph -> campo unreadItemCount
+    oRest := FWRest():New("https://graph.microsoft.com")
+    oRest:setPath("/v1.0/users/" + cCaixa + "/mailFolders/inbox")
 
-    _ImapSend(hSock, "T3 SEARCH UNSEEN")
-    cResp := _ImapRead(hSock, "T3")
+    aHeader := {}
+    aAdd(aHeader, "Authorization: Bearer " + cToken)
+    aAdd(aHeader, "Accept: application/json")
 
-    // Resposta: "* SEARCH 1 5 12" -> conta os UIDs
-    nPos := At("* SEARCH", cResp)
-    If nPos > 0
-        cUIDs := SubStr(cResp, nPos + 9)
-        cUIDs := Left(cUIDs, At(Chr(10), cUIDs + Chr(10)) - 1)
-        cUIDs := AllTrim(StrTran(cUIDs, Chr(13), ""))
-        If !Empty(cUIDs)
-            nUnread := Len(HB_ATokens(cUIDs, " "))
-        EndIf
+    If !oRest:Get(aHeader)
+        Return -1
     EndIf
 
-    _ImapSend(hSock, "T4 LOGOUT")
-    HB_InetClose(hSock)
+    cResp := oRest:GetResult()
+    oRest := Nil
 
-Return nUnread
+    oJson := JsonObject():New()
+    cErro := oJson:FromJson(cResp)
+    If !Empty(cErro) .Or. ValType(oJson["unreadItemCount"]) <> "N"
+        FreeObj(oJson)
+        Return -1
+    EndIf
 
-Static Function _ImapSend(hSock, cCmd)
-    HB_InetSendAll(hSock, cCmd + Chr(13) + Chr(10))
-Return Nil
+    nNaoLido := oJson["unreadItemCount"]
+    FreeObj(oJson)
 
-Static Function _ImapRead(hSock, cTag)
+Return nNaoLido
 
-    Local cAll  := ""
-    Local cLine := ""
-    Local nLen  := 0
-    Local n     := 0
+//////////////////////////////////////////////////////////////////////////////////
+// URL-encode simples (percent-encoding) para o corpo do POST do token.
+// Protege contra caracteres especiais no client_secret (+, /, =, etc).
+//////////////////////////////////////////////////////////////////////////////////
+Static Function CnsUrlEnc(cTexto)
+    Local cRet := ""
+    Local nI   := 0
+    Local cCh  := ""
 
-    Do While n < 50
-        cLine := HB_InetRecvLine(hSock, @nLen, 2048)
-        If nLen <= 0 .And. HB_InetErrorCode(hSock) != 0
-            Exit
+    For nI := 1 To Len(cTexto)
+        cCh := SubStr(cTexto, nI, 1)
+        If (cCh >= "A" .And. cCh <= "Z") .Or. ;
+           (cCh >= "a" .And. cCh <= "z") .Or. ;
+           (cCh >= "0" .And. cCh <= "9") .Or. ;
+           (cCh $ "-_.~")
+            cRet += cCh
+        Else
+            cRet += "%" + CnsHex2(Asc(cCh))
         EndIf
-        cAll += cLine + Chr(13) + Chr(10)
-        If cTag + " OK"  $ cLine .Or. ;
-           cTag + " NO"  $ cLine .Or. ;
-           cTag + " BAD" $ cLine
-            Exit
-        EndIf
-        n++
-    EndDo
+    Next nI
+Return cRet
 
-Return cAll
+//////////////////////////////////////////////////////////////////////////////////
+// Converte um byte (0-255) em 2 digitos hexadecimais
+//////////////////////////////////////////////////////////////////////////////////
+Static Function CnsHex2(nVal)
+    Local cHex := "0123456789ABCDEF"
+Return SubStr(cHex, Int(nVal/16)+1, 1) + SubStr(cHex, (nVal % 16)+1, 1)
