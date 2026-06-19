@@ -36,8 +36,8 @@ User Function CNSA001()
         l_oBrowse:AddLegend( "ZA1->ZA1_STATUS == '3'", "ORANGE", "Pendente Cli." )
         l_oBrowse:AddLegend( "ZA1->ZA1_STATUS == '4'", "RED",    "Fechado" )
 
-        l_oBrowse:AddFilter("Meus","ZA1_CONSULT == cConsultor")
-        l_oBrowse:AddFilter("Nao Assumidos", "ZA1_CONSULT == ' '")
+        l_oBrowse:AddFilter("Meus","ZA1_CONSUL == cConsultor")
+        l_oBrowse:AddFilter("Nao Assumidos", "ZA1_CONSUL == ' '")
 
         l_oBrowse:Activate()
 
@@ -164,13 +164,11 @@ User Function CNSA_LEG()
 Return
 
 ////////////////////////////////////////////////////////////////////////////////////////////
-// Permite que o consultor logado assuma um chamado aberto.
-// Validacoes: nao assumido, nao fechado/pendente, com cliente, projeto e tarefa.
-////////////////////////////////////////////////////////////////////////////////////////////
 User Function CNSA_ASSUMIR()
 
     Local cConsultor     := ""
     Local cNomeConsultor := ""
+    Local cFase          := ""
 
     cConsultor := Posicione("AA1",4,xFilial("AA1")+__cUserId,"AA1_CODTEC")
 
@@ -184,52 +182,45 @@ User Function CNSA_ASSUMIR()
         Return
     EndIf
 
-    // 1) ja assumido pelo proprio consultor
-    If AllTrim(ZA1->ZA1_CONSULT) == AllTrim(cConsultor)
+    If AllTrim(ZA1->ZA1_CONSUL) == AllTrim(cConsultor)
         MsgAlert("Voce ja e o responsavel por este chamado.", "Assumir Chamado")
         Return
     EndIf
 
-    // 2) ja assumido por outro consultor
-    If !Empty(AllTrim(ZA1->ZA1_CONSULT))
-        cNomeConsultor := Posicione("AA1",1,xFilial("AA1")+AllTrim(ZA1->ZA1_CONSULT),"AA1_NOME")
+    If !Empty(AllTrim(ZA1->ZA1_CONSUL))
+        cNomeConsultor := Posicione("AA1",1,xFilial("AA1")+AllTrim(ZA1->ZA1_CONSUL),"AA1_NOME")
         MsgAlert("Este chamado ja foi assumido por: " + cNomeConsultor + ".", "Assumir Chamado")
         Return
     EndIf
 
-    // 3) chamado fechado
     If ZA1->ZA1_STATUS == "4"
         MsgAlert("Chamado fechado nao pode ser assumido.", "Assumir Chamado")
         Return
     EndIf
 
-    // 4) chamado pendente
     If ZA1->ZA1_STATUS == "2" .Or. ZA1->ZA1_STATUS == "3"
         MsgAlert("Chamado pendente nao pode ser assumido.", "Assumir Chamado")
         Return
     EndIf
 
-    // 5) sem cliente definido
     If Empty(AllTrim(ZA1->ZA1_CLIENT))
         MsgAlert("O chamado precisa ter um cliente definido antes de ser assumido.", "Assumir Chamado")
         Return
     EndIf
 
-    // 6) sem projeto definido
     If Empty(AllTrim(ZA1->ZA1_PROJ))
         MsgAlert("O chamado precisa ter um projeto definido antes de ser assumido.", "Assumir Chamado")
         Return
     EndIf
 
-    // 7) sem tarefa definida
-    If Empty(AllTrim(ZA1->ZA1_TAREFA))
-        MsgAlert("O chamado precisa ter uma tarefa definida antes de ser assumido.", "Assumir Chamado")
+    cFase := Posicione("AF8", 1, xFilial("AF8") + AllTrim(ZA1->ZA1_PROJ), "AF8_FASE")
+    If AllTrim(cFase) <> "03"
+        MsgAlert("O chamado so pode ser assumido com projeto em execucao (fase 03).", "Assumir Chamado")
         Return
     EndIf
 
-    // 8) projeto fora de revisao
-    If ZA1->ZA1_STPROJ <> "3"
-        MsgAlert("O chamado so pode ser assumido quando o projeto estiver livre da revisao (status 3).", "Assumir Chamado")
+    If Empty(AllTrim(ZA1->ZA1_TAREFA))
+        MsgAlert("O chamado precisa ter uma tarefa definida antes de ser assumido.", "Assumir Chamado")
         Return
     EndIf
 
@@ -238,7 +229,7 @@ User Function CNSA_ASSUMIR()
     EndIf
 
     RecLock("ZA1", .F.)
-        ZA1->ZA1_CONSULT := cConsultor
+        ZA1->ZA1_CONSUL  := cConsultor
         ZA1->ZA1_STATUS  := "2"
     ZA1->(MsUnlock())
 
@@ -247,12 +238,10 @@ User Function CNSA_ASSUMIR()
 Return
 
 ////////////////////////////////////////////////////////////////////////////////
-// Obtem o token OAuth2 (client_credentials). Retorna o token ou "" em erro.
-////////////////////////////////////////////////////////////////////////////////
 Static Function CNSA_TOKEN()
     Local cTenant := "148b1301-21e9-4477-9897-64d9cf905086"
     Local cClient := "b0b341b5-009f-474a-834a-8839b0c984cd"
-    Local cSecret := ""  
+    Local cSecret := "SEU_CLIENT_SECRET"   // <- substitua pelo secret atual
     Local oRest, oJson, cBody, cToken := ""
 
     cBody := "grant_type=client_credentials"
@@ -274,10 +263,6 @@ Static Function CNSA_TOKEN()
     FreeObj(oJson)
 Return cToken
 
-////////////////////////////////////////////////////////////////////////////////
-// Le os nao lidos e abre um chamado (ZA1) para cada e-mail que ainda nao tenha.
-// Dedup pelo campo ZA1_MAILID. O chamado nasce SEM consultor = "Nao assumido".
-// Retorna: qtd de chamados criados (>=0), ou -1 em erro.
 ////////////////////////////////////////////////////////////////////////////////
 Static Function CNSA_GERACHAM()
     Local cToken := CNSA_TOKEN()
@@ -381,7 +366,7 @@ Static Function CNSA_GERACHAM()
             ZA1->ZA1_FILIAL  := xFilial("ZA1")
             ZA1->ZA1_IDCH    := cNewId
             ZA1->ZA1_STATUS  := "1"
-            ZA1->ZA1_CONSULT := ""
+            ZA1->ZA1_CONSUL  := ""
             ZA1->ZA1_CLIENT  := IIf(!Empty(cCodCli), cCodCli, cNome)
             ZA1->ZA1_LOJA    := cLojaCli
             ZA1->ZA1_EMAIL   := cEmail
@@ -397,8 +382,6 @@ Static Function CNSA_GERACHAM()
     FreeObj(oJson)
 Return nCriados
 
-////////////////////////////////////////////////////////////////////////////////
-// Retorna .T. se ja existe chamado para este e-mail (dedup pelo ZA1_MAILID).
 ////////////////////////////////////////////////////////////////////////////////
 Static Function CNSA_CHEXIST(cMailId)
     Local lExiste := .F.
@@ -417,17 +400,52 @@ Static Function CNSA_CHEXIST(cMailId)
 Return lExiste
 
 ////////////////////////////////////////////////////////////////////////////////
-// Busca o cliente na SA1 pelo e-mail do remetente.
-// Tenta primeiro e-mail exato, depois pelo dominio (@empresa.com.br).
-// Retorna array {cCod, cLoja} se encontrar, ou {"", ""} se nao encontrar.
+// Busca o cliente pelo e-mail do remetente.
+// 1) SU5 -> AC8 -> SA1
+// 2) Fallback: SA1 por e-mail exato
+// 3) Fallback: SA1 por dominio
 ////////////////////////////////////////////////////////////////////////////////
 Static Function CNSA_BUSCACLI(cEmail)
     Local cAlias   := GetNextAlias()
     Local cCod     := ""
     Local cLoja    := ""
+    Local cContat  := ""
     Local cDominio := ""
     Local nPos     := 0
 
+    BeginSql Alias cAlias
+        SELECT U5_CODCONT
+        FROM %Table:SU5% SU5
+        WHERE U5_EMAIL = %Exp:cEmail%
+          AND %NotDel%
+    EndSql
+    If !(cAlias)->(Eof())
+        cContat := AllTrim((cAlias)->U5_CODCONT)
+    EndIf
+    (cAlias)->(DbCloseArea())
+
+    If !Empty(cContat)
+        cAlias := GetNextAlias()
+        BeginSql Alias cAlias
+            SELECT AC8_CODENT
+            FROM %Table:AC8% AC8
+            WHERE AC8_FILIAL = %xFilial:AC8%
+              AND AC8_CODCON = %Exp:cContat%
+              AND AC8_ENTIDA = 'SA1'
+              AND %NotDel%
+        EndSql
+        If !(cAlias)->(Eof())
+            cCod  := Left(AllTrim((cAlias)->AC8_CODENT), 6)
+            cLoja := Right(AllTrim((cAlias)->AC8_CODENT), 2)
+        EndIf
+        (cAlias)->(DbCloseArea())
+
+        If !Empty(cCod)
+            Return {cCod, cLoja}
+        EndIf
+    EndIf
+
+    cAlias := GetNextAlias()
     BeginSql Alias cAlias
         SELECT A1_COD, A1_LOJA
         FROM %Table:SA1% SA1
@@ -436,10 +454,9 @@ Static Function CNSA_BUSCACLI(cEmail)
           AND %NotDel%
         ORDER BY A1_COD, A1_LOJA
     EndSql
-
     If !(cAlias)->(Eof())
-        cCod  := (cAlias)->A1_COD
-        cLoja := (cAlias)->A1_LOJA
+        cCod  := AllTrim((cAlias)->A1_COD)
+        cLoja := AllTrim((cAlias)->A1_LOJA)
     EndIf
     (cAlias)->(DbCloseArea())
 
@@ -462,17 +479,14 @@ Static Function CNSA_BUSCACLI(cEmail)
           AND %NotDel%
         ORDER BY A1_COD, A1_LOJA
     EndSql
-
     If !(cAlias)->(Eof())
-        cCod  := (cAlias)->A1_COD
-        cLoja := (cAlias)->A1_LOJA
+        cCod  := AllTrim((cAlias)->A1_COD)
+        cLoja := AllTrim((cAlias)->A1_LOJA)
     EndIf
     (cAlias)->(DbCloseArea())
 
 Return {cCod, cLoja}
 
-//////////////////////////////////////////////////////////////////////////////////
-// URL-encode simples (percent-encoding) para o corpo do POST do token.
 //////////////////////////////////////////////////////////////////////////////////
 Static Function CNSA_URLENC(cTexto)
     Local cRet := ""
@@ -493,8 +507,40 @@ Static Function CNSA_URLENC(cTexto)
 Return cRet
 
 //////////////////////////////////////////////////////////////////////////////////
-// Converte um byte (0-255) em 2 digitos hexadecimais
-//////////////////////////////////////////////////////////////////////////////////
 Static Function CNSA_HEX2(nVal)
     Local cHex := "0123456789ABCDEF"
 Return SubStr(cHex, Int(nVal/16)+1, 1) + SubStr(cHex, (nVal % 16)+1, 1)
+
+////////////////////////////////////////////////////////////////////////////////
+// Preenche ZA1_NOME via modelo MVC. Chamada pelo gatilho do ZA1_LOJA.
+// NOME DO CLIENTE
+////////////////////////////////////////////////////////////////////////////////
+User Function CNSA_CLIENTE()
+    Local oModel := FWModelActive()
+    Local cCod   := ""
+    Local cLoja  := ""
+    Local cNome  := ""
+
+    cCod  := AllTrim(oModel:GetValue("ZA1MASTER", "ZA1_CLIENT"))
+    cLoja := AllTrim(oModel:GetValue("ZA1MASTER", "ZA1_LOJA"))
+    cNome := Posicione("SA1", 1, xFilial("SA1") + cCod + cLoja, "A1_NOME")
+
+    oModel:SetValue("ZA1MASTER", "ZA1_NOME", SubStr(cNome, 1, TamSX3("ZA1_NOME")[1]))
+
+Return cNome
+
+////////////////////////////////////////////////////////////////////////////////
+// Preenche ZA1_NOMTEC via modelo MVC. Chamada pelo gatilho do ZA1_CONSUL.
+// NOME DO TECNICO
+////////////////////////////////////////////////////////////////////////////////
+User Function CNSA_TECNICO()
+    Local oModel := FWModelActive()
+    Local cCod   := ""
+    Local cNome  := ""
+
+    cCod  := AllTrim(oModel:GetValue("ZA1MASTER", "ZA1_CONSUL"))
+    cNome := Posicione("AA1", 1, xFilial("AA1") + cCod, "AA1_NOMTEC")
+
+    oModel:SetValue("ZA1MASTER", "ZA1_NOMTEC", SubStr(cNome, 1, TamSX3("ZA1_NOMTEC")[1]))
+
+Return cNome
