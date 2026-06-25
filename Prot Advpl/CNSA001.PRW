@@ -168,7 +168,9 @@ User Function CNSA_EXCLUIR()
     Private nMotivo      := 1
     Private cOutroMotivo := Space(100)
     Private lMotConfirm  := .F.
+    
 
+    //CRIAÇÃO DA JANELA POPUP
     DEFINE MSDIALOG oDialog TITLE "Motivo da Exclusao" FROM 0,0 TO 300,600 PIXEL
 
         @ 10,10  SAY "Motivo do cancelamento:"    SIZE 200,12 PIXEL OF oDialog
@@ -189,9 +191,17 @@ User Function CNSA_EXCLUIR()
 
     Do Case
         Case nMotivo == 1
-            cMotivoExclusao := "Cancelamento pela Apia"
+            If Empty(AllTrim(cOutroMotivo))
+                cMotivoExclusao := "Cancelamento pela Apia"
+            Else
+                cMotivoExclusao := "Cancelamento pela Apia - " + AllTrim(cOutroMotivo)
+            EndIf
         Case nMotivo == 2
-            cMotivoExclusao := "Cancelamento pelo Cliente"
+            If Empty(AllTrim(cOutroMotivo))
+                cMotivoExclusao := "Cancelamento pelo Cliente"
+            Else
+                cMotivoExclusao := "Cancelamento pelo Cliente - " + AllTrim(cOutroMotivo)
+            EndIf
         Case nMotivo == 3
             If Empty(AllTrim(cOutroMotivo))
                 MsgAlert("Informe o motivo para a opcao 'Outro'.", "Motivo")
@@ -734,68 +744,6 @@ Static Function CNSA_GERASEQUENCIA(dData, cTecnico)
 
 Return cSeq
 
-//////////////////////////////////////////////////////////////////////////
-//CORPO DO EMAIL DE INCLUSAO EM HTML
-//////////////////////////////////////////////////////////////////////////
-Static Function CNSA_MONTAHTML(cNomeTec, cIdCh, cCliente, cAssunto, cDataAge, cHmini, cHmfim, cNomeDe, cTipo)
-    Local cHtml := ""
-
-    Local cTipoTexto := IIf(Empty(cTipo), "DESIGNACAO", cTipo)
-
-    cHtml := '<div style="font-family:Arial,sans-serif;max-width:600px;border:1px solid #cccccc;border-radius:8px;overflow:hidden">'
-    
-    cHtml += '<div style="background-color:#1a7fc1;padding:20px;text-align:center">'
-    cHtml += '<h2 style="color:#ffffff;margin:0;font-size:18px">Apia Consultoria e Sistemas</h2>'
-    cHtml += '<p style="color:#d0e8f8;margin:5px 0 0 0;font-size:13px;font-style:italic">Voce esta recebendo a <b>' + cTipoTexto + '</b> de um chamado.<br>Por favor, verifique os dados abaixo</p>'
-    cHtml += '</div>'
-
-    cHtml += '<table style="width:100%;border-collapse:collapse">'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px;width:35%"><b>Tecnico</b></td><td style="padding:10px 15px">' + cNomeTec + '</td></tr>'
-    cHtml += '<tr style="background-color:#e8f4fc;color:#333333"><td style="padding:10px 15px"><b>Chamado</b></td><td style="padding:10px 15px">' + cIdCh + '</td></tr>'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Cliente</b></td><td style="padding:10px 15px">' + cCliente + '</td></tr>'
-    cHtml += '<tr style="background-color:#e8f4fc;color:#333333"><td style="padding:10px 15px"><b>Servico</b></td><td style="padding:10px 15px">' + cAssunto + '</td></tr>'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Data</b></td><td style="padding:10px 15px">' + cDataAge + '</td></tr>'
-    cHtml += '<tr style="background-color:#e8f4fc;color:#333333"><td style="padding:10px 15px"><b>Hora</b></td><td style="padding:10px 15px">' + cHmini + ' ate ' + cHmfim + '</td></tr>'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Designado por</b></td><td style="padding:10px 15px">' + cNomeDe + '</td></tr>'
-    cHtml += '</table>'
-
-    cHtml += '<div style="background-color:#0d5a8a;padding:12px;text-align:center">'
-    cHtml += '<p style="color:#ffffff;margin:0;font-size:12px">Apia Consultoria e Sistemas - TOTVS Business Partner</p>'
-    cHtml += '</div>'
-
-    cHtml += '</div>'
-
-Return cHtml
-//////////////////////////////////////////////////////////////////////////
-//CORPO DO EMAIL DE CANCELAMENTO EM HTML
-//////////////////////////////////////////////////////////////////////////
-Static Function CNSA_HTML_CANCEL(cCliente, cDataAge, cHmini, cHmfim, cChamado, cMotivo, cExcluidoPor)
-    Local cHtml := ""
-
-    cHtml := '<div style="font-family:Arial,sans-serif;max-width:600px;border:1px solid #cccccc;border-radius:8px;overflow:hidden">'
-    
-    cHtml += '<div style="background-color:#1a7fc1;padding:20px;text-align:center">'
-    cHtml += '<h2 style="color:#ffffff;margin:0;font-size:18px">Apia Consultoria e Sistemas</h2>'
-    cHtml += '<p style="color:#d0e8f8;margin:5px 0 0 0;font-size:13px;font-style:italic">Voce esta recebendo o <b>CANCELAMENTO</b> de um chamado.<br>Por favor, verifique os dados abaixo</p>'
-    cHtml += '</div>'
-
-    cHtml += '<table style="width:100%;border-collapse:collapse">'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px;width:35%"><b>Cliente</b></td><td style="padding:10px 15px">' + cCliente + '</td></tr>'
-    cHtml += '<tr style="background-color:#e8f4fc;color:#333333"><td style="padding:10px 15px"><b>Data</b></td><td style="padding:10px 15px">' + cDataAge + '</td></tr>'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Horario</b></td><td style="padding:10px 15px">' + cHmini + ' - ' + cHmfim + '</td></tr>'
-    cHtml += '<tr style="background-color:#e8f4fc;color:#333333"><td style="padding:10px 15px"><b>Chamado</b></td><td style="padding:10px 15px">' + cChamado + '</td></tr>'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Motivo exclusao</b></td><td style="padding:10px 15px">' + cMotivo + '</td></tr>'
-    cHtml += '<tr style="background-color:#e8f4fc;color:#333333"><td style="padding:10px 15px"><b>Excluido por</b></td><td style="padding:10px 15px">' + cExcluidoPor + '</td></tr>'
-    cHtml += '</table>'
-
-    cHtml += '<div style="background-color:#0d5a8a;padding:12px;text-align:center">'
-    cHtml += '<p style="color:#ffffff;margin:0;font-size:12px">Apia Consultoria e Sistemas - TOTVS Business Partner</p>'
-    cHtml += '</div>'
-
-    cHtml += '</div>'
-
-Return cHtml
-
 ////////////////////////////////////////////////////////////////////////////////
 // Envia e-mail via Microsoft Graph API.
 // cPara    = e-mail do destinatario
@@ -868,7 +816,7 @@ Return cRet
 Static Function CNSA_TOKEN()
     Local cTenant := "148b1301-21e9-4477-9897-64d9cf905086"
     Local cClient := "b0b341b5-009f-474a-834a-8839b0c984cd"
-    Local cSecret := 
+    Local cSecret := ""
     Local oRest, oJson, cBody, cToken := ""
 
     cBody := "grant_type=client_credentials"
@@ -1380,3 +1328,67 @@ Static Function CNSA_ATUALIZAAGENDA(cChamado, cTecnico, dData, cHmini, cHmfim)
 
 Return
 
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//////////////////////////////////////////////////////////////////////////
+//CORPO DO EMAIL DE INCLUSAO EM HTML
+//////////////////////////////////////////////////////////////////////////
+Static Function CNSA_MONTAHTML(cNomeTec, cIdCh, cCliente, cAssunto, cDataAge, cHmini, cHmfim, cNomeDe, cTipo)
+    Local cHtml := ""
+
+    Local cTipoTexto := IIf(Empty(cTipo), "DESIGNACAO", cTipo)
+
+    cHtml := '<div style="font-family:Arial,sans-serif;max-width:600px;border:1px solid #cccccc;border-radius:8px;overflow:hidden">'
+    
+    cHtml += '<div style="background-color:#1a7fc1;padding:20px;text-align:center">'
+    cHtml += '<h2 style="color:#ffffff;margin:0;font-size:18px">Apia Consultoria e Sistemas</h2>'
+    cHtml += '<p style="color:#d0e8f8;margin:5px 0 0 0;font-size:13px;font-style:italic">Voce esta recebendo a <b>' + cTipoTexto + '</b> de um chamado.<br>Por favor, verifique os dados abaixo</p>'
+    cHtml += '</div>'
+
+    cHtml += '<table style="width:100%;border-collapse:collapse">'
+    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px;width:35%"><b>Tecnico</b></td><td style="padding:10px 15px">' + cNomeTec + '</td></tr>'
+    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Chamado</b></td><td style="padding:10px 15px">' + cIdCh + '</td></tr>'
+    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Cliente</b></td><td style="padding:10px 15px">' + cCliente + '</td></tr>'
+    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Servico</b></td><td style="padding:10px 15px">' + cAssunto + '</td></tr>'
+    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Data</b></td><td style="padding:10px 15px">' + cDataAge + '</td></tr>'
+    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Hora</b></td><td style="padding:10px 15px">' + cHmini + ' ate ' + cHmfim + '</td></tr>'
+    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Designado por</b></td><td style="padding:10px 15px">' + cNomeDe + '</td></tr>'
+    cHtml += '</table>'
+
+    cHtml += '<div style="background-color:#0d5a8a;padding:12px;text-align:center">'
+    cHtml += '<p style="color:#ffffff;margin:0;font-size:12px">Apia Consultoria e Sistemas - TOTVS Business Partner</p>'
+    cHtml += '</div>'
+
+    cHtml += '</div>'
+
+Return cHtml
+
+
+//////////////////////////////////////////////////////////////////////////
+//CORPO DO EMAIL DE CANCELAMENTO EM HTML
+//////////////////////////////////////////////////////////////////////////
+Static Function CNSA_HTML_CANCEL(cCliente, cDataAge, cHmini, cHmfim, cChamado, cMotivo, cExcluidoPor)
+    Local cHtml := ""
+
+    cHtml := '<div style="font-family:Arial,sans-serif;max-width:600px;border:1px solid #cccccc;border-radius:8px;overflow:hidden">'
+    
+    cHtml += '<div style="background-color:#0d5a8a;padding:20px;text-align:center">'
+    cHtml += '<h2 style="color:#ffffff;margin:0;font-size:18px">Apia Consultoria e Sistemas</h2>'
+    cHtml += '<p style="color:#d0e8f8;margin:5px 0 0 0;font-size:13px;font-style:italic">Voce esta recebendo o <b>CANCELAMENTO</b> de um chamado.<br>Por favor, verifique os dados abaixo</p>'
+    cHtml += '</div>'
+
+    cHtml += '<table style="width:100%;border-collapse:collapse">'
+    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px;width:35%"><b>Cliente</b></td><td style="padding:10px 15px">' + cCliente + '</td></tr>'
+    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Data</b></td><td style="padding:10px 15px">' + cDataAge + '</td></tr>'
+    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Horario</b></td><td style="padding:10px 15px">' + cHmini + ' - ' + cHmfim + '</td></tr>'
+    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Chamado</b></td><td style="padding:10px 15px">' + cChamado + '</td></tr>'
+    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Motivo exclusao</b></td><td style="padding:10px 15px">' + cMotivo + '</td></tr>'
+    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Excluido por</b></td><td style="padding:10px 15px">' + cExcluidoPor + '</td></tr>'
+    cHtml += '</table>'
+
+    cHtml += '<div style="background-color:#0d5a8a;padding:12px;text-align:center">'
+    cHtml += '<p style="color:#ffffff;margin:0;font-size:12px">Apia Consultoria e Sistemas - TOTVS Business Partner</p>'
+    cHtml += '</div>'
+
+    cHtml += '</div>'
+
+Return cHtml
