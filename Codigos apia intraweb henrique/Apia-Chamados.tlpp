@@ -1,92 +1,71 @@
-#include "RESTFUL.CH"
 #include "PROTHEUS.CH"
-#include "RWMAKE.CH"
 #include "TOPCONN.CH"
 #include "TOTVS.CH"
-#include "FWMVCDEF.CH"
+#include "tlpp-core.th"
+#INCLUDE 'tlpp-rest.th'
 
 ////////////////////////////////////////////////////////////////////////////////
-// POUICNSA001.prw
-// API REST do portal PO-UI do CNSA001.
-// CNSACHAMADOS (GET) e CNSACHAMADOSASSUMIR (POST) sao dois WSRESTFUL
-// separados, cada um com seu unico WSMETHOD - mas no MESMO arquivo.
+// Apia-Chamados.tlpp (ex POUICNSA001.prw)
+// API REST do portal PO-UI de Chamados (pouichamados) - espelha CNSA001.PRW
+// (tela classica). Migrado de WSRESTFUL/WSMETHOD pra anotacoes TLPP (@Get/
+// @Post) - mesmas URLs, mesmos verbos, mesmos parametros via querystring de
+// sempre (zero mudanca de contrato pro front). Logica interna de todos os
+// endpoints continua 100% igual a antes (mesmas Static Function CNSA_XXX que
+// ja devolviam {nStatusHttp, cCorpoJson} - so o wrapper de rota mudou de
+// WSRESTFUL/WSMETHOD/WSDATA/WSRECEIVE pra @Get/@Post + oRest).
+//
+// CNSACHAMADOS (listagem) e o unico endpoint que ainda busca dados via
+// FWRest():New(CNSA_FWMODEL_HOST) (FWModel remoto da ZA1) - mantido como
+// estava, nao faz parte desta migracao trocar essa origem de dados. O
+// FWRest local dessa rotina foi renomeado de oRest pra oRestZA1, ja que
+// "oRest" agora e o nome reservado do objeto global do motor TLPP REST
+// (oRest:getQueryRequest()/oRest:setStatusResponse()) - mantido o nome
+// original em todas as outras rotinas (CNSA_TOKEN, CNSA_GERACHAM,
+// CNSA_MARCARLIDO, CNSA_ENVIAEMAIL), que sao Static Function comuns (Local
+// sempre blinda contra o global, sem colisao real).
 ////////////////////////////////////////////////////////////////////////////////
-
-PUBLISH MODEL REST NAME chamados
-
-#define CNSA_FWMODEL_HOST     "https://10.0.0.3:8624"
-#define CNSA_FWMODEL_ZA1_PATH "/rest/FwModel/chamados/"
-#define CNSA_FWMODEL_ZA1_ID   "ModelZA1_Main"
-
-////////////////////////////////////////////////////////////////////////////////
-Static Function ModelDef()
-    Local oModel
-    Local oStruZA1
-
-    oStruZA1 := FWFormStruc(1, 'ZA1')
-    oModel   := MPFormModel():New('ModelZA1')
-    oModel:AddFields('ModelZA1_Main', , oStruZA1)
-    oModel:SetPrimaryKey({'ZA1_FILIAL', 'ZA1_IDCH'})
-    oModel:SetDescription('Model Chamados')
-    oModel:GetModel('ModelZA1_Main'):SetDescription('Model Chamados Main')
-
-Return oModel
 
 
 ////////////////////////////////////////////////////////////////////////////////
 // LISTAGEM / VISUALIZAR / PESQUISAR
 ////////////////////////////////////////////////////////////////////////////////
-WSRESTFUL CNSACHAMADOS DESCRIPTION "Listagem de chamados (ZA1) para o portal PO-UI" FORMAT APPLICATION_JSON
-
-    WSDATA pagina         AS INTEGER   OPTIONAL
-    WSDATA tamanho        AS INTEGER   OPTIONAL
-    WSDATA meus           AS INTEGER   OPTIONAL
-    WSDATA semResponsavel AS INTEGER   OPTIONAL
-    WSDATA status         AS CHARACTER OPTIONAL
-    WSDATA idCh           AS CHARACTER OPTIONAL
-    WSDATA texto          AS CHARACTER OPTIONAL
-    WSDATA ano            AS INTEGER   OPTIONAL
-    WSDATA mes            AS INTEGER   OPTIONAL
-
-    WSMETHOD GET DESCRIPTION "Lista chamados - filtros, visualizar por Id, ou pesquisa livre por texto no assunto"
-
-END WSRESTFUL
-
-WSMETHOD GET WSRECEIVE pagina, tamanho, meus, semResponsavel, status, idCh, texto, ano, mes WSSERVICE CNSACHAMADOS
-    Local oJson            := JsonObject():New()
-    Local oFwResp          := JsonObject():New()
-    Local aRetorno         := {}
-    Local aResources       := {}
-    Local oResource        := Nil
-    Local oLinha           := Nil
-    Local oRest            := Nil
-    Local aHead            := {}
-    Local nPagina          := 1
-    Local nTamanho         := 10
-    Local nStartIdx        := 1
-    Local nTotal           := 0
-    Local nI               := 0
-    Local nJ               := 0
-    Local nMeuParam        := 0
-    Local nSemRespParam    := 0
-    Local cStatusParam     := ""
-    Local cIdChParam       := ""
-    Local cTextoParam      := ""
-    Local cTextoEsc        := ""
-    Local cConsultorSessao := ""
-    Local cFiltro          := ""
-    Local cGetParam        := ""
-    Local cResp            := ""
-    Local cJsonErr         := ""
-    Local cAuthValue       := ""
-    Local aCacheTec        := {}
-    Local aCacheCli        := {}
-    Local nPosCache        := 0
-    Local cCodConsul       := ""
-    Local cCodCli          := ""
-    Local cLoja            := ""
-    Local cNomeTec         := ""
-    Local cNomeCli         := ""
+@Get("/CNSACHAMADOS")
+User Function CNSA_CHAMADOS_LISTAR() As Logical
+    Local jQuery           := oRest:getQueryRequest() As Json
+    Local oJson             := JsonObject():New()
+    Local oFwResp           := JsonObject():New()
+    Local aRetorno          := {}
+    Local aResources        := {}
+    Local oResource         := Nil
+    Local oLinha            := Nil
+    Local oRestZA1          := Nil
+    Local aHead             := {}
+    Local nPagina           := 1
+    Local nTamanho          := 10
+    Local nStartIdx         := 1
+    Local nTotal            := 0
+    Local nI                := 0
+    Local nJ                := 0
+    Local nMeuParam         := 0
+    Local nSemRespParam     := 0
+    Local cStatusParam      := ""
+    Local cIdChParam        := ""
+    Local cTextoParam       := ""
+    Local cTextoEsc         := ""
+    Local cConsultorSessao  := ""
+    Local cFiltro           := ""
+    Local cGetParam         := ""
+    Local cResp             := ""
+    Local cJsonErr          := ""
+    Local cAuthValue        := ""
+    Local aCacheTec         := {}
+    Local aCacheCli         := {}
+    Local nPosCache         := 0
+    Local cCodConsul        := ""
+    Local cCodCli           := ""
+    Local cLoja             := ""
+    Local cNomeTec          := ""
+    Local cNomeCli          := ""
     // FIX (Projeto/Tarefa "sumindo" toda vez que abre Editar): a listagem so
     // devolvia idCh/assunto/status/tecnico/cliente/data - nunca os codigos de
     // tipo/projeto/tarefa/email/cliente. O front (abrirEditar) sempre abria
@@ -95,66 +74,53 @@ WSMETHOD GET WSRECEIVE pagina, tamanho, meus, semResponsavel, status, idCh, text
     // obrigado a reselecionar Cliente -> Projeto -> Tarefa do zero em TODA
     // edicao, mesmo pra corrigir so o assunto. Mesma familia do bug ja
     // corrigido pra codConsultor - agora fechando os campos que faltavam.
-    Local cTipo            := ""
-    Local cProjeto         := ""
-    Local cTarefa          := ""
-    Local cEmailCli        := ""
-    Local cNomeProj        := ""
-    Local cNomeTaf         := ""
-    Local aCacheProj       := {}
-    Local aCacheTaf        := {}
-    Local oErro            := Nil
-    Local aCondicoes       := {}
-    Local aStatusLista     := {}
-    Local aStatusCond      := {}
-    Local cCondStatus      := ""
-    Local nAnoParam        := 0
-    Local nMesParam        := 0
-    Local dIni             := CToD("")
-    Local dFimExclusivo    := CToD("")
-    Local nMesFimCalc      := 0
-    Local nAnoFimCalc      := 0
-    Local nTotalProbe      := 0
-    Local nStartIdxReal    := 0
-    Local nCountReal       := 0
-    Local cGetParamProbe   := ""
-    Local oRestProbe       := Nil
-    Local cRespProbe       := ""
-    Local oProbeResp       := Nil
-    Local aInvertido       := {}
-    Local nK               := 0
+    Local cTipo             := ""
+    Local cProjeto          := ""
+    Local cTarefa           := ""
+    Local cEmailCli         := ""
+    Local cNomeProj         := ""
+    Local cNomeTaf          := ""
+    Local aCacheProj        := {}
+    Local aCacheTaf         := {}
+    Local oErro             := Nil
+    Local aCondicoes        := {}
+    Local aStatusLista      := {}
+    Local aStatusCond       := {}
+    Local cCondStatus       := ""
+    Local nAnoParam         := 0
+    Local nMesParam         := 0
+    Local dIni              := CToD("")
+    Local dFimExclusivo     := CToD("")
+    Local nMesFimCalc       := 0
+    Local nAnoFimCalc       := 0
+    Local nTotalProbe       := 0
+    Local nStartIdxReal     := 0
+    Local nCountReal        := 0
+    Local cGetParamProbe    := ""
+    Local oRestProbe        := Nil
+    Local cRespProbe        := ""
+    Local oProbeResp        := Nil
+    Local aInvertido        := {}
+    Local nK                := 0
 
-    ::SetContentType("application/json")
-    // CORS - NAO configurar aqui via ::SetHeader (metodo nao existe nessa
-    // classe do WSRESTFUL classico e causa erro 500 - ja tentamos e revertemos).
-    // O jeito certo e no appserver.ini, na secao [HTTPURI]/[HTTPENV] que mapeia
-    // o /rest deste servidor: adicionar CORSEnable=1 e AllowOrigin=* junto de
-    // URL=/rest, PrepareIn=..., Instances=... (e reiniciar o appserver).
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     Begin Sequence
 
-        Default ::pagina         := 1
-        Default ::tamanho        := 10
-        Default ::meus           := 0
-        Default ::semResponsavel := 0
-        Default ::status         := ""
-        Default ::idCh           := ""
-        Default ::texto          := ""
-        Default ::ano            := 0
-        Default ::mes            := 0
-
-        nPagina       := If(::pagina  < 1, 1, ::pagina)
-        nTamanho      := If(::tamanho < 1 .Or. ::tamanho > 100, 10, ::tamanho)
+        nPagina       := CNSA_JSONNUM(jQuery, "pagina")
+        nPagina       := If(nPagina < 1, 1, nPagina)
+        nTamanho      := CNSA_JSONNUM(jQuery, "tamanho")
+        nTamanho      := If(nTamanho < 1 .Or. nTamanho > 100, 10, nTamanho)
         nStartIdx     := (nPagina - 1) * nTamanho + 1
-        nMeuParam     := ::meus
-        nSemRespParam := ::semResponsavel
-        cStatusParam  := AllTrim(::status)
-        cIdChParam    := AllTrim(::idCh)
-        nAnoParam     := ::ano
-        nMesParam     := ::mes
+        nMeuParam     := CNSA_JSONNUM(jQuery, "meus")
+        nSemRespParam := CNSA_JSONNUM(jQuery, "semResponsavel")
+        cStatusParam  := AllTrim(jQuery:GetJsonText("status"))
+        cIdChParam    := AllTrim(jQuery:GetJsonText("idCh"))
+        nAnoParam     := CNSA_JSONNUM(jQuery, "ano")
+        nMesParam     := CNSA_JSONNUM(jQuery, "mes")
         // FIX (busca por assunto acentuado nao batia): DecodeUTF8 no texto
         // da pesquisa livre antes de montar o LIKE.
-        cTextoParam   := DecodeUTF8(AllTrim(::texto))
+        cTextoParam   := DecodeUTF8(AllTrim(jQuery:GetJsonText("texto")))
 
         If nMeuParam == 1
             cConsultorSessao := Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC")
@@ -242,10 +208,8 @@ WSMETHOD GET WSRECEIVE pagina, tamanho, meus, semResponsavel, status, idCh, text
         oRestProbe:SetPath(CNSA_FWMODEL_ZA1_PATH)
 
         If !oRestProbe:Get(aHead, cGetParamProbe)
-            ::SetStatus(502)
-            ::SetResponse('{"erro":"' + CNSA_JSONESC(oRestProbe:GetLastError()) + '"}')
             FreeObj(oRestProbe)
-            Break
+            Return oRest:setStatusResponse(502, '{"erro":"' + CNSA_JSONESC(oRestProbe:GetLastError()) + '"}')
         EndIf
 
         cRespProbe := oRestProbe:GetResult()
@@ -254,9 +218,7 @@ WSMETHOD GET WSRECEIVE pagina, tamanho, meus, semResponsavel, status, idCh, text
         oProbeResp := JsonObject():New()
         cJsonErr   := oProbeResp:FromJson(cRespProbe)
         If ValType(cJsonErr) == "C" .And. !Empty(cJsonErr)
-            ::SetStatus(500)
-            ::SetResponse('{"erro":"Falha no parse do retorno (sondagem): ' + CNSA_JSONESC(cJsonErr) + '"}')
-            Break
+            Return oRest:setStatusResponse(500, '{"erro":"Falha no parse do retorno (sondagem): ' + CNSA_JSONESC(cJsonErr) + '"}')
         EndIf
 
         nTotalProbe := If(ValType(oProbeResp['total']) == 'N', oProbeResp['total'], 0)
@@ -284,24 +246,20 @@ WSMETHOD GET WSRECEIVE pagina, tamanho, meus, semResponsavel, status, idCh, text
                 cGetParam += "&filter=" + CNSA_URLENC(cFiltro)
             EndIf
 
-            oRest := FWRest():New(CNSA_FWMODEL_HOST)
-            oRest:SetPath(CNSA_FWMODEL_ZA1_PATH)
+            oRestZA1 := FWRest():New(CNSA_FWMODEL_HOST)
+            oRestZA1:SetPath(CNSA_FWMODEL_ZA1_PATH)
 
-            If !oRest:Get(aHead, cGetParam)
-                ::SetStatus(502)
-                ::SetResponse('{"erro":"' + CNSA_JSONESC(oRest:GetLastError()) + '"}')
-                FreeObj(oRest)
-                Break
+            If !oRestZA1:Get(aHead, cGetParam)
+                FreeObj(oRestZA1)
+                Return oRest:setStatusResponse(502, '{"erro":"' + CNSA_JSONESC(oRestZA1:GetLastError()) + '"}')
             EndIf
 
-            cResp := oRest:GetResult()
-            FreeObj(oRest)
+            cResp := oRestZA1:GetResult()
+            FreeObj(oRestZA1)
 
             cJsonErr := oFwResp:FromJson(cResp)
             If ValType(cJsonErr) == "C" .And. !Empty(cJsonErr)
-                ::SetStatus(500)
-                ::SetResponse('{"erro":"Falha no parse do retorno: ' + CNSA_JSONESC(cJsonErr) + '"}')
-                Break
+                Return oRest:setStatusResponse(500, '{"erro":"Falha no parse do retorno: ' + CNSA_JSONESC(cJsonErr) + '"}')
             EndIf
 
             nTotal     := If(ValType(oFwResp['total'])     == 'N', oFwResp['total'],     0)
@@ -407,43 +365,30 @@ WSMETHOD GET WSRECEIVE pagina, tamanho, meus, semResponsavel, status, idCh, text
         oJson['tamanho']      := nTamanho
         oJson['items']        := aRetorno
 
-        ::SetResponse(oJson:ToJson())
+        Return oRest:setStatusResponse(200, oJson:ToJson())
 
     Recover Using oErro
         If oErro != Nil
-            ::SetStatus(500)
-            ::SetResponse('{"erro":"' + CNSA_JSONESC(EncodeUtf8(oErro:Description)) + '"}')
+            Return oRest:setStatusResponse(500, '{"erro":"' + CNSA_JSONESC(EncodeUtf8(oErro:Description)) + '"}')
         EndIf
     End Sequence
 
-Return .T.
-
+Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
 
 ////////////////////////////////////////////////////////////////////////////////
-// ASSUMIR - WSRESTFUL proprio (CNSACHAMADOSASSUMIR), mesmo arquivo.
+// ASSUMIR - @Post, mesma URL/querystring de sempre (POST /CNSACHAMADOSASSUMIR
+// ?idCh=...). Logica real em CNSA_ASSUMIR, mais abaixo neste arquivo.
 ////////////////////////////////////////////////////////////////////////////////
-WSRESTFUL CNSACHAMADOSASSUMIR DESCRIPTION "Assume um chamado (ZA1) para o tecnico da sessao logada" FORMAT APPLICATION_JSON
-
-    WSDATA idCh AS CHARACTER OPTIONAL
-
-    WSMETHOD POST DESCRIPTION "Assume um chamado (idCh) para o tecnico da sessao logada"
-
-END WSRESTFUL
-
-WSMETHOD POST WSRECEIVE idCh WSSERVICE CNSACHAMADOSASSUMIR
+@Post("/CNSACHAMADOSASSUMIR")
+User Function CNSA_CHAMADOS_ASSUMIR() As Logical
+    Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
-    ::SetContentType("application/json")
-    // CORS - NAO configurar aqui via ::SetHeader (metodo nao existe nessa
-    // classe do WSRESTFUL classico e causa erro 500 - ja tentamos e revertemos).
-    // O jeito certo e no appserver.ini, na secao [HTTPURI]/[HTTPENV] que mapeia
-    // o /rest deste servidor: adicionar CORSEnable=1 e AllowOrigin=* junto de
-    // URL=/rest, PrepareIn=..., Instances=... (e reiniciar o appserver).
-    aResultado := CNSA_ASSUMIR(AllTrim(::idCh))
-    ::SetStatus(aResultado[1])
-    ::SetResponse(aResultado[2])
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
-Return .T.
+    aResultado := CNSA_ASSUMIR(AllTrim(jQuery:GetJsonText("idCh")))
+
+Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
 ////////////////////////////////////////////////////////////////////////////////
 Static Function CNSA_CAMPO_ZA1(oResource, cNome)
@@ -477,7 +422,7 @@ Static Function CNSA_CAMPO_ZA1(oResource, cNome)
                             Case ValType(oField['value']) == 'N'
                                 Return cValToChar(oField['value'])
                             Case ValType(oField['value']) == 'D'
-                                Return DToS(oField['value'])         
+                                Return DToS(oField['value'])
                             OtherWise
                                 Return ''
                         EndCase
@@ -545,39 +490,38 @@ Static Function CNSA_JSONESC(cTexto)
 Return cRet
 
 ////////////////////////////////////////////////////////////////////////////////
-// EXCLUIR - WSRESTFUL proprio (CNSACHAMADOSEXCLUIR), mesmo arquivo, mesmo
-// padrao ja validado no Assumir (WSMETHOD sem DESCRIPTION extra na implementacao).
+// Helper compartilhado pelos endpoints @Get/@Post - le um parametro numerico
+// da querystring (oRest:getQueryRequest()), mesmo padrao ja usado no
+// Apia-OS.tlpp (CNSA002_JSONNUM).
 ////////////////////////////////////////////////////////////////////////////////
-WSRESTFUL CNSACHAMADOSEXCLUIR DESCRIPTION "Exclui um chamado (ZA1), removendo agenda vinculada e avisando por e-mail" FORMAT APPLICATION_JSON
+Static Function CNSA_JSONNUM(jDados, cCampo)
+    Local xVal := jDados[cCampo]
+    If xVal == Nil
+        Return 0
+    EndIf
+Return Val(cValToChar(xVal))
 
-    WSDATA idCh   AS CHARACTER OPTIONAL
-    WSDATA motivo AS CHARACTER OPTIONAL
-
-    WSMETHOD POST DESCRIPTION "Exclui um chamado (idCh), com motivo obrigatorio se houver tecnico designado"
-
-END WSRESTFUL
-
-WSMETHOD POST WSRECEIVE idCh, motivo WSSERVICE CNSACHAMADOSEXCLUIR
+////////////////////////////////////////////////////////////////////////////////
+// EXCLUIR - @Post, mesma URL/querystring de sempre (POST /CNSACHAMADOSEXCLUIR
+// ?idCh=...&motivo=...). Logica real em CNSA_EXCLUIR, logo abaixo.
+////////////////////////////////////////////////////////////////////////////////
+@Post("/CNSACHAMADOSEXCLUIR")
+User Function CNSA_CHAMADOS_EXCLUIR() As Logical
+    Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
-    ::SetContentType("application/json")
-    // CORS - NAO configurar aqui via ::SetHeader (metodo nao existe nessa
-    // classe do WSRESTFUL classico e causa erro 500 - ja tentamos e revertemos).
-    // O jeito certo e no appserver.ini, na secao [HTTPURI]/[HTTPENV] que mapeia
-    // o /rest deste servidor: adicionar CORSEnable=1 e AllowOrigin=* junto de
-    // URL=/rest, PrepareIn=..., Instances=... (e reiniciar o appserver).
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
+
     // FIX (motivo com acento - ia corromper o e-mail de cancelamento, ver
     // CNSA_ENVIAEMAIL que faz EncodeUtf8 no corpo inteiro depois): DecodeUTF8
     // aqui deixa o motivo em ANSI igual ao resto do texto antes de montar
     // o corpo do e-mail em CNSA_CANCEL_FRONT.
-    aResultado := CNSA_EXCLUIR(AllTrim(::idCh), DecodeUTF8(AllTrim(::motivo)))
-    ::SetStatus(aResultado[1])
-    ::SetResponse(aResultado[2])
+    aResultado := CNSA_EXCLUIR(AllTrim(jQuery:GetJsonText("idCh")), DecodeUTF8(AllTrim(jQuery:GetJsonText("motivo"))))
 
-Return .T.
+Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
 ////////////////////////////////////////////////////////////////////////////////
-// Logica real do Excluir - fora do WSMETHOD, devolve {nStatusHttp, cCorpoJson}.
+// Logica real do Excluir - fora do @Post, devolve {nStatusHttp, cCorpoJson}.
 //
 // Cascata: 1) captura dados antes de apagar, 2) apaga o chamado, 3) remove
 // TODOS os agendamentos vinculados na SZ6 (sem confirmacao individual - unica
@@ -1068,7 +1012,7 @@ Return {cCod, cLoja}
 // UTF-8): o corpo HTML e o assunto sao montados com texto vindo direto de
 // tabelas do Protheus (AA1_NOMTEC, A1_NOME, ZA1_ASSUNT etc.), que fica em
 // ANSI (CP1252) na memoria do ADVPL. O Graph espera o JSON em UTF-8 - sem
-// essa conversao, nome/assunto com acento (Ã§, Ã£, Ã©...) chegam corrompidos
+// essa conversao, nome/assunto com acento (ç, ã, é...) chegam corrompidos
 // no e-mail. EncodeUtf8() (funcao nativa AdvPL) faz a conversao ANSI -> UTF-8
 // bytes antes do JSON-escape. Ponto unico de conversao (aqui), assim quem
 // monta cCorpo/cAssunto (CNSA_EMAIL_FRONT, CNSA_CANCEL_FRONT) nao precisa se
@@ -1323,54 +1267,34 @@ Static Function CNSA_DISPARA_DESIGNACAO(cIdCh, cCodConsultorNovo)
 Return CNSA_ENVIAEMAIL(cEmailTec, "Chamado Designado " + cIdCh, cCorpo, "apia@apia.com.br")
 
 ////////////////////////////////////////////////////////////////////////////////
-// INCLUIR - WSRESTFUL proprio (CNSACHAMADOSINCLUIR), mesmo padrao ja usado no
-// Assumir/Excluir (RecLock direto na ZA1, sem passar pelo FwModel remoto).
+// INCLUIR - @Post, mesma URL/querystring de sempre (POST
+// /CNSACHAMADOSINCLUIR). Logica real em CNSA_INCLUIR, logo abaixo.
 //
 // Campos obrigatorios/opcionais confirmados pela tela real "Registro de
 // Chamados - INCLUIR" do CNSA001 (Henrique mandou print): obrigatorios sao
 // Assunto, Dt Abertura, Status (fixo "1" aqui, nem exposto), Tipo, Projeto
 // e Tarefa; Cliente/Loja/Consultor/Email do Cliente sao opcionais.
 ////////////////////////////////////////////////////////////////////////////////
-WSRESTFUL CNSACHAMADOSINCLUIR DESCRIPTION "Inclui um novo chamado (ZA1) com status Aberto" FORMAT APPLICATION_JSON
-
-    WSDATA assunto      AS CHARACTER OPTIONAL
-    WSDATA dtAbertura   AS CHARACTER OPTIONAL
-    WSDATA tipo         AS CHARACTER OPTIONAL
-    WSDATA codCliente   AS CHARACTER OPTIONAL
-    WSDATA lojaCliente  AS CHARACTER OPTIONAL
-    WSDATA emailCliente AS CHARACTER OPTIONAL
-    WSDATA codConsultor AS CHARACTER OPTIONAL
-    WSDATA projeto      AS CHARACTER OPTIONAL
-    WSDATA tarefa       AS CHARACTER OPTIONAL
-
-    WSMETHOD POST DESCRIPTION "Inclui um chamado - ver CNSA_INCLUIR pra lista completa de campos"
-
-END WSRESTFUL
-
-WSMETHOD POST WSRECEIVE assunto, dtAbertura, tipo, codCliente, lojaCliente, emailCliente, codConsultor, projeto, tarefa WSSERVICE CNSACHAMADOSINCLUIR
+@Post("/CNSACHAMADOSINCLUIR")
+User Function CNSA_CHAMADOS_INCLUIR() As Logical
+    Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
-    ::SetContentType("application/json")
-    // CORS - NAO configurar aqui via ::SetHeader (metodo nao existe nessa
-    // classe do WSRESTFUL classico e causa erro 500 - ja tentamos e revertemos).
-    // O jeito certo e no appserver.ini, na secao [HTTPURI]/[HTTPENV] que mapeia
-    // o /rest deste servidor: adicionar CORSEnable=1 e AllowOrigin=* junto de
-    // URL=/rest, PrepareIn=..., Instances=... (e reiniciar o appserver).
-    // FIX (acentos virando caractere de substituicao no front): o WSRESTFUL
-    // classico nao converte UTF-8 (vindo do Angular) pra ANSI/CP1252 (usado
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
+
+    // FIX (acentos virando caractere de substituicao no front): o motor
+    // TLPP REST nao converte UTF-8 (vindo do Angular) pra ANSI/CP1252 (usado
     // internamente pelo ADVPL) sozinho - precisa de DecodeUTF8 explicito no
     // texto livre (assunto), mesmo padrao ja usado em CNSA_GERACHAM pro
     // assunto do e-mail.
-    aResultado := CNSA_INCLUIR(DecodeUTF8(AllTrim(::assunto)), AllTrim(::dtAbertura), AllTrim(::tipo), ;
-        AllTrim(::codCliente), AllTrim(::lojaCliente), AllTrim(::emailCliente), ;
-        AllTrim(::codConsultor), AllTrim(::projeto), AllTrim(::tarefa))
-    ::SetStatus(aResultado[1])
-    ::SetResponse(aResultado[2])
+    aResultado := CNSA_INCLUIR(DecodeUTF8(AllTrim(jQuery:GetJsonText("assunto"))), AllTrim(jQuery:GetJsonText("dtAbertura")), AllTrim(jQuery:GetJsonText("tipo")), ;
+        AllTrim(jQuery:GetJsonText("codCliente")), AllTrim(jQuery:GetJsonText("lojaCliente")), AllTrim(jQuery:GetJsonText("emailCliente")), ;
+        AllTrim(jQuery:GetJsonText("codConsultor")), AllTrim(jQuery:GetJsonText("projeto")), AllTrim(jQuery:GetJsonText("tarefa")))
 
-Return .T.
+Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
 ////////////////////////////////////////////////////////////////////////////////
-// Logica real do Incluir - fora do WSMETHOD, devolve {nStatusHttp, cCorpoJson}.
+// Logica real do Incluir - fora do @Post, devolve {nStatusHttp, cCorpoJson}.
 //
 // ASSUNCOES A VALIDAR ANTES DE COMPILAR (Henrique, confere isso):
 // 1) ZA1_IDCH precisa ter grupo de numeracao configurado no SX5 pro
@@ -1391,7 +1315,7 @@ Return .T.
 // 5) NAO valida se codCliente+lojaCliente/projeto/tarefa existem de fato
 //    nas tabelas correspondentes antes de gravar - so grava o que foi
 //    informado (mesma cautela do Assumir nao se aplica aqui de proposito,
-//    pra nao duplicar a regra de "projeto fase 03" - isso jÃ¡ Ã© validado
+//    pra nao duplicar a regra de "projeto fase 03" - isso ja e validado
 //    depois, no Assumir).
 // 6) Consultor, se vier vazio, e preenchido automaticamente com o tecnico
 //    da sessao logada (Posicione AA1 por __cUserId) - mesmo comportamento
@@ -1473,57 +1397,34 @@ Return {500, '{"erro":"Erro desconhecido."}'}
 
 
 ////////////////////////////////////////////////////////////////////////////////
-// ALTERAR - WSRESTFUL proprio (CNSACHAMADOSALTERAR), mesmo padrao.
+// ALTERAR - @Post, mesma URL/querystring de sempre (POST
+// /CNSACHAMADOSALTERAR).
 //
 // FIX (pedido "Editar deve ficar exatamente igual ao Incluir, mesma
 // assinatura de metodos e estrutura" - confirmado por Henrique: "igual no
-// estilo do template, use os parametros que te mandei"): o Alterar agora
-// aceita o MESMO conjunto de campos do Incluir (assunto, dtAbertura, tipo,
+// estilo do template, use os parametros que te mandei"): o Alterar aceita o
+// MESMO conjunto de campos do Incluir (assunto, dtAbertura, tipo,
 // codCliente/lojaCliente, emailCliente, codConsultor, projeto, tarefa).
 // Continua sendo alteracao PARCIAL - so troca o que vier preenchido, mesmo
 // comportamento de antes, so que agora vale pra todos os campos, nao so
 // assunto/cliente.
 ////////////////////////////////////////////////////////////////////////////////
-WSRESTFUL CNSACHAMADOSALTERAR DESCRIPTION "Altera um chamado (ZA1) ainda aberto - mesmos campos do Incluir" FORMAT APPLICATION_JSON
-
-    WSDATA idCh            AS CHARACTER OPTIONAL
-    WSDATA assunto         AS CHARACTER OPTIONAL
-    WSDATA dtAbertura      AS CHARACTER OPTIONAL
-    WSDATA tipo            AS CHARACTER OPTIONAL
-    WSDATA codCliente      AS CHARACTER OPTIONAL
-    WSDATA lojaCliente     AS CHARACTER OPTIONAL
-    WSDATA emailCliente    AS CHARACTER OPTIONAL
-    WSDATA codConsultor    AS CHARACTER OPTIONAL
-    WSDATA projeto         AS CHARACTER OPTIONAL
-    WSDATA tarefa          AS CHARACTER OPTIONAL
-    WSDATA limparCliente   AS CHARACTER OPTIONAL
-    WSDATA limparConsultor AS CHARACTER OPTIONAL
-
-    WSMETHOD POST DESCRIPTION "Altera um chamado (idCh) - ver CNSA_ALTERAR pra lista completa de campos"
-
-END WSRESTFUL
-
-WSMETHOD POST WSRECEIVE idCh, assunto, dtAbertura, tipo, codCliente, lojaCliente, emailCliente, ;
-    codConsultor, projeto, tarefa, limparCliente, limparConsultor WSSERVICE CNSACHAMADOSALTERAR
+@Post("/CNSACHAMADOSALTERAR")
+User Function CNSA_CHAMADOS_ALTERAR() As Logical
+    Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
-    ::SetContentType("application/json")
-    // CORS - NAO configurar aqui via ::SetHeader (metodo nao existe nessa
-    // classe do WSRESTFUL classico e causa erro 500 - ja tentamos e revertemos).
-    // O jeito certo e no appserver.ini, na secao [HTTPURI]/[HTTPENV] que mapeia
-    // o /rest deste servidor: adicionar CORSEnable=1 e AllowOrigin=* junto de
-    // URL=/rest, PrepareIn=..., Instances=... (e reiniciar o appserver).
-    // FIX (mesmo problema de acentos do Incluir) - DecodeUTF8 no assunto.
-    aResultado := CNSA_ALTERAR(AllTrim(::idCh), DecodeUTF8(AllTrim(::assunto)), AllTrim(::dtAbertura), AllTrim(::tipo), ;
-        AllTrim(::codCliente), AllTrim(::lojaCliente), AllTrim(::emailCliente), AllTrim(::codConsultor), ;
-        AllTrim(::projeto), AllTrim(::tarefa), AllTrim(::limparCliente) == "1", AllTrim(::limparConsultor) == "1")
-    ::SetStatus(aResultado[1])
-    ::SetResponse(aResultado[2])
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
-Return .T.
+    // FIX (mesmo problema de acentos do Incluir) - DecodeUTF8 no assunto.
+    aResultado := CNSA_ALTERAR(AllTrim(jQuery:GetJsonText("idCh")), DecodeUTF8(AllTrim(jQuery:GetJsonText("assunto"))), AllTrim(jQuery:GetJsonText("dtAbertura")), AllTrim(jQuery:GetJsonText("tipo")), ;
+        AllTrim(jQuery:GetJsonText("codCliente")), AllTrim(jQuery:GetJsonText("lojaCliente")), AllTrim(jQuery:GetJsonText("emailCliente")), AllTrim(jQuery:GetJsonText("codConsultor")), ;
+        AllTrim(jQuery:GetJsonText("projeto")), AllTrim(jQuery:GetJsonText("tarefa")), AllTrim(jQuery:GetJsonText("limparCliente")) == "1", AllTrim(jQuery:GetJsonText("limparConsultor")) == "1")
+
+Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
 ////////////////////////////////////////////////////////////////////////////////
-// Logica real do Alterar - fora do WSMETHOD, devolve {nStatusHttp, cCorpoJson}.
+// Logica real do Alterar - fora do @Post, devolve {nStatusHttp, cCorpoJson}.
 // Bloqueia alteracao de chamado fechado (status "4"), mesma cautela do Assumir.
 //
 // E-mail de redesignacao (item 6 confirmado por Henrique): se codConsultor
@@ -1624,13 +1525,14 @@ Return {500, '{"erro":"Erro desconhecido."}'}
 
 
 ////////////////////////////////////////////////////////////////////////////////
-// AGENDAR - WSRESTFUL proprio (CNSACHAMADOSAGENDAR). Cria agendamento(s) de
-// verdade na SZ6, com os campos confirmados na tela real "Model Agendas -
-// Nova Agenda" do CNSA001 (Henrique mandou print). Isso substitui a ideia
-// original de abrir o cnsaagenda via FwCallApp (que nao funciona chamado
-// via REST/Angular, ver comentario no bloco VERAGENDA abaixo) - em vez de
-// tentar abrir o outro app, este endpoint replica a mesma gravacao que a
-// tela "Nova Agenda" faz, direto no SZ6.
+// AGENDAR - @Post, mesma URL/querystring de sempre (POST
+// /CNSACHAMADOSAGENDAR). Cria agendamento(s) de verdade na SZ6, com os
+// campos confirmados na tela real "Model Agendas - Nova Agenda" do CNSA001
+// (Henrique mandou print). Isso substitui a ideia original de abrir o
+// cnsaagenda via FwCallApp (que nao funciona chamado via REST/Angular, ver
+// comentario no bloco VERAGENDA abaixo) - em vez de tentar abrir o outro
+// app, este endpoint replica a mesma gravacao que a tela "Nova Agenda" faz,
+// direto no SZ6.
 //
 // EXTENSAO NOSSA (nao existe na tela original): dataInicio/dataFim formam
 // um INTERVALO (usando po-datepicker-range no front) - se vierem diferentes,
@@ -1687,53 +1589,21 @@ Return {500, '{"erro":"Erro desconhecido."}'}
 // Data/Tecnico/Sequencia/Inicio/Termino/Cliente/Loja sao os campos com
 // asterisco vermelho (obrigatorios) na tela real - o resto e opcional.
 ////////////////////////////////////////////////////////////////////////////////
-WSRESTFUL CNSACHAMADOSAGENDAR DESCRIPTION "Cria agendamento(s) (SZ6) vinculado a um chamado" FORMAT APPLICATION_JSON
-
-    WSDATA idCh        AS CHARACTER OPTIONAL
-    WSDATA dataInicio   AS CHARACTER OPTIONAL
-    WSDATA dataFim      AS CHARACTER OPTIONAL
-    WSDATA codTecnico   AS CHARACTER OPTIONAL
-    WSDATA horaInicio   AS CHARACTER OPTIONAL
-    WSDATA horaFim      AS CHARACTER OPTIONAL
-    WSDATA codCliente   AS CHARACTER OPTIONAL
-    WSDATA lojaCliente  AS CHARACTER OPTIONAL
-    WSDATA descricao    AS CHARACTER OPTIONAL
-    WSDATA confirmacao  AS CHARACTER OPTIONAL
-    WSDATA turno        AS CHARACTER OPTIONAL
-    WSDATA agInterna    AS CHARACTER OPTIONAL
-    WSDATA agCobravel   AS CHARACTER OPTIONAL
-    WSDATA tipoAgenda   AS CHARACTER OPTIONAL
-    WSDATA projeto      AS CHARACTER OPTIONAL
-    WSDATA revisao      AS CHARACTER OPTIONAL
-    WSDATA tarefa       AS CHARACTER OPTIONAL
-    WSDATA tipoHora     AS CHARACTER OPTIONAL
-    WSDATA codAgendador AS CHARACTER OPTIONAL
-
-    WSMETHOD POST DESCRIPTION "Cria agendamento(s) SZ6 - um por dia no intervalo dataInicio..dataFim"
-
-END WSRESTFUL
-
-WSMETHOD POST WSRECEIVE idCh, dataInicio, dataFim, codTecnico, horaInicio, horaFim, codCliente, ;
-    lojaCliente, descricao, confirmacao, turno, agInterna, agCobravel, tipoAgenda, projeto, ;
-    revisao, tarefa, tipoHora, codAgendador WSSERVICE CNSACHAMADOSAGENDAR
+@Post("/CNSACHAMADOSAGENDAR")
+User Function CNSA_CHAMADOS_AGENDAR() As Logical
+    Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
-    ::SetContentType("application/json")
-    // CORS - NAO configurar aqui via ::SetHeader (metodo nao existe nessa
-    // classe do WSRESTFUL classico e causa erro 500 - ja tentamos e revertemos).
-    // O jeito certo e no appserver.ini, na secao [HTTPURI]/[HTTPENV] que mapeia
-    // o /rest deste servidor: adicionar CORSEnable=1 e AllowOrigin=* junto de
-    // URL=/rest, PrepareIn=..., Instances=... (e reiniciar o appserver).
-    // FIX (mesmo problema de acentos do Incluir/Alterar) - DecodeUTF8 na descricao.
-    aResultado := CNSA_AGENDAR(AllTrim(::idCh), AllTrim(::dataInicio), AllTrim(::dataFim), ;
-        AllTrim(::codTecnico), AllTrim(::horaInicio), AllTrim(::horaFim), AllTrim(::codCliente), ;
-        AllTrim(::lojaCliente), DecodeUTF8(AllTrim(::descricao)), AllTrim(::confirmacao), AllTrim(::turno), ;
-        AllTrim(::agInterna), AllTrim(::agCobravel), AllTrim(::tipoAgenda), AllTrim(::projeto), ;
-        AllTrim(::revisao), AllTrim(::tarefa), AllTrim(::tipoHora), DecodeUTF8(AllTrim(::codAgendador)))
-    ::SetStatus(aResultado[1])
-    ::SetResponse(aResultado[2])
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
-Return .T.
+    // FIX (mesmo problema de acentos do Incluir/Alterar) - DecodeUTF8 na descricao.
+    aResultado := CNSA_AGENDAR(AllTrim(jQuery:GetJsonText("idCh")), AllTrim(jQuery:GetJsonText("dataInicio")), AllTrim(jQuery:GetJsonText("dataFim")), ;
+        AllTrim(jQuery:GetJsonText("codTecnico")), AllTrim(jQuery:GetJsonText("horaInicio")), AllTrim(jQuery:GetJsonText("horaFim")), AllTrim(jQuery:GetJsonText("codCliente")), ;
+        AllTrim(jQuery:GetJsonText("lojaCliente")), DecodeUTF8(AllTrim(jQuery:GetJsonText("descricao"))), AllTrim(jQuery:GetJsonText("confirmacao")), AllTrim(jQuery:GetJsonText("turno")), ;
+        AllTrim(jQuery:GetJsonText("agInterna")), AllTrim(jQuery:GetJsonText("agCobravel")), AllTrim(jQuery:GetJsonText("tipoAgenda")), AllTrim(jQuery:GetJsonText("projeto")), ;
+        AllTrim(jQuery:GetJsonText("revisao")), AllTrim(jQuery:GetJsonText("tarefa")), AllTrim(jQuery:GetJsonText("tipoHora")), DecodeUTF8(AllTrim(jQuery:GetJsonText("codAgendador"))))
+
+Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
 ////////////////////////////////////////////////////////////////////////////////
 // Calcula a proxima sequencia (Z6_SEQ) pro tecnico+data informados - mesmo
@@ -1806,8 +1676,8 @@ Static Function CNSA_VERIFICASOBREPOSICAO(cTecnico, dData, cHoraIni, cHoraFim)
 Return aConflitos
 
 ////////////////////////////////////////////////////////////////////////////////
-// Logica real do Agendar - fora do WSMETHOD, devolve {nStatusHttp, cCorpoJson}.
-// Ver bloco de comentarios acima (WSRESTFUL CNSACHAMADOSAGENDAR) pra lista
+// Logica real do Agendar - fora do @Post, devolve {nStatusHttp, cCorpoJson}.
+// Ver bloco de comentarios acima (endpoint CNSACHAMADOSAGENDAR) pra lista
 // completa de assuncoes de nome de campo, e o spec em
 // docs/superpowers/specs/2026-07-30-agendamento-sequence-race-fix-design.md
 // pro design completo (lock por tecnico, sobreposicao, retry, resposta
@@ -2013,37 +1883,25 @@ Return {500, '{"erro":"Erro desconhecido."}'}
 
 
 ////////////////////////////////////////////////////////////////////////////////
-// VER AGENDA - WSRESTFUL proprio (CNSACHAMADOSVERAGENDA), so leitura (GET).
-// Botao "Ver Agenda" do front: lista os agendamentos (SZ6) ja criados pro
-// chamado (podem ser varios, um por dia, se o Agendar foi feito com
-// intervalo de datas) - mostra Data, Cliente, Horario, Tecnico e Descricao
-// de cada um, conforme pedido.
+// VER AGENDA - @Get, mesma URL/querystring de sempre (GET
+// /CNSACHAMADOSVERAGENDA?idCh=...). Botao "Ver Agenda" do front: lista os
+// agendamentos (SZ6) ja criados pro chamado (podem ser varios, um por dia,
+// se o Agendar foi feito com intervalo de datas) - mostra Data, Cliente,
+// Horario, Tecnico e Descricao de cada um, conforme pedido.
 ////////////////////////////////////////////////////////////////////////////////
-WSRESTFUL CNSACHAMADOSVERAGENDA DESCRIPTION "Lista os agendamentos (SZ6) vinculados a um chamado" FORMAT APPLICATION_JSON
-
-    WSDATA idCh AS CHARACTER OPTIONAL
-
-    WSMETHOD GET DESCRIPTION "Lista os agendamentos de um chamado (idCh), ordenados por data/hora"
-
-END WSRESTFUL
-
-WSMETHOD GET WSRECEIVE idCh WSSERVICE CNSACHAMADOSVERAGENDA
+@Get("/CNSACHAMADOSVERAGENDA")
+User Function CNSA_CHAMADOS_VERAGENDA() As Logical
+    Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
-    ::SetContentType("application/json")
-    // CORS - NAO configurar aqui via ::SetHeader (metodo nao existe nessa
-    // classe do WSRESTFUL classico e causa erro 500 - ja tentamos e revertemos).
-    // O jeito certo e no appserver.ini, na secao [HTTPURI]/[HTTPENV] que mapeia
-    // o /rest deste servidor: adicionar CORSEnable=1 e AllowOrigin=* junto de
-    // URL=/rest, PrepareIn=..., Instances=... (e reiniciar o appserver).
-    aResultado := CNSA_VERAGENDA(AllTrim(::idCh))
-    ::SetStatus(aResultado[1])
-    ::SetResponse(aResultado[2])
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
-Return .T.
+    aResultado := CNSA_VERAGENDA(AllTrim(jQuery:GetJsonText("idCh")))
+
+Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
 ////////////////////////////////////////////////////////////////////////////////
-// Logica real do Ver Agenda - fora do WSMETHOD, devolve {nStatusHttp, cCorpoJson}.
+// Logica real do Ver Agenda - fora do @Get, devolve {nStatusHttp, cCorpoJson}.
 // Mesma logica defensiva de Z6_DTAGE (Character AAAAMMDD ou Date) ja usada em
 // CNSA_EXCLUIR, pra nao presumir o tipo do campo.
 ////////////////////////////////////////////////////////////////////////////////
@@ -2124,9 +1982,9 @@ Return {500, '{"erro":"Erro desconhecido."}'}
 
 
 ////////////////////////////////////////////////////////////////////////////////
-// ANOTACOES - dois WSRESTFUL proprios (leitura e gravacao separadas, mesmo
-// motivo documentado no ComponentesRest.prw pra nao colocar 2 WSMETHOD no
-// mesmo WSRESTFUL). Campo unico na ZA1 - cada gravacao SOBRESCREVE o
+// ANOTACOES - dois endpoints proprios (leitura e gravacao separadas, mesmo
+// motivo documentado no ComponentesRest.prw pra nao colocar 2 verbos no
+// mesmo recurso). Campo unico na ZA1 - cada gravacao SOBRESCREVE o
 // conteudo anterior, nao ha historico de multiplas anotacoes.
 //
 // CONFIRMADO (Henrique): campo ZA1_ANOT criado no SX3, Character(200) - NAO
@@ -2136,28 +1994,16 @@ Return {500, '{"erro":"Erro desconhecido."}'}
 // validado explicitamente em CNSA_ANOTACAO_SALVAR antes de gravar, pra nao
 // salvar HTML cortado no meio de uma tag.
 ////////////////////////////////////////////////////////////////////////////////
-WSRESTFUL CNSACHAMADOSANOTACAO DESCRIPTION "Le a anotacao (campo memo) de um chamado (ZA1)" FORMAT APPLICATION_JSON
-
-    WSDATA idCh AS CHARACTER OPTIONAL
-
-    WSMETHOD GET DESCRIPTION "Devolve a anotacao atual de um chamado (idCh)"
-
-END WSRESTFUL
-
-WSMETHOD GET WSRECEIVE idCh WSSERVICE CNSACHAMADOSANOTACAO
+@Get("/CNSACHAMADOSANOTACAO")
+User Function CNSA_CHAMADOS_ANOTACAO_LER() As Logical
+    Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
-    ::SetContentType("application/json")
-    // CORS - NAO configurar aqui via ::SetHeader (metodo nao existe nessa
-    // classe do WSRESTFUL classico e causa erro 500 - ja tentamos e revertemos).
-    // O jeito certo e no appserver.ini, na secao [HTTPURI]/[HTTPENV] que mapeia
-    // o /rest deste servidor: adicionar CORSEnable=1 e AllowOrigin=* junto de
-    // URL=/rest, PrepareIn=..., Instances=... (e reiniciar o appserver).
-    aResultado := CNSA_ANOT_LER(AllTrim(::idCh))
-    ::SetStatus(aResultado[1])
-    ::SetResponse(aResultado[2])
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
-Return .T.
+    aResultado := CNSA_ANOT_LER(AllTrim(jQuery:GetJsonText("idCh")))
+
+Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
 Static Function CNSA_ANOT_LER(cIdCh)
     Local oJson := JsonObject():New()
@@ -2176,7 +2022,7 @@ Static Function CNSA_ANOT_LER(cIdCh)
         EndIf
 
         // FIX (acentos virando caractere de substituicao no front): EncodeUtf8
-        // antes de devolver no JSON - o WSRESTFUL classico nao converte
+        // antes de devolver no JSON - o motor TLPP REST nao converte
         // ANSI/CP1252 (interno do ADVPL) pra UTF-8 sozinho.
         oJson['idCh']     := cIdCh
         oJson['anotacao'] := If(ZA1->(FieldPos("ZA1_ANOT")) > 0, EncodeUtf8(AllTrim(ZA1->ZA1_ANOT)), "")
@@ -2190,35 +2036,22 @@ Static Function CNSA_ANOT_LER(cIdCh)
 Return {500, '{"erro":"Erro desconhecido."}'}
 
 
-WSRESTFUL CNSACHAMADOSANOTACAOSALVAR DESCRIPTION "Grava a anotacao (campo memo) de um chamado (ZA1)" FORMAT APPLICATION_JSON
-
-    WSDATA idCh     AS CHARACTER OPTIONAL
-    WSDATA anotacao AS CHARACTER OPTIONAL
-
-    WSMETHOD POST DESCRIPTION "Sobrescreve a anotacao de um chamado (idCh) com o conteudo do po-rich-text"
-
-END WSRESTFUL
-
-WSMETHOD POST WSRECEIVE idCh, anotacao WSSERVICE CNSACHAMADOSANOTACAOSALVAR
+@Post("/CNSACHAMADOSANOTACAOSALVAR")
+User Function CNSA_CHAMADOS_ANOTACAO_SALVAR() As Logical
+    Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
-    ::SetContentType("application/json")
-    // CORS - NAO configurar aqui via ::SetHeader (metodo nao existe nessa
-    // classe do WSRESTFUL classico e causa erro 500 - ja tentamos e revertemos).
-    // O jeito certo e no appserver.ini, na secao [HTTPURI]/[HTTPENV] que mapeia
-    // o /rest deste servidor: adicionar CORSEnable=1 e AllowOrigin=* junto de
-    // URL=/rest, PrepareIn=..., Instances=... (e reiniciar o appserver).
-    aResultado := CNSA_ANOTACAO_SALVAR(AllTrim(::idCh), ::anotacao)
-    ::SetStatus(aResultado[1])
-    ::SetResponse(aResultado[2])
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
-Return .T.
+    aResultado := CNSA_ANOTACAO_SALVAR(AllTrim(jQuery:GetJsonText("idCh")), jQuery:GetJsonText("anotacao"))
+
+Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
 ////////////////////////////////////////////////////////////////////////////////
-// Grava a anotacao. NAO usa AllTrim no conteudo (::anotacao e recebido sem
-// trim no WSMETHOD acima de proposito) - o po-rich-text manda HTML, e trim
-// nas pontas de uma string HTML e inofensivo mas desnecessario; o parametro
-// e mantido intacto pra nao arriscar cortar uma tag.
+// Grava a anotacao. NAO usa AllTrim no conteudo (o valor de "anotacao" e
+// lido sem trim no @Post acima de proposito) - o po-rich-text manda HTML, e
+// trim nas pontas de uma string HTML e inofensivo mas desnecessario; o
+// parametro e mantido intacto pra nao arriscar cortar uma tag.
 //
 // FIX (acentos virando caractere de substituicao): DecodeUTF8 no conteudo
 // inteiro (HTML e texto juntos) - tags sao ASCII puro, DecodeUTF8 nao mexe
@@ -2271,9 +2104,9 @@ Return {500, '{"erro":"Erro desconhecido."}'}
 
 
 ////////////////////////////////////////////////////////////////////////////////
-// HISTORICO DE ANOTACOES (ZA2) - dois WSRESTFUL proprios (listar e incluir),
-// mesmo motivo dos outros pares deste arquivo (nao colocar 2 WSMETHOD no
-// mesmo WSRESTFUL). Substitui o uso de ZA1_ANOT (campo unico, sobrescrito a
+// HISTORICO DE ANOTACOES (ZA2) - dois endpoints proprios (listar e incluir),
+// mesmo motivo dos outros pares deste arquivo (nao colocar 2 verbos no
+// mesmo recurso). Substitui o uso de ZA1_ANOT (campo unico, sobrescrito a
 // cada save, sem historico) - pedido explicito: poder escrever mais de uma
 // anotacao por chamado. Reaproveita a MESMA tabela ZA2 que o CNSA001.PRW
 // classico ja usa pra isso (grid "Anotacoes/Interacoes", CNSA_INTERAGIR) -
@@ -2291,32 +2124,16 @@ Return {500, '{"erro":"Erro desconhecido."}'}
 //   ZA2_HORA   - hora (Character HH:MM, mesmo padrao de Z6_HMINI/Z6_HMFIM)
 //   ZA2_IDCH   - id do chamado (Numerico, mesmo padrao de Z6_CHAMADO)
 ////////////////////////////////////////////////////////////////////////////////
-WSRESTFUL CNSACHAMADOSANOTACOES DESCRIPTION "Lista o historico de anotacoes (ZA2) de um chamado" FORMAT APPLICATION_JSON
-
-    WSDATA idCh AS CHARACTER OPTIONAL
-
-    WSMETHOD GET DESCRIPTION "Lista as anotacoes (ZA2) de um chamado, mais antiga primeiro"
-
-END WSRESTFUL
-
-WSMETHOD GET WSRECEIVE idCh WSSERVICE CNSACHAMADOSANOTACOES
+@Get("/CNSACHAMADOSANOTACOES")
+User Function CNSA_CHAMADOS_ANOTACOES_LISTAR() As Logical
+    Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
-    ::SetContentType("application/json")
-    // CORS - NAO configurar aqui via ::SetHeader (metodo nao existe nessa
-    // classe do WSRESTFUL classico e causa erro 500 - ja tentamos e revertemos).
-    // O jeito certo e no appserver.ini, na secao [HTTPURI]/[HTTPENV] que mapeia
-    // o /rest deste servidor: adicionar CORSEnable=1 e AllowOrigin=* junto de
-    // URL=/rest, PrepareIn=..., Instances=... (e reiniciar o appserver).
-    // FIX (conflito de simbolo - 10 primeiros chars iguais a CNSA_ANOTACAO_
-    // SALVAR faziam o compilador confundir as duas funcoes): renomeado pra
-    // CNSA_ZA2LISTAR, prefixo CNSA_ZA2... distinto ja no 9o caractere de
-    // qualquer outra funcao deste arquivo (ver CNSA_ZA2_GRAVAR/CNSA_ZA2INCLUIR).
-    aResultado := CNSA_ZA2LISTAR(AllTrim(::idCh))
-    ::SetStatus(aResultado[1])
-    ::SetResponse(aResultado[2])
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
-Return .T.
+    aResultado := CNSA_ZA2LISTAR(AllTrim(jQuery:GetJsonText("idCh")))
+
+Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
 Static Function CNSA_ZA2LISTAR(cIdCh)
     Local oJson     := JsonObject():New()
@@ -2390,29 +2207,16 @@ Static Function CNSA_ZA2LISTAR(cIdCh)
 Return {500, '{"erro":"Erro desconhecido."}'}
 
 
-WSRESTFUL CNSACHAMADOSANOTACOESINCLUIR DESCRIPTION "Adiciona uma nova anotacao (ZA2) a um chamado, sem sobrescrever as anteriores" FORMAT APPLICATION_JSON
-
-    WSDATA idCh  AS CHARACTER OPTIONAL
-    WSDATA texto AS CHARACTER OPTIONAL
-
-    WSMETHOD POST DESCRIPTION "Adiciona uma anotacao nova ao historico do chamado (idCh)"
-
-END WSRESTFUL
-
-WSMETHOD POST WSRECEIVE idCh, texto WSSERVICE CNSACHAMADOSANOTACOESINCLUIR
+@Post("/CNSACHAMADOSANOTACOESINCLUIR")
+User Function CNSA_CHAMADOS_ANOTACOES_INCLUIR() As Logical
+    Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
-    ::SetContentType("application/json")
-    // CORS - NAO configurar aqui via ::SetHeader (metodo nao existe nessa
-    // classe do WSRESTFUL classico e causa erro 500 - ja tentamos e revertemos).
-    // O jeito certo e no appserver.ini, na secao [HTTPURI]/[HTTPENV] que mapeia
-    // o /rest deste servidor: adicionar CORSEnable=1 e AllowOrigin=* junto de
-    // URL=/rest, PrepareIn=..., Instances=... (e reiniciar o appserver).
-    aResultado := CNSA_ZA2INCLUIR(AllTrim(::idCh), DecodeUTF8(::texto))
-    ::SetStatus(aResultado[1])
-    ::SetResponse(aResultado[2])
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
-Return .T.
+    aResultado := CNSA_ZA2INCLUIR(AllTrim(jQuery:GetJsonText("idCh")), DecodeUTF8(jQuery:GetJsonText("texto")))
+
+Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
 ////////////////////////////////////////////////////////////////////////////////
 // Grava uma linha nova na ZA2 (nunca sobrescreve) - sequencia MAX+1 por
@@ -2452,8 +2256,6 @@ Return StrZero(nSeq, 3)
 ////////////////////////////////////////////////////////////////////////////////
 // Adiciona uma anotacao nova na ZA2 - NUNCA sobrescreve, sempre INSERT com
 // proxima sequencia (ver CNSA_ZA2_GRAVAR acima).
-// FIX: nome era CNSA_ANOTACOES_INCLUIR - 10 primeiros chars ("CNSA_ANOTA")
-// identicos a CNSA_ANOTACAO_SALVAR, o compilador confundia as duas.
 ////////////////////////////////////////////////////////////////////////////////
 Static Function CNSA_ZA2INCLUIR(cIdCh, cTexto)
     Local oJson      := JsonObject():New()
@@ -2500,4 +2302,3 @@ Static Function CNSA_ZA2INCLUIR(cIdCh, cTexto)
     End Sequence
 
 Return {500, '{"erro":"Erro desconhecido."}'}
-

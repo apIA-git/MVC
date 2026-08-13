@@ -1,5 +1,4 @@
 #include "PROTHEUS.CH"
-#include "RWMAKE.CH"
 #include "TOPCONN.CH"
 #include "TOTVS.CH"
 #include "tlpp-core.th"

@@ -1,34 +1,40 @@
-                                    ////////////////////////////////////////////////
-                                    //isto é um codigo que é para carregar no rest //
-                                    //todos as consultas padrao que preciso       //
-                                    //tecnico, CLILUPA, tarefa, projeto          //
-                                    //(pouichamados) + modulo, motivo, servico, //
-                                    //proposta (pouios)                        //
-                                    ////////////////////////////////////////////////
+////////////////////////////////////////////////
+//isto e um codigo que e para carregar no rest //
+//todos as consultas padrao que preciso       //
+//tecnico, CLILUPA, tarefa, projeto          //
+//(pouichamados) + modulo, motivo, servico, //
+//proposta (pouios)                        //
+////////////////////////////////////////////////
 
-#include "RESTFUL.CH"
 #include "PROTHEUS.CH"
-#include "RWMAKE.CH"
 #include "TOPCONN.CH"
 #include "TOTVS.CH"
+#include "tlpp-core.th"
+#INCLUDE 'tlpp-rest.th'
 
 ////////////////////////////////////////////////////////////////////////////////
-// ComponentesRest.prw
+// Apia-ComponentsRest.tlpp (ex ComponentesRest.prw)
 // Endpoints de apoio pras "lupas" (Consulta Padrao) do portal PO-UI - nao
 // existe F3 nativo em Angular, entao cada campo (Tecnico, Cliente, Projeto,
 // Tarefa) abre um modal que chama este REST e devolve o registro escolhido.
 //
-// Um WSMETHOD so, despachando por "tipo" - mesmo padrao ja validado em
-// CNSACHAMADOS (idCh/texto/status). NAO usa multiplos WSMETHOD/WSPATH no
-// mesmo WSRESTFUL - isso ja deu erro real de compilacao (C2051/C2006) em
-// outro arquivo deste projeto, entao evitamos repetir o mesmo risco aqui.
+// Migrado de WSRESTFUL/WSMETHOD pra anotacoes TLPP (@Get) - mesma URL, mesmo
+// verbo, mesmos parametros via querystring de sempre (zero mudanca de
+// contrato pro front). Logica interna 100% igual a antes (mesmas Static
+// Function CNSA_XXXLUPA) - so o wrapper de rota mudou.
+//
+// Um endpoint so, despachando por "tipo" - mesmo padrao ja validado em
+// Apia-Chamados.tlpp (idCh/texto/status). NAO usa multiplas rotas pro mesmo
+// recurso - isso ja deu erro real de compilacao (C2051/C2006) em outro
+// arquivo deste projeto (WSRESTFUL classico), entao evitamos repetir o mesmo
+// risco aqui.
 //
 // Tipos suportados hoje:
 // - Compartilhados entre pouichamados e pouios: tecnico (AA1), cliente (SA1),
-//   projeto (AF8) e tarefa (AF9 - depende do projeto, ver WSDATA "projeto" e
-//   CNSA_TARLUPA). Criados originalmente pro pouichamados, reaproveitados sem
-//   mudanca nenhuma pelo formulario de OS do pouios (Cliente/Analista/Projeto/
-//   Tarefa la usam os mesmos tipos).
+//   projeto (AF8) e tarefa (AF9 - depende do projeto, ver parametro "projeto"
+//   e CNSA_TARLUPA). Criados originalmente pro pouichamados, reaproveitados
+//   sem mudanca nenhuma pelo formulario de OS do pouios (Cliente/Analista/
+//   Projeto/Tarefa la usam os mesmos tipos).
 // - Exclusivos do pouios: modulo (SX5 tipo "Z2"), motivo (SX5 tipo "Z1"),
 //   servico (SB1) e proposta (SZ3, cascata por cliente). Ver secao
 //   "LUPAS EXCLUSIVAS DO POUIOS" mais abaixo.
@@ -44,26 +50,9 @@
 // e resposta 200 normal) pro front distinguir "lista vazia" de "erro real".
 ////////////////////////////////////////////////////////////////////////////////
 
-WSRESTFUL CNSACOMPONENTES DESCRIPTION "Consultas de apoio (lupas) para o portal PO-UI" FORMAT APPLICATION_JSON
-
-    WSDATA tipo    AS CHARACTER OPTIONAL
-    WSDATA filtro  AS CHARACTER OPTIONAL
-    // So usado quando tipo=tarefa - a tarefa (AF9) e sempre filha de um
-    // projeto (AF8), entao a lupa de tarefa exige o codigo do projeto ja
-    // selecionado no formulario (cascata Projeto -> Tarefa, confirmado por
-    // Henrique: "tarefa depende do projeto, o projeto tem uma tarefa x").
-    WSDATA projeto AS CHARACTER OPTIONAL
-    // So usados quando tipo=projeto - cascata Cliente -> Projeto (confirmado
-    // por Henrique: AF8_CLIENT + AF8_LOJA na AF8). Loja default "01" se vier
-    // vazia, mesmo padrao usado no resto do app.
-    WSDATA cliente      AS CHARACTER OPTIONAL
-    WSDATA lojaCliente  AS CHARACTER OPTIONAL
-
-    WSMETHOD GET DESCRIPTION "Busca tecnico, cliente, projeto ou tarefa por codigo/nome, para uso nas lupas do frontend"
-
-END WSRESTFUL
-
-WSMETHOD GET WSRECEIVE tipo, filtro, projeto, cliente, lojaCliente WSSERVICE CNSACOMPONENTES
+@Get("/CNSACOMPONENTES")
+User Function CNSA_COMPONENTES_LISTAR() As Logical
+    Local jQuery        := oRest:getQueryRequest() As Json
     Local cTipoParam    := ""
     Local cFiltroParam  := ""
     Local cProjetoParam := ""
@@ -75,28 +64,18 @@ WSMETHOD GET WSRECEIVE tipo, filtro, projeto, cliente, lojaCliente WSSERVICE CNS
     Local nI            := 0
     Local oErro         := Nil
 
-    ::SetContentType("application/json")
-    // CORS - NAO configurar aqui via ::SetHeader (metodo nao existe nessa
-    // classe do WSRESTFUL classico e causa erro 500 - ja tentamos e revertemos).
-    // Resolvido no appserver.ini da instancia rest-exclusivo (3624), secoes
-    // [HTTPURI] (/rest) e [HTTPURI2] (/api), com CORSEnable=1 AllowOrigin=*.
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     Begin Sequence
 
-        Default ::tipo         := ""
-        Default ::filtro       := ""
-        Default ::projeto      := ""
-        Default ::cliente      := ""
-        Default ::lojaCliente  := ""
-
-        // FIX (busca por nome acentuado, ex "João", nao batia): DecodeUTF8 no
+        // FIX (busca por nome acentuado, ex "Joao", nao batia): DecodeUTF8 no
         // filtro digitado antes de montar o LIKE - mesmo problema de
         // ANSI/UTF-8 do restante do app.
-        cTipoParam    := Lower(AllTrim(::tipo))
-        cFiltroParam  := DecodeUTF8(AllTrim(::filtro))
-        cProjetoParam := AllTrim(::projeto)
-        cClienteParam := AllTrim(::cliente)
-        cLojaParam    := AllTrim(::lojaCliente)
+        cTipoParam    := Lower(AllTrim(jQuery:GetJsonText("tipo")))
+        cFiltroParam  := DecodeUTF8(AllTrim(jQuery:GetJsonText("filtro")))
+        cProjetoParam := AllTrim(jQuery:GetJsonText("projeto"))
+        cClienteParam := AllTrim(jQuery:GetJsonText("cliente"))
+        cLojaParam    := AllTrim(jQuery:GetJsonText("lojaCliente"))
 
         Do Case
             // ---- LUPAS COMPARTILHADAS (pouichamados + pouios) ----
@@ -106,16 +85,12 @@ WSMETHOD GET WSRECEIVE tipo, filtro, projeto, cliente, lojaCliente WSSERVICE CNS
                 aItens := CNSA_CLILUPA(cFiltroParam)
             Case cTipoParam == "projeto"
                 If Empty(cClienteParam)
-                    ::SetStatus(400)
-                    ::SetResponse('{"resultado":false,"erro":"Informe o cliente (?cliente=000001) antes de buscar o projeto."}')
-                    Break
+                    Return oRest:setStatusResponse(400, '{"resultado":false,"erro":"Informe o cliente (?cliente=000001) antes de buscar o projeto."}')
                 EndIf
                 aItens := CNSA_PROJLUPA(cFiltroParam, cClienteParam, If(Empty(cLojaParam), "01", cLojaParam))
             Case cTipoParam == "tarefa"
                 If Empty(cProjetoParam)
-                    ::SetStatus(400)
-                    ::SetResponse('{"resultado":false,"erro":"Informe o projeto (?projeto=000001) antes de buscar a tarefa."}')
-                    Break
+                    Return oRest:setStatusResponse(400, '{"resultado":false,"erro":"Informe o projeto (?projeto=000001) antes de buscar a tarefa."}')
                 EndIf
                 aItens := CNSA_TARLUPA(cFiltroParam, cProjetoParam)
 
@@ -128,15 +103,11 @@ WSMETHOD GET WSRECEIVE tipo, filtro, projeto, cliente, lojaCliente WSSERVICE CNS
                 aItens := CNSA_SERVLUPA(cFiltroParam)
             Case cTipoParam == "proposta"
                 If Empty(cClienteParam)
-                    ::SetStatus(400)
-                    ::SetResponse('{"resultado":false,"erro":"Informe o cliente (?cliente=000001) antes de buscar a proposta."}')
-                    Break
+                    Return oRest:setStatusResponse(400, '{"resultado":false,"erro":"Informe o cliente (?cliente=000001) antes de buscar a proposta."}')
                 EndIf
                 aItens := CNSA_PROPLUPA(cFiltroParam, cClienteParam, If(Empty(cLojaParam), "01", cLojaParam))
             OtherWise
-                ::SetStatus(400)
-                ::SetResponse('{"resultado":false,"erro":"Informe um tipo valido (?tipo=tecnico, cliente, projeto, tarefa, modulo, motivo, servico ou proposta)."}')
-                Break
+                Return oRest:setStatusResponse(400, '{"resultado":false,"erro":"Informe um tipo valido (?tipo=tecnico, cliente, projeto, tarefa, modulo, motivo, servico ou proposta)."}')
         EndCase
 
         // Monta o array "items" na mao (nao aninha JsonObject dentro de
@@ -150,19 +121,17 @@ WSMETHOD GET WSRECEIVE tipo, filtro, projeto, cliente, lojaCliente WSSERVICE CNS
         Next nI
         cItensJson += "]"
 
-        cResposta := '{"resultado":' + IIf(Len(aItens) > 0, "true", "false") + ',"items":' + cItensJson + '}'
+        cResposta := '{"resultado":' + If(Len(aItens) > 0, "true", "false") + ',"items":' + cItensJson + '}'
 
-        ::SetStatus(200)
-        ::SetResponse(cResposta)
+        Return oRest:setStatusResponse(200, cResposta)
 
     Recover Using oErro
         If oErro != Nil
-            ::SetStatus(500)
-            ::SetResponse('{"resultado":false,"erro":"' + CNSA_JSONESC_COMP(EncodeUtf8(oErro:Description)) + '"}')
+            Return oRest:setStatusResponse(500, '{"resultado":false,"erro":"' + CNSA_JSONESC_COMP(EncodeUtf8(oErro:Description)) + '"}')
         EndIf
     End Sequence
 
-Return .T.
+Return oRest:setStatusResponse(500, '{"resultado":false,"erro":"Erro desconhecido."}')
 
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
@@ -173,7 +142,7 @@ Return .T.
 ////////////////////////////////////////////////////////////////////////////////
 
 ////////////////////////////////////////////////////////////////////////////////
-// Erro na query propaga sozinho pro Recover do WSMETHOD (que monta o 500 com
+// Erro na query propaga sozinho pro Recover do @Get (que monta o 500 com
 // a descricao real) - nao precisa de Begin/Recover proprio aqui.
 ////////////////////////////////////////////////////////////////////////////////
 Static Function CNSA_TECLUPA(cFiltro)
@@ -255,7 +224,7 @@ Return aRet
 // FIX (filtro por empresa/status - confirmado por Henrique): so mostra
 // projetos do cliente selecionado (AF8_CLIENT + AF8_LOJA) e SO os ativos
 // (AF8_FASE = "03" - mesma fase usada em CNSA_ASSUMIR pra liberar assumir
-// chamado). cCliente/cLoja SEMPRE preenchidos aqui (WSMETHOD ja bloqueia
+// chamado). cCliente/cLoja SEMPRE preenchidos aqui (@Get ja bloqueia
 // tipo=projeto sem cliente antes de chegar nesta funcao).
 ////////////////////////////////////////////////////////////////////////////////
 Static Function CNSA_PROJLUPA(cFiltro, cCliente, cLoja)
@@ -471,7 +440,7 @@ Return aRet
 ////////////////////////////////////////////////////////////////////////////////
 // AllTrim direto quebra se o campo vier NIL/tipo diferente de Character (por
 // exemplo linha com valor nulo no banco) - com filtro vazio a query varre
-// muito mais linhas de uma vez, entao qualquer linha "suja" faz o WSRESTFUL
+// muito mais linhas de uma vez, entao qualquer linha "suja" faz o endpoint
 // inteiro cair (erro nao capturavel pelo Begin/Recover). Blinda cada valor
 // antes de expor no JSON.
 //
