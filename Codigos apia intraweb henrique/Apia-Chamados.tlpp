@@ -14,58 +14,47 @@
 // ja devolviam {nStatusHttp, cCorpoJson} - so o wrapper de rota mudou de
 // WSRESTFUL/WSMETHOD/WSDATA/WSRECEIVE pra @Get/@Post + oRest).
 //
-// CNSACHAMADOS (listagem) e o unico endpoint que ainda busca dados via
-// FWRest():New(CNSA_FWMODEL_HOST) (FWModel remoto da ZA1) - mantido como
-// estava, nao faz parte desta migracao trocar essa origem de dados. O
-// FWRest local dessa rotina foi renomeado de oRest pra oRestZA1, ja que
-// "oRest" agora e o nome reservado do objeto global do motor TLPP REST
+// CNSACHAMADOS (listagem) consulta a ZA1 direto via BeginSql (Posicione pra
+// enriquecer tecnico/cliente/projeto/tarefa) - nao usa mais o FwModel remoto
+// (FWRest():New(CNSA_FWMODEL_HOST)/ZA1_PATH/ZA1_ID). Decisao consciente
+// (Henrique): essa origem de dados nao deve mais ser usada.
+// "oRest" e o nome reservado do objeto global do motor TLPP REST
 // (oRest:getQueryRequest()/oRest:setStatusResponse()) - mantido o nome
 // original em todas as outras rotinas (CNSA_TOKEN, CNSA_GERACHAM,
 // CNSA_MARCARLIDO, CNSA_ENVIAEMAIL), que sao Static Function comuns (Local
-// sempre blinda contra o global, sem colisao real).
-////////////////////////////////////////////////////////////////////////////////
 
 
 ////////////////////////////////////////////////////////////////////////////////
 // LISTAGEM / VISUALIZAR / PESQUISAR
 ////////////////////////////////////////////////////////////////////////////////
-@Get("/CNSACHAMADOS")
+@Get(endpoint="/CNSACHAMADOS")
 User Function CNSA_CHAMADOS_LISTAR() As Logical
     Local jQuery           := oRest:getQueryRequest() As Json
-    Local oJson             := JsonObject():New()
-    Local oFwResp           := JsonObject():New()
-    Local aRetorno          := {}
-    Local aResources        := {}
-    Local oResource         := Nil
-    Local oLinha            := Nil
-    Local oRestZA1          := Nil
-    Local aHead             := {}
-    Local nPagina           := 1
-    Local nTamanho          := 10
-    Local nStartIdx         := 1
-    Local nTotal            := 0
-    Local nI                := 0
-    Local nJ                := 0
-    Local nMeuParam         := 0
-    Local nSemRespParam     := 0
-    Local cStatusParam      := ""
-    Local cIdChParam        := ""
-    Local cTextoParam       := ""
-    Local cTextoEsc         := ""
-    Local cConsultorSessao  := ""
-    Local cFiltro           := ""
-    Local cGetParam         := ""
-    Local cResp             := ""
-    Local cJsonErr          := ""
-    Local cAuthValue        := ""
-    Local aCacheTec         := {}
-    Local aCacheCli         := {}
-    Local nPosCache         := 0
-    Local cCodConsul        := ""
-    Local cCodCli           := ""
-    Local cLoja             := ""
-    Local cNomeTec          := ""
-    Local cNomeCli          := ""
+    Local oJson            := JsonObject():New()
+    Local aRetorno         := {}
+    Local aTodos           := {}
+    Local aFiltrado        := {}
+    Local oLinha           := Nil
+    Local cAlias           := GetNextAlias()
+    Local nPagina          := 1
+    Local nTamanho         := 10
+    Local nStartIdx        := 1
+    Local nTotal           := 0
+    Local nI               := 0
+    Local nMeuParam        := 0
+    Local nSemRespParam    := 0
+    Local cStatusParam     := ""
+    Local cIdChParam       := ""
+    Local cTextoParam      := ""
+    Local cConsultorSessao := ""
+    Local aCacheTec        := {}
+    Local aCacheCli        := {}
+    Local nPosCache        := 0
+    Local cCodConsul       := ""
+    Local cCodCli          := ""
+    Local cLoja            := ""
+    Local cNomeTec         := ""
+    Local cNomeCli         := ""
     // FIX (Projeto/Tarefa "sumindo" toda vez que abre Editar): a listagem so
     // devolvia idCh/assunto/status/tecnico/cliente/data - nunca os codigos de
     // tipo/projeto/tarefa/email/cliente. O front (abrirEditar) sempre abria
@@ -74,34 +63,45 @@ User Function CNSA_CHAMADOS_LISTAR() As Logical
     // obrigado a reselecionar Cliente -> Projeto -> Tarefa do zero em TODA
     // edicao, mesmo pra corrigir so o assunto. Mesma familia do bug ja
     // corrigido pra codConsultor - agora fechando os campos que faltavam.
-    Local cTipo             := ""
-    Local cProjeto          := ""
-    Local cTarefa           := ""
-    Local cEmailCli         := ""
-    Local cNomeProj         := ""
-    Local cNomeTaf          := ""
-    Local aCacheProj        := {}
-    Local aCacheTaf         := {}
-    Local oErro             := Nil
-    Local aCondicoes        := {}
-    Local aStatusLista      := {}
-    Local aStatusCond       := {}
-    Local cCondStatus       := ""
-    Local nAnoParam         := 0
-    Local nMesParam         := 0
-    Local dIni              := CToD("")
-    Local dFimExclusivo     := CToD("")
-    Local nMesFimCalc       := 0
-    Local nAnoFimCalc       := 0
-    Local nTotalProbe       := 0
-    Local nStartIdxReal     := 0
-    Local nCountReal        := 0
-    Local cGetParamProbe    := ""
-    Local oRestProbe        := Nil
-    Local cRespProbe        := ""
-    Local oProbeResp        := Nil
-    Local aInvertido        := {}
-    Local nK                := 0
+    Local cTipo            := ""
+    Local cProjeto         := ""
+    Local cTarefa          := ""
+    Local cEmailCli        := ""
+    Local cNomeProj        := ""
+    Local cNomeTaf         := ""
+    Local aCacheProj       := {}
+    Local aCacheTaf        := {}
+    Local oErro            := Nil
+    Local aStatusLista     := {}
+    Local nAnoParam        := 0
+    Local nMesParam        := 0
+    Local dIni             := CToD("")
+    Local dFimExclusivo    := CToD("")
+    Local nMesFimCalc      := 0
+    Local nAnoFimCalc      := 0
+    // Flags/valores efetivos da consulta SQL - cada filtro opcional vira um
+    // par (flag numerica "ativo" + valor), e a condicao no WHERE e sempre
+    // "(%Exp:flag% <> 1 OR <comparacao com o valor>)" - assim o no-op depende
+    // so da flag numerica (0/1), nunca de "string vazia == NULL" (truque que
+    // so funciona em Oracle, quebra em outros bancos). Prioridade de sempre:
+    // idCh > texto > (meus/semResponsavel/status/ano-mes combinados por AND).
+    Local lTemIdCh         := .F.
+    Local lTemTexto        := .F.
+    Local lOutros          := .F.
+    Local nIdChAtivo       := 0
+    Local nTextoAtivo      := 0
+    Local nConsulAtivo     := 0
+    Local cIdChFiltro      := ""
+    Local cTextoFiltro     := ""
+    Local cConsulFiltro    := ""
+    Local nSemRespFiltro   := 0
+    Local nTemPeriodo      := 0
+    Local dIniFiltro       := CToD("01/01/2000")
+    Local dFimFiltro       := CToD("01/01/2000")
+    Local cStatusCsv       := ""
+    Local nMinRow          := 0
+    Local nMaxRow          := 0
+    Local nTotalSql        := 0
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -114,172 +114,163 @@ User Function CNSA_CHAMADOS_LISTAR() As Logical
         nStartIdx     := (nPagina - 1) * nTamanho + 1
         nMeuParam     := CNSA_JSONNUM(jQuery, "meus")
         nSemRespParam := CNSA_JSONNUM(jQuery, "semResponsavel")
-        cStatusParam  := AllTrim(jQuery:GetJsonText("status"))
-        cIdChParam    := AllTrim(jQuery:GetJsonText("idCh"))
+        cStatusParam  := AllTrim(CNSA_JSONSTR(jQuery,"status"))
+        cIdChParam    := AllTrim(CNSA_JSONSTR(jQuery,"idCh"))
         nAnoParam     := CNSA_JSONNUM(jQuery, "ano")
         nMesParam     := CNSA_JSONNUM(jQuery, "mes")
         // FIX (busca por assunto acentuado nao batia): DecodeUTF8 no texto
         // da pesquisa livre antes de montar o LIKE.
-        cTextoParam   := DecodeUTF8(AllTrim(jQuery:GetJsonText("texto")))
+        cTextoParam   := DecodeUTF8(AllTrim(CNSA_JSONSTR(jQuery,"texto")))
 
         If nMeuParam == 1
             cConsultorSessao := Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC")
         EndIf
 
-        If !Empty(cIdChParam)
-            cFiltro := "ZA1_IDCH = '" + cIdChParam + "'"
+        lTemIdCh  := !Empty(cIdChParam)
+        lTemTexto := !lTemIdCh .And. !Empty(cTextoParam)
+        lOutros   := !lTemIdCh .And. !lTemTexto
 
-        ElseIf !Empty(cTextoParam)
-            cTextoEsc := StrTran(cTextoParam, "'", "''")
-            cFiltro := "ZA1_ASSUNT LIKE '%" + cTextoEsc + "%'"
+        nIdChAtivo    := If(lTemIdCh, 1, 0)
+        cIdChFiltro   := If(lTemIdCh, cIdChParam, "")
+        nTextoAtivo   := If(lTemTexto, 1, 0)
+        cTextoFiltro  := If(lTemTexto, "%" + Upper(cTextoParam) + "%", "")
+        nConsulAtivo  := If(lOutros .And. nMeuParam == 1 .And. !Empty(cConsultorSessao), 1, 0)
+        cConsulFiltro := If(nConsulAtivo == 1, cConsultorSessao, "")
+        nSemRespFiltro := If(lOutros .And. nSemRespParam == 1, 1, 0)
+        // FIX: cada categoria de filtro (meus / semResponsavel / status) e uma
+        // condicao PROPRIA, todas unidas por AND - so o OR acontece DENTRO da
+        // lista de status (ex: "2,3"), aplicado em memoria apos o fetch (ver
+        // abaixo). Antes (via FwModel remoto), tudo virava OR entre si, o que
+        // fazia "meus=1&status=2" devolver TODOS os chamados com status 2 de
+        // QUALQUER tecnico, em vez de somente os do tecnico logado.
+        cStatusCsv := If(lOutros, cStatusParam, "")
 
+        // Filtro por mes/ano (ZA1_DATA) - mesmo padrao do ano/mes que
+        // CNSAAGENDAMENTOS ja usa pra Z6_DTAGE. So filtra se ano E mes
+        // vierem preenchidos (mes sem ano ou vice-versa e ignorado).
+        If lOutros .And. nAnoParam > 0 .And. nMesParam >= 1 .And. nMesParam <= 12
+            dIni        := StoD(StrZero(nAnoParam,4) + StrZero(nMesParam,2) + "01")
+            nMesFimCalc := nMesParam + 1
+            nAnoFimCalc := nAnoParam
+            If nMesFimCalc > 12
+                nMesFimCalc := 1
+                nAnoFimCalc++
+            EndIf
+            dFimExclusivo := StoD(StrZero(nAnoFimCalc,4) + StrZero(nMesFimCalc,2) + "01")
+            nTemPeriodo   := 1
+            dIniFiltro    := dIni
+            dFimFiltro    := dFimExclusivo - 1
+        EndIf
+        // Sem ano/mes informado (Henrique, 2026-08-14): SEM filtro de data
+        // nenhum, traz todos os chamados que existirem - nTemPeriodo fica 0
+        // e o BETWEEN vira no-op no WHERE.
+
+        // FIX (timeout/lentidao extrema, mesmo problema do Apia-OS.tlpp):
+        // sem paginacao real, o SELECT varria a ZA1 inteira em cada request.
+        // Paginacao real agora via ROWNUM (Oracle) - so busca no banco as
+        // linhas da pagina pedida. Excecao: filtro de status (lista OR, so
+        // da pra aplicar em memoria - ver bloco abaixo) busca tudo primeiro.
+        If Empty(cStatusCsv)
+            nMinRow := nStartIdx - 1
+            nMaxRow := nStartIdx + nTamanho - 1
         Else
-            // FIX: cada categoria de filtro (meus / semResponsavel / status) entra
-            // como uma condicao PROPRIA em aCondicoes, e essas condicoes sao unidas
-            // por AND. O OR so acontece DENTRO da lista de status (ex: "2,3").
-            // Antes, tudo (incluindo as categorias entre si) era unido por OR, o que
-            // fazia "meus=1&status=2" devolver TODOS os chamados com status 2 de
-            // QUALQUER tecnico, em vez de somente os do tecnico logado.
-            If nMeuParam == 1 .And. !Empty(cConsultorSessao)
-                AAdd(aCondicoes, "ZA1_CONSUL = '" + cConsultorSessao + "'")
+            nMinRow := 0
+            nMaxRow := 999999999
+        EndIf
+
+        // Direto na ZA1 (sem mais depender do FwModel remoto - decisao do
+        // Henrique/chefe: essa origem de dados nao deve mais ser usada).
+        // %Exp: e bind de parametro de verdade (sem risco de injecao), entao
+        // o texto livre nao precisa mais de escape manual de aspas.
+        // FIX (total sempre 0 - suposicao anterior estava ERRADA, confirmado
+        // via debug): ZA1_FILIAL grava BRANCO de verdade (101 chamados reais
+        // com filial "  ") - ZA1 e tabela compartilhada entre filiais, nao
+        // exclusiva feito a SZ1 (Apia-OS.tlpp). xFilial("ZA1") retornando
+        // branco nesse ambiente ja era o valor CERTO - o "fix" anterior que
+        // trocou pra cFilAnt ("01") que zerava a lista, revertido.
+        //
+        // FIX (pedido Henrique, 2026-08-14, mesmo padrao do Apia-OS.tlpp):
+        // filtrando por ano+mes sem achar nenhum chamado no periodo, refaz a
+        // MESMA consulta sem o filtro de data (nTemPeriodo:=0) em vez de
+        // devolver tela vazia - mantem nMinRow/nMaxRow (paginacao real).
+        Do While .T.
+            BeginSql Alias cAlias
+            SELECT * FROM (
+                SELECT ZA1Q.*, ROWNUM AS ZA1_RNUM
+                FROM (
+                    SELECT ZA1_IDCH, ZA1_ASSUNT, ZA1_STATUS, ZA1_CONSUL, ZA1_CLIENT, ;
+                        ZA1_LOJA, ZA1_TIPO, ZA1_PROJ, ZA1_TAREFA, ZA1_EMAIL, ZA1_DATA, ;
+                        COUNT(*) OVER() AS ZA1_TOTAL
+                    FROM %Table:ZA1% ZA1
+                    WHERE ZA1_FILIAL = %xFilial:ZA1%
+                      AND %NotDel%
+                      AND (%Exp:nIdChAtivo% <> 1 OR ZA1_IDCH = %Exp:cIdChFiltro%)
+                      AND (%Exp:nTextoAtivo% <> 1 OR UPPER(ZA1_ASSUNT) LIKE %Exp:cTextoFiltro%)
+                      AND (%Exp:nConsulAtivo% <> 1 OR ZA1_CONSUL = %Exp:cConsulFiltro%)
+                      AND (%Exp:nSemRespFiltro% <> 1 OR ZA1_CONSUL = ' ')
+                      AND (%Exp:nTemPeriodo% <> 1 OR ZA1_DATA BETWEEN %Exp:dIniFiltro% AND %Exp:dFimFiltro%)
+                    ORDER BY ZA1_IDCH DESC
+                ) ZA1Q
+                WHERE ROWNUM <= %Exp:nMaxRow%
+            )
+            WHERE ZA1_RNUM > %Exp:nMinRow%
+        EndSql
+
+        If !(cAlias)->(Eof())
+            nTotalSql := (cAlias)->ZA1_TOTAL
+        EndIf
+
+        aTodos := {}
+        While !(cAlias)->(Eof())
+            AAdd(aTodos, {;
+                AllTrim((cAlias)->ZA1_IDCH), ;
+                AllTrim((cAlias)->ZA1_ASSUNT), ;
+                AllTrim((cAlias)->ZA1_STATUS), ;
+                AllTrim((cAlias)->ZA1_CONSUL), ;
+                AllTrim((cAlias)->ZA1_CLIENT), ;
+                AllTrim((cAlias)->ZA1_LOJA), ;
+                AllTrim((cAlias)->ZA1_TIPO), ;
+                AllTrim((cAlias)->ZA1_PROJ), ;
+                AllTrim((cAlias)->ZA1_TAREFA), ;
+                AllTrim((cAlias)->ZA1_EMAIL), ;
+                (cAlias)->ZA1_DATA ;
+            })
+            (cAlias)->(DbSkip())
+        EndDo
+        (cAlias)->(DbCloseArea())
+
+            If nTemPeriodo == 1 .And. nTotalSql == 0
+                nTemPeriodo := 0
+                aTodos      := {}
+                Loop
             EndIf
+            Exit
+        EndDo
 
-            If nSemRespParam == 1
-                AAdd(aCondicoes, "ZA1_CONSUL = ' '")
-            EndIf
-
-            If !Empty(cStatusParam)
-                aStatusLista := StrTokArr(cStatusParam, ",")
-                aStatusCond  := {}
-                For nJ := 1 To Len(aStatusLista)
-                    AAdd(aStatusCond, "ZA1_STATUS = '" + AllTrim(aStatusLista[nJ]) + "'")
-                Next nJ
-
-                cCondStatus := ""
-                For nJ := 1 To Len(aStatusCond)
-                    cCondStatus += If(nJ > 1, " OR ", "") + aStatusCond[nJ]
-                Next nJ
-
-                If Len(aStatusCond) > 1
-                    AAdd(aCondicoes, "(" + cCondStatus + ")")
-                Else
-                    AAdd(aCondicoes, cCondStatus)
+        // Lista de status (OR entre eles) - so entra em jogo no ramo "outros"
+        // (idCh/texto tem prioridade e ignoram esse filtro), aplicado em
+        // memoria porque e uma lista de tamanho variavel (nao da pra montar
+        // IN (...) dinamico numa BeginSql, que e um template fixo).
+        If !Empty(cStatusCsv)
+            aStatusLista := StrTokArr(cStatusCsv, ",")
+            aFiltrado    := {}
+            For nI := 1 To Len(aTodos)
+                If AScan(aStatusLista, {|x| AllTrim(x) == aTodos[nI][3]}) > 0
+                    AAdd(aFiltrado, aTodos[nI])
                 EndIf
-            EndIf
-
-            // Filtro por mes/ano (ZA1_DATA) - mesmo padrao do ano/mes que
-            // CNSAAGENDAMENTOS ja usa pra Z6_DTAGE. So filtra se ano E mes
-            // vierem preenchidos (mes sem ano ou vice-versa e ignorado).
-            If nAnoParam > 0 .And. nMesParam >= 1 .And. nMesParam <= 12
-                dIni       := StoD(StrZero(nAnoParam,4) + StrZero(nMesParam,2) + "01")
-                nMesFimCalc := nMesParam + 1
-                nAnoFimCalc := nAnoParam
-                If nMesFimCalc > 12
-                    nMesFimCalc := 1
-                    nAnoFimCalc++
-                EndIf
-                dFimExclusivo := StoD(StrZero(nAnoFimCalc,4) + StrZero(nMesFimCalc,2) + "01")
-                AAdd(aCondicoes, "ZA1_DATA BETWEEN '" + DToS(dIni) + "' AND '" + DToS(dFimExclusivo - 1) + "'")
-            EndIf
-
-            cFiltro := ""
-            For nI := 1 To Len(aCondicoes)
-                cFiltro += If(nI > 1, " AND ", "") + aCondicoes[nI]
             Next nI
-        EndIf
-
-        cAuthValue := GETMV("MV_CNSAAUT")
-
-        AAdd(aHead, "tenantid: " + cEmpAnt + "," + cFilAnt)
-        AAdd(aHead, "Authorization: Basic " + cAuthValue)
-
-        // Mais recente primeiro: o FwModel nao aceita parametro de sort
-        // (testado - ?sort= e ignorado, sempre devolve em ordem crescente de
-        // insercao). Pra inverter de verdade (nao so a pagina atual, cross-
-        // pagina tambem), precisa saber o total ANTES de pedir a pagina real
-        // - por isso essa sondagem (count=1) so pra descobrir nTotal, com o
-        // MESMO filtro da consulta de verdade.
-        cGetParamProbe := "startindex=1&count=1"
-        If !Empty(cFiltro)
-            cGetParamProbe += "&filter=" + CNSA_URLENC(cFiltro)
-        EndIf
-
-        oRestProbe := FWRest():New(CNSA_FWMODEL_HOST)
-        oRestProbe:SetPath(CNSA_FWMODEL_ZA1_PATH)
-
-        If !oRestProbe:Get(aHead, cGetParamProbe)
-            FreeObj(oRestProbe)
-            Return oRest:setStatusResponse(502, '{"erro":"' + CNSA_JSONESC(oRestProbe:GetLastError()) + '"}')
-        EndIf
-
-        cRespProbe := oRestProbe:GetResult()
-        FreeObj(oRestProbe)
-
-        oProbeResp := JsonObject():New()
-        cJsonErr   := oProbeResp:FromJson(cRespProbe)
-        If ValType(cJsonErr) == "C" .And. !Empty(cJsonErr)
-            Return oRest:setStatusResponse(500, '{"erro":"Falha no parse do retorno (sondagem): ' + CNSA_JSONESC(cJsonErr) + '"}')
-        EndIf
-
-        nTotalProbe := If(ValType(oProbeResp['total']) == 'N', oProbeResp['total'], 0)
-
-        // Calcula o pedaco INVERTIDO: pagina 1 = os ultimos nTamanho
-        // registros do total (mais recentes), pagina 2 = os anteriores a
-        // esses, etc. Se a "pagina invertida" comer o inicio da lista
-        // inteira (ultima pagina, parcial), ajusta startindex pra 1 e reduz
-        // count na mesma proporcao - senao pediria indice negativo/invalido.
-        nStartIdxReal := nTotalProbe - (nPagina * nTamanho) + 1
-        nCountReal    := nTamanho
-        If nStartIdxReal < 1
-            nCountReal    := nTamanho + nStartIdxReal - 1
-            nStartIdxReal := 1
-        EndIf
-
-        If nCountReal < 1
-            // Pagina pedida vai alem do total (nao ha mais registros) -
-            // devolve lista vazia direto, sem chamar o FwModel de novo.
-            nTotal     := nTotalProbe
-            aResources := {}
+            aTodos := aFiltrado
+            nTotal := Len(aTodos)
         Else
-            cGetParam := "startindex=" + AllTrim(Str(nStartIdxReal)) + "&count=" + AllTrim(Str(nCountReal))
-            If !Empty(cFiltro)
-                cGetParam += "&filter=" + CNSA_URLENC(cFiltro)
-            EndIf
-
-            oRestZA1 := FWRest():New(CNSA_FWMODEL_HOST)
-            oRestZA1:SetPath(CNSA_FWMODEL_ZA1_PATH)
-
-            If !oRestZA1:Get(aHead, cGetParam)
-                FreeObj(oRestZA1)
-                Return oRest:setStatusResponse(502, '{"erro":"' + CNSA_JSONESC(oRestZA1:GetLastError()) + '"}')
-            EndIf
-
-            cResp := oRestZA1:GetResult()
-            FreeObj(oRestZA1)
-
-            cJsonErr := oFwResp:FromJson(cResp)
-            If ValType(cJsonErr) == "C" .And. !Empty(cJsonErr)
-                Return oRest:setStatusResponse(500, '{"erro":"Falha no parse do retorno: ' + CNSA_JSONESC(cJsonErr) + '"}')
-            EndIf
-
-            nTotal     := If(ValType(oFwResp['total'])     == 'N', oFwResp['total'],     0)
-            aResources := If(ValType(oFwResp['resources']) == 'A', oFwResp['resources'], {})
-
-            // O pedaco pedido ainda vem em ordem crescente (ex.: itens
-            // 88..97) - inverte aqui pra o mais recente (97) aparecer
-            // primeiro na pagina.
-            aInvertido := {}
-            For nK := Len(aResources) To 1 Step -1
-                AAdd(aInvertido, aResources[nK])
-            Next nK
-            aResources := aInvertido
+            // Sem filtro de status: aTodos ja e so a pagina (ROWNUM no SQL) -
+            // nTotal vem do COUNT(*) OVER() calculado no banco.
+            nTotal := nTotalSql
         EndIf
 
-        For nI := 1 To Len(aResources)
-            oResource := aResources[nI]
-            cCodConsul := AllTrim(CNSA_CAMPO_ZA1(oResource, "ZA1_CONSUL"))
-            cCodCli    := AllTrim(CNSA_CAMPO_ZA1(oResource, "ZA1_CLIENT"))
-            cLoja      := AllTrim(CNSA_CAMPO_ZA1(oResource, "ZA1_LOJA"))
+        For nI := If(Empty(cStatusCsv), 1, nStartIdx) To If(Empty(cStatusCsv), Len(aTodos), Min(nStartIdx + nTamanho - 1, nTotal))
+            cCodConsul := aTodos[nI][4]
+            cCodCli    := aTodos[nI][5]
+            cLoja      := aTodos[nI][6]
 
             nPosCache := AScan(aCacheTec, {|x| x[1] == cCodConsul})
             If nPosCache > 0
@@ -301,10 +292,10 @@ User Function CNSA_CHAMADOS_LISTAR() As Logical
                 AAdd(aCacheCli, {cCodCli + cLoja, cNomeCli})
             EndIf
 
-            cTipo     := AllTrim(CNSA_CAMPO_ZA1(oResource, "ZA1_TIPO"))
-            cProjeto  := AllTrim(CNSA_CAMPO_ZA1(oResource, "ZA1_PROJ"))
-            cTarefa   := AllTrim(CNSA_CAMPO_ZA1(oResource, "ZA1_TAREFA"))
-            cEmailCli := AllTrim(CNSA_CAMPO_ZA1(oResource, "ZA1_EMAIL"))
+            cTipo     := aTodos[nI][7]
+            cProjeto  := aTodos[nI][8]
+            cTarefa   := aTodos[nI][9]
+            cEmailCli := aTodos[nI][10]
 
             // ASSUNCAO A VALIDAR (Henrique, confere isso): estou usando
             // Posicione("AF8", 1, ...) e Posicione("AF9", 1, ...) assumindo
@@ -341,9 +332,9 @@ User Function CNSA_CHAMADOS_LISTAR() As Logical
             // puros (idCh, status, codConsultor, codCliente, lojaCliente,
             // tipo, projeto, tarefa, emailCliente, data) nao precisam.
             oLinha := JsonObject():New()
-            oLinha['idCh']         := AllTrim(CNSA_CAMPO_ZA1(oResource, "ZA1_IDCH"))
-            oLinha['assunto']      := EncodeUtf8(AllTrim(CNSA_CAMPO_ZA1(oResource, "ZA1_ASSUNT")))
-            oLinha['status']       := AllTrim(CNSA_CAMPO_ZA1(oResource, "ZA1_STATUS"))
+            oLinha['idCh']         := aTodos[nI][1]
+            oLinha['assunto']      := EncodeUtf8(aTodos[nI][2])
+            oLinha['status']       := aTodos[nI][3]
             oLinha['tecnico']      := EncodeUtf8(cNomeTec)
             oLinha['codConsultor'] := cCodConsul
             oLinha['cliente']      := EncodeUtf8(cNomeCli)
@@ -355,7 +346,12 @@ User Function CNSA_CHAMADOS_LISTAR() As Logical
             oLinha['tarefa']       := cTarefa
             oLinha['nomeTarefa']   := EncodeUtf8(cNomeTaf)
             oLinha['emailCliente'] := cEmailCli
-            oLinha['data']         := CNSA_DATA_ISO_ZA1(AllTrim(CNSA_CAMPO_ZA1(oResource, "ZA1_DATA")))
+            // FIX (argument #0 error, expected D->C, function dtos):
+            // ZA1_DATA vindo do cursor da consulta paginada (ROWNUM/subquery
+            // aninhada) as vezes chega como Character em vez de Date - mesmo
+            // problema ja tratado em Apia-OS.tlpp/CNSA_OS_DATA_ISO. DToS() so
+            // aceita Date, entao so converte quando realmente for Date.
+            oLinha['data']         := CNSA_DATA_ISO_ZA1(If(ValType(aTodos[nI][11]) == "D", DToS(aTodos[nI][11]), cValToChar(aTodos[nI][11])))
             AAdd(aRetorno, oLinha)
         Next nI
 
@@ -379,59 +375,16 @@ Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
 // ASSUMIR - @Post, mesma URL/querystring de sempre (POST /CNSACHAMADOSASSUMIR
 // ?idCh=...). Logica real em CNSA_ASSUMIR, mais abaixo neste arquivo.
 ////////////////////////////////////////////////////////////////////////////////
-@Post("/CNSACHAMADOSASSUMIR")
+@Post(endpoint="/CNSACHAMADOSASSUMIR")
 User Function CNSA_CHAMADOS_ASSUMIR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
-    aResultado := CNSA_ASSUMIR(AllTrim(jQuery:GetJsonText("idCh")))
+    aResultado := CNSA_ASSUMIR(AllTrim(CNSA_JSONSTR(jQuery,"idCh")))
 
 Return oRest:setStatusResponse(aResultado[1], aResultado[2])
-
-////////////////////////////////////////////////////////////////////////////////
-Static Function CNSA_CAMPO_ZA1(oResource, cNome)
-    Local aModels := Nil
-    Local aFields := Nil
-    Local oModel  := Nil
-    Local oField  := Nil
-    Local nM      := 0
-    Local nF      := 0
-
-    If ValType(oResource) != 'J'
-        Return ''
-    EndIf
-
-    aModels := oResource['models']
-    If ValType(aModels) != 'A'
-        Return ''
-    EndIf
-
-    For nM := 1 To Len(aModels)
-        oModel := aModels[nM]
-        If ValType(oModel) == 'J' .And. AllTrim(oModel['id']) == CNSA_FWMODEL_ZA1_ID
-            aFields := oModel['fields']
-            If ValType(aFields) == 'A'
-                For nF := 1 To Len(aFields)
-                    oField := aFields[nF]
-                    If ValType(oField) == 'J' .And. AllTrim(oField['id']) == cNome
-                        Do Case
-                            Case ValType(oField['value']) == 'C'
-                                Return oField['value']
-                            Case ValType(oField['value']) == 'N'
-                                Return cValToChar(oField['value'])
-                            Case ValType(oField['value']) == 'D'
-                                Return DToS(oField['value'])
-                            OtherWise
-                                Return ''
-                        EndCase
-                    EndIf
-                Next nF
-            EndIf
-        EndIf
-    Next nM
-Return ''
 
 ////////////////////////////////////////////////////////////////////////////////
 Static Function CNSA_DATA_ISO_ZA1(cData)
@@ -502,10 +455,25 @@ Static Function CNSA_JSONNUM(jDados, cCampo)
 Return Val(cValToChar(xVal))
 
 ////////////////////////////////////////////////////////////////////////////////
+// FIX (total sempre 0 - causa raiz real, mesmo bug do Apia-OS.tlpp):
+// CNSA_JSONSTR(jQuery,"campo") devolve a STRING literal "null" quando o
+// parametro nao veio na querystring, em vez de string vazia -
+// AllTrim(GetJsonText(...)) nunca fica Empty(). Indexacao direta
+// jDados[cCampo] (mesmo padrao do CNSA_JSONNUM acima) devolve Nil de
+// verdade pra campo ausente - usar sempre isso em vez de GetJsonText().
+////////////////////////////////////////////////////////////////////////////////
+Static Function CNSA_JSONSTR(jDados, cCampo)
+    Local xVal := jDados[cCampo]
+    If xVal == Nil .Or. ValType(xVal) != "C"
+        Return ""
+    EndIf
+Return xVal
+
+////////////////////////////////////////////////////////////////////////////////
 // EXCLUIR - @Post, mesma URL/querystring de sempre (POST /CNSACHAMADOSEXCLUIR
 // ?idCh=...&motivo=...). Logica real em CNSA_EXCLUIR, logo abaixo.
 ////////////////////////////////////////////////////////////////////////////////
-@Post("/CNSACHAMADOSEXCLUIR")
+@Post(endpoint="/CNSACHAMADOSEXCLUIR")
 User Function CNSA_CHAMADOS_EXCLUIR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
@@ -516,7 +484,7 @@ User Function CNSA_CHAMADOS_EXCLUIR() As Logical
     // CNSA_ENVIAEMAIL que faz EncodeUtf8 no corpo inteiro depois): DecodeUTF8
     // aqui deixa o motivo em ANSI igual ao resto do texto antes de montar
     // o corpo do e-mail em CNSA_CANCEL_FRONT.
-    aResultado := CNSA_EXCLUIR(AllTrim(jQuery:GetJsonText("idCh")), DecodeUTF8(AllTrim(jQuery:GetJsonText("motivo"))))
+    aResultado := CNSA_EXCLUIR(AllTrim(CNSA_JSONSTR(jQuery,"idCh")), DecodeUTF8(AllTrim(CNSA_JSONSTR(jQuery,"motivo"))))
 
 Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
@@ -714,6 +682,132 @@ User Function CNSA_JOB_SINCEMAIL()
 Return
 
 ////////////////////////////////////////////////////////////////////////////////
+// FIX PONTUAL (rodar 1 vez, depois apagar): corrige assunto (ZA1) e
+// anotacoes (ZA2) dos chamados criados por e-mail ANTES do fix do
+// DecodeUTF8 duplicado em CNSA_GERACHAM - texto ja gravado torto no banco
+// (ex "NÃƒÂ£o" em vez de "Não"). DecodeUTF8() aplicado repetidamente
+// enquanto o texto encolhe: texto ja correto nao muda de tamanho (para
+// na 1a volta, no-op), texto corrompido em camadas encolhe a cada volta
+// ate estabilizar no texto certo - seguro rodar em cima de registro que
+// ja estava certo.
+////////////////////////////////////////////////////////////////////////////////
+Static Function CNSA_FIXUTF8_LOOP(cTexto)
+    Local cAnterior   := ""
+    Local cDecodado   := ""
+    Local nTentativas := 0
+
+    If Empty(cTexto)
+        Return cTexto
+    EndIf
+
+    While nTentativas < 5
+        cAnterior := cTexto
+        cDecodado := DecodeUTF8(cTexto)
+        If ValType(cDecodado) != "C" .Or. Empty(cDecodado) .Or. Len(cDecodado) >= Len(cAnterior)
+            Exit
+        EndIf
+        cTexto := cDecodado
+        nTentativas++
+    EndDo
+
+Return cTexto
+
+@Post(endpoint="/CNSAFIXEMAILUTF8")
+User Function CNSA_FIXEMAILUTF8() As Logical
+    Local cAlias       := GetNextAlias()
+    Local cAliasZA2    := ""
+    Local aChamados    := {}
+    Local aNotas       := {}
+    Local nI           := 0
+    Local nJ           := 0
+    Local cAssuntoNovo := ""
+    Local cDescriNovo  := ""
+    Local cDescriEsc   := ""
+    Local nFixAssunto  := 0
+    Local nFixAnot     := 0
+    Local nChamN       := 0
+    Local oJson        := JsonObject():New()
+    Local oErro        := Nil
+
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
+
+    Begin Sequence
+
+        BeginSql Alias cAlias
+            SELECT ZA1_IDCH, ZA1_ASSUNT
+            FROM %Table:ZA1% ZA1
+            WHERE ZA1_FILIAL = %xFilial:ZA1%
+              AND ZA1_MAILID <> ' '
+              AND %NotDel%
+        EndSql
+
+        While !(cAlias)->(Eof())
+            AAdd(aChamados, {AllTrim((cAlias)->ZA1_IDCH), (cAlias)->ZA1_ASSUNT})
+            (cAlias)->(DbSkip())
+        EndDo
+        (cAlias)->(DbCloseArea())
+
+        For nI := 1 To Len(aChamados)
+            cAssuntoNovo := CNSA_FIXUTF8_LOOP(aChamados[nI][2])
+            If cAssuntoNovo != aChamados[nI][2]
+                dbSelectArea("ZA1")
+                ZA1->(DbSetOrder(1))
+                If ZA1->(DbSeek(xFilial("ZA1") + aChamados[nI][1]))
+                    RecLock("ZA1", .F.)
+                        ZA1->ZA1_ASSUNT := cAssuntoNovo
+                    ZA1->(MsUnlock())
+                    nFixAssunto++
+                EndIf
+            EndIf
+
+            // ZA2 nao tem precedente de DbSetOrder/DbSeek neste arquivo (so
+            // BeginSql) - atualiza direto via TCSqlExec pela chave
+            // FILIAL+IDCH+IDGRID vinda da propria consulta, sem depender de
+            // qual e a ordem real do indice.
+            nChamN    := Val(aChamados[nI][1])
+            aNotas    := {}
+            cAliasZA2 := GetNextAlias()
+            BeginSql Alias cAliasZA2
+                SELECT ZA2_IDGRID, ZA2_DESCRI
+                FROM %Table:ZA2% ZA2
+                WHERE ZA2_FILIAL = %xFilial:ZA2%
+                  AND ZA2_IDCH   = %Exp:nChamN%
+                  AND %NotDel%
+            EndSql
+            While !(cAliasZA2)->(Eof())
+                AAdd(aNotas, {AllTrim((cAliasZA2)->ZA2_IDGRID), (cAliasZA2)->ZA2_DESCRI})
+                (cAliasZA2)->(DbSkip())
+            EndDo
+            (cAliasZA2)->(DbCloseArea())
+
+            For nJ := 1 To Len(aNotas)
+                cDescriNovo := CNSA_FIXUTF8_LOOP(aNotas[nJ][2])
+                If cDescriNovo != aNotas[nJ][2]
+                    cDescriEsc := StrTran(cDescriNovo, "'", "''")
+                    TcSqlExec("UPDATE " + RetSqlName("ZA2") + " SET ZA2_DESCRI = '" + cDescriEsc + "'" + ;
+                        " WHERE ZA2_FILIAL = '" + xFilial("ZA2") + "'" + ;
+                        " AND ZA2_IDCH = " + AllTrim(Str(nChamN)) + ;
+                        " AND ZA2_IDGRID = '" + aNotas[nJ][1] + "'" + ;
+                        " AND D_E_L_E_T_ = ' '")
+                    nFixAnot++
+                EndIf
+            Next nJ
+        Next nI
+
+        oJson['sucesso']         := .T.
+        oJson['totalChamados']   := Len(aChamados)
+        oJson['assuntosCorrigidos'] := nFixAssunto
+        oJson['anotacoesCorrigidas'] := nFixAnot
+
+        Return oRest:setStatusResponse(200, oJson:ToJson())
+
+    Recover Using oErro
+        Return oRest:setStatusResponse(500, '{"erro":"' + CNSA_JSONESC(EncodeUtf8(oErro:Description)) + '"}')
+    End Sequence
+
+Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
+
+////////////////////////////////////////////////////////////////////////////////
 // Le a caixa apia@apia.com.br (Graph) e cria um chamado (ZA1) por e-mail nao
 // lido ainda nao processado. Porte do CNSA_GERACHAM (CNSA001.PRW), com 1
 // diferenca proposital: aqui SEMPRE marca o e-mail como lido no Graph depois
@@ -787,11 +881,13 @@ Static Function CNSA_GERACHAM()
         EndIf
 
         If ValType(oMsg:GetJsonObject("subject")) == "C"
+            // FIX (assunto/corpo/nome chegando com acento corrompido, tipo
+            // "NÃƒÂ£o" em vez de "Não"): JsonObject:FromJson() ja decodifica
+            // o UTF-8 do JSON do Graph pra ANSI sozinho - chamar DecodeUTF8()
+            // de novo em cima de texto que ja esta em ANSI trata os bytes
+            // ANSI como se ainda fossem UTF-8, corrompendo o acento. Usa o
+            // valor direto do JSON, sem decodificar de novo.
             cAssunto := oMsg:GetJsonObject("subject")
-            cDec     := DecodeUTF8(cAssunto)
-            If ValType(cDec) == "C" .And. !Empty(cDec)
-                cAssunto := cDec
-            EndIf
             cAssunto := AllTrim(cAssunto)
             While .T.
                 If Upper(Left(cAssunto, 4)) == "RES:" .Or. Upper(Left(cAssunto, 4)) == "ENC:" .Or. Upper(Left(cAssunto, 4)) == "FWD:"
@@ -1012,7 +1108,7 @@ Return {cCod, cLoja}
 // UTF-8): o corpo HTML e o assunto sao montados com texto vindo direto de
 // tabelas do Protheus (AA1_NOMTEC, A1_NOME, ZA1_ASSUNT etc.), que fica em
 // ANSI (CP1252) na memoria do ADVPL. O Graph espera o JSON em UTF-8 - sem
-// essa conversao, nome/assunto com acento (�, �, �...) chegam corrompidos
+// essa conversao, nome/assunto com acento (�, �, �...) chegam corrompidos
 // no e-mail. EncodeUtf8() (funcao nativa AdvPL) faz a conversao ANSI -> UTF-8
 // bytes antes do JSON-escape. Ponto unico de conversao (aqui), assim quem
 // monta cCorpo/cAssunto (CNSA_EMAIL_FRONT, CNSA_CANCEL_FRONT) nao precisa se
@@ -1268,14 +1364,14 @@ Return CNSA_ENVIAEMAIL(cEmailTec, "Chamado Designado " + cIdCh, cCorpo, "apia@ap
 
 ////////////////////////////////////////////////////////////////////////////////
 // INCLUIR - @Post, mesma URL/querystring de sempre (POST
-// /CNSACHAMADOSINCLUIR). Logica real em CNSA_INCLUIR, logo abaixo.
+// /CNSA_CHAMADOS_INCLUIR). Logica real em CNSA_INCLUIR, logo abaixo.
 //
 // Campos obrigatorios/opcionais confirmados pela tela real "Registro de
 // Chamados - INCLUIR" do CNSA001 (Henrique mandou print): obrigatorios sao
 // Assunto, Dt Abertura, Status (fixo "1" aqui, nem exposto), Tipo, Projeto
 // e Tarefa; Cliente/Loja/Consultor/Email do Cliente sao opcionais.
 ////////////////////////////////////////////////////////////////////////////////
-@Post("/CNSACHAMADOSINCLUIR")
+@Post(endpoint="/CNSACHAMADOSINCLUIR")
 User Function CNSA_CHAMADOS_INCLUIR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
@@ -1287,9 +1383,9 @@ User Function CNSA_CHAMADOS_INCLUIR() As Logical
     // internamente pelo ADVPL) sozinho - precisa de DecodeUTF8 explicito no
     // texto livre (assunto), mesmo padrao ja usado em CNSA_GERACHAM pro
     // assunto do e-mail.
-    aResultado := CNSA_INCLUIR(DecodeUTF8(AllTrim(jQuery:GetJsonText("assunto"))), AllTrim(jQuery:GetJsonText("dtAbertura")), AllTrim(jQuery:GetJsonText("tipo")), ;
-        AllTrim(jQuery:GetJsonText("codCliente")), AllTrim(jQuery:GetJsonText("lojaCliente")), AllTrim(jQuery:GetJsonText("emailCliente")), ;
-        AllTrim(jQuery:GetJsonText("codConsultor")), AllTrim(jQuery:GetJsonText("projeto")), AllTrim(jQuery:GetJsonText("tarefa")))
+    aResultado := CNSA_INCLUIR(DecodeUTF8(AllTrim(CNSA_JSONSTR(jQuery,"assunto"))), AllTrim(CNSA_JSONSTR(jQuery,"dtAbertura")), AllTrim(CNSA_JSONSTR(jQuery,"tipo")), ;
+        AllTrim(CNSA_JSONSTR(jQuery,"codCliente")), AllTrim(CNSA_JSONSTR(jQuery,"lojaCliente")), AllTrim(CNSA_JSONSTR(jQuery,"emailCliente")), ;
+        AllTrim(CNSA_JSONSTR(jQuery,"codConsultor")), AllTrim(CNSA_JSONSTR(jQuery,"projeto")), AllTrim(CNSA_JSONSTR(jQuery,"tarefa")))
 
 Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
@@ -1398,7 +1494,7 @@ Return {500, '{"erro":"Erro desconhecido."}'}
 
 ////////////////////////////////////////////////////////////////////////////////
 // ALTERAR - @Post, mesma URL/querystring de sempre (POST
-// /CNSACHAMADOSALTERAR).
+// /CNSA_CHAMADOS_ALTERAR).
 //
 // FIX (pedido "Editar deve ficar exatamente igual ao Incluir, mesma
 // assinatura de metodos e estrutura" - confirmado por Henrique: "igual no
@@ -1409,7 +1505,7 @@ Return {500, '{"erro":"Erro desconhecido."}'}
 // comportamento de antes, so que agora vale pra todos os campos, nao so
 // assunto/cliente.
 ////////////////////////////////////////////////////////////////////////////////
-@Post("/CNSACHAMADOSALTERAR")
+@Post(endpoint="/CNSACHAMADOSALTERAR")
 User Function CNSA_CHAMADOS_ALTERAR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
@@ -1417,9 +1513,9 @@ User Function CNSA_CHAMADOS_ALTERAR() As Logical
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     // FIX (mesmo problema de acentos do Incluir) - DecodeUTF8 no assunto.
-    aResultado := CNSA_ALTERAR(AllTrim(jQuery:GetJsonText("idCh")), DecodeUTF8(AllTrim(jQuery:GetJsonText("assunto"))), AllTrim(jQuery:GetJsonText("dtAbertura")), AllTrim(jQuery:GetJsonText("tipo")), ;
-        AllTrim(jQuery:GetJsonText("codCliente")), AllTrim(jQuery:GetJsonText("lojaCliente")), AllTrim(jQuery:GetJsonText("emailCliente")), AllTrim(jQuery:GetJsonText("codConsultor")), ;
-        AllTrim(jQuery:GetJsonText("projeto")), AllTrim(jQuery:GetJsonText("tarefa")), AllTrim(jQuery:GetJsonText("limparCliente")) == "1", AllTrim(jQuery:GetJsonText("limparConsultor")) == "1")
+    aResultado := CNSA_ALTERAR(AllTrim(CNSA_JSONSTR(jQuery,"idCh")), DecodeUTF8(AllTrim(CNSA_JSONSTR(jQuery,"assunto"))), AllTrim(CNSA_JSONSTR(jQuery,"dtAbertura")), AllTrim(CNSA_JSONSTR(jQuery,"tipo")), ;
+        AllTrim(CNSA_JSONSTR(jQuery,"codCliente")), AllTrim(CNSA_JSONSTR(jQuery,"lojaCliente")), AllTrim(CNSA_JSONSTR(jQuery,"emailCliente")), AllTrim(CNSA_JSONSTR(jQuery,"codConsultor")), ;
+        AllTrim(CNSA_JSONSTR(jQuery,"projeto")), AllTrim(CNSA_JSONSTR(jQuery,"tarefa")), AllTrim(CNSA_JSONSTR(jQuery,"limparCliente")) == "1", AllTrim(CNSA_JSONSTR(jQuery,"limparConsultor")) == "1")
 
 Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
@@ -1589,7 +1685,7 @@ Return {500, '{"erro":"Erro desconhecido."}'}
 // Data/Tecnico/Sequencia/Inicio/Termino/Cliente/Loja sao os campos com
 // asterisco vermelho (obrigatorios) na tela real - o resto e opcional.
 ////////////////////////////////////////////////////////////////////////////////
-@Post("/CNSACHAMADOSAGENDAR")
+@Post(endpoint="/CNSACHAMADOSAGENDAR")
 User Function CNSA_CHAMADOS_AGENDAR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
@@ -1597,11 +1693,11 @@ User Function CNSA_CHAMADOS_AGENDAR() As Logical
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     // FIX (mesmo problema de acentos do Incluir/Alterar) - DecodeUTF8 na descricao.
-    aResultado := CNSA_AGENDAR(AllTrim(jQuery:GetJsonText("idCh")), AllTrim(jQuery:GetJsonText("dataInicio")), AllTrim(jQuery:GetJsonText("dataFim")), ;
-        AllTrim(jQuery:GetJsonText("codTecnico")), AllTrim(jQuery:GetJsonText("horaInicio")), AllTrim(jQuery:GetJsonText("horaFim")), AllTrim(jQuery:GetJsonText("codCliente")), ;
-        AllTrim(jQuery:GetJsonText("lojaCliente")), DecodeUTF8(AllTrim(jQuery:GetJsonText("descricao"))), AllTrim(jQuery:GetJsonText("confirmacao")), AllTrim(jQuery:GetJsonText("turno")), ;
-        AllTrim(jQuery:GetJsonText("agInterna")), AllTrim(jQuery:GetJsonText("agCobravel")), AllTrim(jQuery:GetJsonText("tipoAgenda")), AllTrim(jQuery:GetJsonText("projeto")), ;
-        AllTrim(jQuery:GetJsonText("revisao")), AllTrim(jQuery:GetJsonText("tarefa")), AllTrim(jQuery:GetJsonText("tipoHora")), DecodeUTF8(AllTrim(jQuery:GetJsonText("codAgendador"))))
+    aResultado := CNSA_AGENDAR(AllTrim(CNSA_JSONSTR(jQuery,"idCh")), AllTrim(CNSA_JSONSTR(jQuery,"dataInicio")), AllTrim(CNSA_JSONSTR(jQuery,"dataFim")), ;
+        AllTrim(CNSA_JSONSTR(jQuery,"codTecnico")), AllTrim(CNSA_JSONSTR(jQuery,"horaInicio")), AllTrim(CNSA_JSONSTR(jQuery,"horaFim")), AllTrim(CNSA_JSONSTR(jQuery,"codCliente")), ;
+        AllTrim(CNSA_JSONSTR(jQuery,"lojaCliente")), DecodeUTF8(AllTrim(CNSA_JSONSTR(jQuery,"descricao"))), AllTrim(CNSA_JSONSTR(jQuery,"confirmacao")), AllTrim(CNSA_JSONSTR(jQuery,"turno")), ;
+        AllTrim(CNSA_JSONSTR(jQuery,"agInterna")), AllTrim(CNSA_JSONSTR(jQuery,"agCobravel")), AllTrim(CNSA_JSONSTR(jQuery,"tipoAgenda")), AllTrim(CNSA_JSONSTR(jQuery,"projeto")), ;
+        AllTrim(CNSA_JSONSTR(jQuery,"revisao")), AllTrim(CNSA_JSONSTR(jQuery,"tarefa")), AllTrim(CNSA_JSONSTR(jQuery,"tipoHora")), DecodeUTF8(AllTrim(CNSA_JSONSTR(jQuery,"codAgendador"))))
 
 Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
@@ -1677,7 +1773,7 @@ Return aConflitos
 
 ////////////////////////////////////////////////////////////////////////////////
 // Logica real do Agendar - fora do @Post, devolve {nStatusHttp, cCorpoJson}.
-// Ver bloco de comentarios acima (endpoint CNSACHAMADOSAGENDAR) pra lista
+// Ver bloco de comentarios acima (endpoint CNSA_CHAMADOS_AGENDAR) pra lista
 // completa de assuncoes de nome de campo, e o spec em
 // docs/superpowers/specs/2026-07-30-agendamento-sequence-race-fix-design.md
 // pro design completo (lock por tecnico, sobreposicao, retry, resposta
@@ -1889,14 +1985,14 @@ Return {500, '{"erro":"Erro desconhecido."}'}
 // se o Agendar foi feito com intervalo de datas) - mostra Data, Cliente,
 // Horario, Tecnico e Descricao de cada um, conforme pedido.
 ////////////////////////////////////////////////////////////////////////////////
-@Get("/CNSACHAMADOSVERAGENDA")
+@Get(endpoint="/CNSACHAMADOSVERAGENDA")
 User Function CNSA_CHAMADOS_VERAGENDA() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
-    aResultado := CNSA_VERAGENDA(AllTrim(jQuery:GetJsonText("idCh")))
+    aResultado := CNSA_VERAGENDA(AllTrim(CNSA_JSONSTR(jQuery,"idCh")))
 
 Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
@@ -1994,14 +2090,14 @@ Return {500, '{"erro":"Erro desconhecido."}'}
 // validado explicitamente em CNSA_ANOTACAO_SALVAR antes de gravar, pra nao
 // salvar HTML cortado no meio de uma tag.
 ////////////////////////////////////////////////////////////////////////////////
-@Get("/CNSACHAMADOSANOTACAO")
+@Get(endpoint="/CNSACHAMADOSANOTACAO")
 User Function CNSA_CHAMADOS_ANOTACAO_LER() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
-    aResultado := CNSA_ANOT_LER(AllTrim(jQuery:GetJsonText("idCh")))
+    aResultado := CNSA_ANOT_LER(AllTrim(CNSA_JSONSTR(jQuery,"idCh")))
 
 Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
@@ -2036,14 +2132,14 @@ Static Function CNSA_ANOT_LER(cIdCh)
 Return {500, '{"erro":"Erro desconhecido."}'}
 
 
-@Post("/CNSACHAMADOSANOTACAOSALVAR")
+@Post(endpoint="/CNSACHAMADOSANOTACAOSALVAR")
 User Function CNSA_CHAMADOS_ANOTACAO_SALVAR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
-    aResultado := CNSA_ANOTACAO_SALVAR(AllTrim(jQuery:GetJsonText("idCh")), jQuery:GetJsonText("anotacao"))
+    aResultado := CNSA_ANOTACAO_SALVAR(AllTrim(CNSA_JSONSTR(jQuery,"idCh")), CNSA_JSONSTR(jQuery,"anotacao"))
 
 Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
@@ -2124,14 +2220,14 @@ Return {500, '{"erro":"Erro desconhecido."}'}
 //   ZA2_HORA   - hora (Character HH:MM, mesmo padrao de Z6_HMINI/Z6_HMFIM)
 //   ZA2_IDCH   - id do chamado (Numerico, mesmo padrao de Z6_CHAMADO)
 ////////////////////////////////////////////////////////////////////////////////
-@Get("/CNSACHAMADOSANOTACOES")
+@Get(endpoint="/CNSACHAMADOSANOTACOES")
 User Function CNSA_CHAMADOS_ANOTACOES_LISTAR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
-    aResultado := CNSA_ZA2LISTAR(AllTrim(jQuery:GetJsonText("idCh")))
+    aResultado := CNSA_ZA2LISTAR(AllTrim(CNSA_JSONSTR(jQuery,"idCh")))
 
 Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
@@ -2207,14 +2303,14 @@ Static Function CNSA_ZA2LISTAR(cIdCh)
 Return {500, '{"erro":"Erro desconhecido."}'}
 
 
-@Post("/CNSACHAMADOSANOTACOESINCLUIR")
+@Post(endpoint="/CNSACHAMADOSANOTACOESINCLUIR")
 User Function CNSA_CHAMADOS_ANOTACOES_INCLUIR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
-    aResultado := CNSA_ZA2INCLUIR(AllTrim(jQuery:GetJsonText("idCh")), DecodeUTF8(jQuery:GetJsonText("texto")))
+    aResultado := CNSA_ZA2INCLUIR(AllTrim(CNSA_JSONSTR(jQuery,"idCh")), DecodeUTF8(CNSA_JSONSTR(jQuery,"texto")))
 
 Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 

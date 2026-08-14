@@ -35,7 +35,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 // LISTAGEM / VISUALIZAR / PESQUISAR
 ////////////////////////////////////////////////////////////////////////////////
-@Get("/CNSAOS")
+@Get(endpoint="/CNSAOS")
 User Function CNSA_OS_LISTAR() As Logical
     Local jQuery         := oRest:getQueryRequest() As Json
     Local oJson          := JsonObject():New()
@@ -48,10 +48,6 @@ User Function CNSA_OS_LISTAR() As Logical
     Local nStartIdx      := 1
     Local nTotal         := 0
     Local nI             := 0
-    Local nAnoParam      := 0
-    Local nMesParam      := 0
-    Local cDataIniParam  := ""
-    Local cDataFimParam  := ""
     Local cDataOsParam   := ""
     Local cOsParam       := ""
     Local cTextoParam    := ""
@@ -60,6 +56,10 @@ User Function CNSA_OS_LISTAR() As Logical
     Local cAnalistaParam := ""
     Local dDataIni       := CToD("")
     Local dDataFim       := CToD("")
+    Local nTemPeriodo    := 0
+    Local nMinRow        := 0
+    Local nMaxRow        := 0
+    Local nTotalSql      := 0
     Local cAlias         := GetNextAlias()
     Local oErro          := Nil
 
@@ -72,51 +72,45 @@ User Function CNSA_OS_LISTAR() As Logical
         nTamanho     := CNSA002_JSONNUM(jQuery, "tamanho")
         nTamanho     := If(nTamanho < 1 .Or. nTamanho > 100, 10, nTamanho)
         nStartIdx    := (nPagina - 1) * nTamanho + 1
-        cOsParam     := AllTrim(jQuery:GetJsonText("os"))
+        cOsParam     := AllTrim(CNSA002_JSONSTR(jQuery,"os"))
         // FIX (busca por descricao acentuada nao bate): DecodeUTF8 no texto
         // da pesquisa livre antes de montar o LIKE, mesmo padrao ja usado
         // em CNSACHAMADOS/CNSACOMPONENTES.
-        cTextoParam    := DecodeUTF8(AllTrim(jQuery:GetJsonText("texto")))
+        cTextoParam    := DecodeUTF8(AllTrim(CNSA002_JSONSTR(jQuery,"texto")))
         cTextoLike     := Upper(cTextoParam)
-        cClienteParam  := AllTrim(jQuery:GetJsonText("cliente"))
-        cAnalistaParam := AllTrim(jQuery:GetJsonText("analista"))
-        nAnoParam      := CNSA002_JSONNUM(jQuery, "ano")
-        nMesParam      := CNSA002_JSONNUM(jQuery, "mes")
-        cDataIniParam  := AllTrim(jQuery:GetJsonText("dataIni"))
-        cDataFimParam  := AllTrim(jQuery:GetJsonText("dataFim"))
-        cDataOsParam   := AllTrim(jQuery:GetJsonText("dataOs"))
+        cClienteParam  := AllTrim(CNSA002_JSONSTR(jQuery,"cliente"))
+        cAnalistaParam := AllTrim(CNSA002_JSONSTR(jQuery,"analista"))
+        cDataOsParam   := AllTrim(CNSA002_JSONSTR(jQuery,"dataOs"))
 
-        // FIX (lista trazendo TUDO desde 2004, confirmado em producao - SZ1
-        // e tabela historica grande): sem numero de OS especifico, so traz
-        // ano atual -2 ate +1 por padrao (confirmado por Henrique: com ano
-        // atual 2026, mostra 2024/2025/2026/2027). Buscar por numero de OS
-        // (?os=) ignora a janela e acha mesmo uma OS antiga. Informando "ano"
-        // (combo no front), filtra so aquele ano especifico.
-        //
-        // Prioridade: dataOs (campo "Data OS" da Busca Avancada, data exata)
-        // > dataIni+dataFim (range livre) > ano+mes > ano > janela padrao.
+        // Unico filtro de data que o front (cns003.ts) manda de verdade e
+        // "dataOs" (campo "Data OS" da Busca Avancada, data exata) - ano/mes/
+        // dataIni/dataFim removidos (2026-08-14): nunca existiu campo nenhum
+        // no PO-UI que mandasse esses parametros, so codigo morto. Sem
+        // dataOs: SEM filtro de data nenhum, traz todas as OS que existirem -
+        // nTemPeriodo fica 0 e o BETWEEN vira no-op no WHERE.
         If !Empty(cDataOsParam)
-            dDataIni := StoD(StrTran(cDataOsParam, "-", ""))
-            dDataFim := dDataIni
-        ElseIf !Empty(cDataIniParam) .And. !Empty(cDataFimParam)
-            dDataIni := StoD(StrTran(cDataIniParam, "-", ""))
-            dDataFim := StoD(StrTran(cDataFimParam, "-", ""))
-        ElseIf nAnoParam > 0 .And. nMesParam >= 1 .And. nMesParam <= 12
-            // Ultimo dia do mes = primeiro dia do mes seguinte menos 1 (mesmo
-            // truque ja usado em CNSAAGENDAMENTOS/CNSACHAMADOS pra Z6_DTAGE/
-            // ZA1_DATA - evita tratar Fev/Dez como caso especial).
-            dDataIni := StoD(StrZero(nAnoParam, 4) + StrZero(nMesParam, 2) + "01")
-            If nMesParam == 12
-                dDataFim := StoD(StrZero(nAnoParam + 1, 4) + "0101") - 1
-            Else
-                dDataFim := StoD(StrZero(nAnoParam, 4) + StrZero(nMesParam + 1, 2) + "01") - 1
-            EndIf
-        ElseIf nAnoParam > 0
-            dDataIni := StoD(StrZero(nAnoParam, 4) + "0101")
-            dDataFim := StoD(StrZero(nAnoParam, 4) + "1231")
+            dDataIni    := StoD(StrTran(cDataOsParam, "-", ""))
+            dDataFim    := dDataIni
+            nTemPeriodo := 1
+        EndIf
+
+        // FIX (timeout/lentidao extrema, mais de 90s sem responder): sem
+        // filtro de data (pedido do Henrique de mostrar todas as OS que
+        // existirem), o SELECT sem paginacao real varria a SZ1 inteira
+        // (historico desde 2004) em cada request - While/AAdd linha a linha
+        // em ADVPL interpretado. Paginacao real agora no proprio SQL via
+        // ROWNUM (Oracle) - so busca no banco exatamente as linhas da
+        // pagina pedida. Excecao: filtro de texto livre (Z1_SERV, Memo) so
+        // da pra aplicar em memoria (ver FIX ORA-00932 abaixo) - nesse caso
+        // busca tudo (nMinRow/nMaxRow cobrindo o resultado inteiro) e pagina
+        // em memoria como antes, unico jeito correto de nao perder nenhuma
+        // linha que bate no texto mas cai fora da pagina "crua" do banco.
+        If Empty(cTextoLike)
+            nMinRow := nStartIdx - 1
+            nMaxRow := nStartIdx + nTamanho - 1
         Else
-            dDataIni := StoD(StrZero(Year(Date()) - 2, 4) + "0101")
-            dDataFim := StoD(StrZero(Year(Date()) + 1, 4) + "1231")
+            nMinRow := 0
+            nMaxRow := 999999999
         EndIf
 
         // BeginSql/EndSql e um template FIXO (os tokens %Table:%/%xFilial:%/
@@ -146,31 +140,57 @@ User Function CNSA_OS_LISTAR() As Logical
         // do TOP nesse tipo de campo). Saiu da SELECT - lido a parte via
         // Posicione (acesso nativo na tabela, que le Memo sem problema),
         // ver CNSA_OSDESC mais abaixo.
-        BeginSql Alias cAlias
-            SELECT Z1_OS, Z1_DTDIGIT, Z1_CLI, Z1_LOJA, Z1_USR, Z1_MODULO, Z1_MOTIV, ;
-                Z1_TIPO, Z1_DTOS, Z1_INTERNO, Z1_HRINI, Z1_INI, Z1_HRFIM, Z1_FIM, ;
-                Z1_TRANS, Z1_PREVIST, Z1_HRTOT, Z1_TOTAL, Z1_TEC, Z1_NUMPRO, Z1_PV, ;
-                Z1_ALMOCO, Z1_PROJET, Z1_REVISA, Z1_TAREFA, Z1_CHPSD, Z1_CHHDK, Z1_OSDESE, ;
-                Z1_LIN, Z1_VLRHR, Z1_APROVAD, Z1_FATURAR
-            FROM %Table:SZ1% SZ1
-            WHERE Z1_FILIAL = %xFilial:SZ1%
-              AND %NotDel%
-              // FIX (lista sempre vazia, sem erro nenhum - confirmado em
-              // producao): Oracle trata string vazia como NULL, e
-              // "NULL = qualquer coisa" nunca e verdadeiro - a comparacao
-              // "%Exp:cOsParam% = ''" nunca virava no-op de verdade, entao
-              // TODA linha caia fora do filtro mesmo sem nenhum parametro
-              // informado. "IS NULL" e o jeito certo de testar "vazio" aqui.
-              AND (%Exp:cOsParam% IS NULL OR Z1_OS = %Exp:cOsParam%)
-              AND (%Exp:cClienteParam% IS NULL OR Z1_CLI = %Exp:cClienteParam%)
-              AND (%Exp:cAnalistaParam% IS NULL OR Z1_TEC = %Exp:cAnalistaParam%)
-              AND (%Exp:cOsParam% IS NOT NULL OR Z1_DTOS BETWEEN %Exp:dDataIni% AND %Exp:dDataFim%)
-            ORDER BY Z1_DTOS DESC, Z1_OS DESC
+        // FIX (total sempre 0): xFilial("SZ1") devolve branco nesse ambiente
+        // (mesmo problema confirmado via debug em Apia-Chamados.tlpp/ZA1),
+        // mas a coluna Z1_FILIAL grava a filial real ("01") - usa cFilAnt
+        // (filial da sessao) direto em vez de xFilial(), filial continua
+        // obrigatoria no filtro.
+        //
+        // FIX (pedido Henrique, 2026-08-14): filtrando por Data OS especifica
+        // (dataOs) sem achar nenhuma OS naquele dia, refaz a MESMA consulta
+        // sem o filtro de data (nTemPeriodo:=0) em vez de devolver tela
+        // vazia - so roda a segunda vez quando a primeira realmente veio
+        // zerada, e mantem nMinRow/nMaxRow (paginacao real no SQL), nunca
+        // busca tudo de uma vez so pra cobrir esse caso.
+        Do While .T.
+            BeginSql Alias cAlias
+            SELECT * FROM (
+                SELECT OSQ.*, ROWNUM AS OS_RNUM
+                FROM (
+                    SELECT Z1_OS, Z1_DTDIGIT, Z1_CLI, Z1_LOJA, Z1_USR, Z1_MODULO, Z1_MOTIV, ;
+                        Z1_TIPO, Z1_DTOS, Z1_INTERNO, Z1_HRINI, Z1_INI, Z1_HRFIM, Z1_FIM, ;
+                        Z1_TRANS, Z1_PREVIST, Z1_HRTOT, Z1_TOTAL, Z1_TEC, Z1_NUMPRO, Z1_PV, ;
+                        Z1_ALMOCO, Z1_PROJET, Z1_REVISA, Z1_TAREFA, Z1_CHPSD, Z1_CHHDK, Z1_OSDESE, ;
+                        Z1_LIN, Z1_VLRHR, Z1_APROVAD, Z1_FATURAR, ;
+                        COUNT(*) OVER() AS OS_TOTAL
+                    FROM %Table:SZ1% SZ1
+                    WHERE Z1_FILIAL = %Exp:cFilAnt%
+                      AND %NotDel%
+                      // FIX (lista sempre vazia, sem erro nenhum - confirmado em
+                      // producao): Oracle trata string vazia como NULL, e
+                      // "NULL = qualquer coisa" nunca e verdadeiro - a comparacao
+                      // "%Exp:cOsParam% = ''" nunca virava no-op de verdade, entao
+                      // TODA linha caia fora do filtro mesmo sem nenhum parametro
+                      // informado. "IS NULL" e o jeito certo de testar "vazio" aqui.
+                      AND (%Exp:cOsParam% IS NULL OR Z1_OS = %Exp:cOsParam%)
+                      AND (%Exp:cClienteParam% IS NULL OR Z1_CLI = %Exp:cClienteParam%)
+                      AND (%Exp:cAnalistaParam% IS NULL OR Z1_TEC = %Exp:cAnalistaParam%)
+                      AND (%Exp:cOsParam% IS NOT NULL OR %Exp:nTemPeriodo% <> 1 OR Z1_DTOS BETWEEN %Exp:dDataIni% AND %Exp:dDataFim%)
+                    ORDER BY Z1_DTOS DESC, Z1_OS DESC
+                ) OSQ
+                WHERE ROWNUM <= %Exp:nMaxRow%
+            )
+            WHERE OS_RNUM > %Exp:nMinRow%
         EndSql
 
-        // Pequeno volume esperado pra OS (bem longe do problema de escala da
-        // SZ6 em CNSAAGENDAMENTOS) - traz tudo filtrado e pagina em memoria,
-        // evita paginacao nativa em SQL (LIMIT/OFFSET varia por dialeto).
+        If !(cAlias)->(Eof())
+            nTotalSql := (cAlias)->OS_TOTAL
+        EndIf
+
+        // Sem texto livre: o cursor ja traz so a pagina pedida (ROWNUM
+        // acima). Com texto livre: traz tudo que bate nos outros filtros -
+        // o filtro de Z1_SERV (Memo) so da pra aplicar aqui em memoria (ver
+        // FIX ORA-00932 abaixo), entao pagina manualmente depois.
         While !(cAlias)->(Eof())
             AAdd(aTodos, {;
                 AllTrim((cAlias)->Z1_OS), ;
@@ -211,8 +231,18 @@ User Function CNSA_OS_LISTAR() As Logical
         EndDo
         (cAlias)->(DbCloseArea())
 
+            If nTemPeriodo == 1 .And. nTotalSql == 0
+                nTemPeriodo := 0
+                aTodos      := {}
+                Loop
+            EndIf
+            Exit
+        EndDo
+
         // Filtro de texto livre (Z1_SERV/descricao) em memoria - ver FIX
-        // ORA-00932 acima, campo Memo nao aceita LIKE/UPPER no SQL.
+        // ORA-00932 acima, campo Memo nao aceita LIKE/UPPER no SQL. So entra
+        // aqui quando cTextoLike preenchido (nMaxRow grande acima trouxe
+        // tudo pra permitir isso sem perder linha nenhuma).
         If !Empty(cTextoLike)
             aFiltrado := {}
             For nI := 1 To Len(aTodos)
@@ -221,11 +251,15 @@ User Function CNSA_OS_LISTAR() As Logical
                 EndIf
             Next nI
             aTodos := aFiltrado
+            nTotal := Len(aTodos)
+        Else
+            // Sem texto livre: aTodos ja e so a pagina (ROWNUM no SQL) -
+            // nTotal vem do COUNT(*) OVER() calculado no banco, sobre TODO
+            // o resultado filtrado (nao so a pagina).
+            nTotal := nTotalSql
         EndIf
 
-        nTotal := Len(aTodos)
-
-        For nI := nStartIdx To Min(nStartIdx + nTamanho - 1, nTotal)
+        For nI := If(Empty(cTextoLike), 1, nStartIdx) To If(Empty(cTextoLike), Len(aTodos), Min(nStartIdx + nTamanho - 1, nTotal))
             oLinha := JsonObject():New()
             oLinha['os']             := aTodos[nI][1]
             oLinha['dtDigitacao']    := CNSA_OS_DATA_ISO(aTodos[nI][2])
@@ -294,7 +328,7 @@ Static Function CNSA_OSDESC(cOs)
     If Empty(cOs)
         Return ""
     EndIf
-Return AllTrim(Posicione("SZ1", 1, xFilial("SZ1") + cOs, "Z1_SERV"))
+Return AllTrim(Posicione("SZ1", 1, cFilAnt + cOs, "Z1_SERV"))
 
 ////////////////////////////////////////////////////////////////////////////////
 // Helpers de leitura (nomes derivados por Posicione, mesmo padrao de
@@ -413,17 +447,28 @@ Static Function CNSA002_JSONNUM(jDados, cCampo)
     EndIf
 Return Val(cValToChar(xVal))
 
+////////////////////////////////////////////////////////////////////////////////
+// FIX (total sempre 0 - causa raiz real): CNSA002_JSONSTR(jQuery,"campo") devolve
+// a STRING literal "null" quando o parametro nao veio na querystring, em vez
+// de string vazia - AllTrim(GetJsonText(...)) nunca fica Empty(), quebrando
+// todo "If !Empty(cParam)" de filtro opcional (ex: cDataOsParam="null" fazia
+// o filtro de Data OS entrar em vigor sozinho, com StoD("null") virando data
+// vazia, zerando a lista toda). Indexacao direta jDados[cCampo] (mesmo padrao
+// do CNSA002_JSONNUM acima) devolve Nil de verdade pra campo ausente - usar
+// sempre isso em vez de GetJsonText() daqui pra frente.
+////////////////////////////////////////////////////////////////////////////////
+Static Function CNSA002_JSONSTR(jDados, cCampo)
+    Local xVal := jDados[cCampo]
+    If xVal == Nil .Or. ValType(xVal) != "C"
+        Return ""
+    EndIf
+Return xVal
+
 Static Function CNSA002_RESPOK(cOs, cMsg)
     Local oJson := JsonObject():New()
     oJson["sucesso"]  := .T.
     oJson["os"]       := cOs
     oJson["mensagem"] := EncodeUtf8(cMsg)
-Return oJson:ToJson()
-
-Static Function CNSA002_RESPERRO(cErro)
-    Local oJson := JsonObject():New()
-    oJson["sucesso"] := .F.
-    oJson["erro"]    := EncodeUtf8(cErro)
 Return oJson:ToJson()
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -432,36 +477,36 @@ Return oJson:ToJson()
 // FWModel, mesma decisao do Alterar/Excluir (evita qualquer risco de tocar no
 // SZ2DETAIL, que e por cliente, nao por OS). So o wrapper de rota mudou.
 ////////////////////////////////////////////////////////////////////////////////
-@Post("/CNSAOSINCLUIR")
+@Post(endpoint="/CNSAOSINCLUIR")
 User Function CNSA_OS_INCLUIR() As Logical
     Local jQuery       := oRest:getQueryRequest() As Json
-    Local cCodCliente   := AllTrim(jQuery:GetJsonText("codCliente"))
-    Local cLojaCliente  := AllTrim(jQuery:GetJsonText("lojaCliente"))
-    Local cUsuario      := AllTrim(jQuery:GetJsonText("usuario"))
-    Local cModulo       := AllTrim(jQuery:GetJsonText("modulo"))
-    Local cMotivo       := AllTrim(jQuery:GetJsonText("motivo"))
-    Local cDescricao    := DecodeUTF8(AllTrim(jQuery:GetJsonText("descricao")))
-    Local cCodServico   := AllTrim(jQuery:GetJsonText("codServico"))
-    Local cDataOs       := AllTrim(jQuery:GetJsonText("dataOs"))
-    Local cHoraIniDec   := AllTrim(jQuery:GetJsonText("horaInicialDec"))
-    Local cHoraFimDec   := AllTrim(jQuery:GetJsonText("horaFinalDec"))
-    Local cHorasTiDec   := AllTrim(jQuery:GetJsonText("horasTiDec"))
-    Local cCodAnalista  := AllTrim(jQuery:GetJsonText("codAnalista"))
-    Local cDtDigitacao  := AllTrim(jQuery:GetJsonText("dtDigitacao"))
-    Local cOsInterna    := AllTrim(jQuery:GetJsonText("osInterna"))
-    Local cHorasTranDec := AllTrim(jQuery:GetJsonText("horasTranDec"))
-    Local cPrevPmt      := AllTrim(jQuery:GetJsonText("prevPmt"))
-    Local cNumProposta  := AllTrim(jQuery:GetJsonText("numProposta"))
-    Local cPedVenda     := AllTrim(jQuery:GetJsonText("pedVenda"))
-    Local cHrAlmoco     := AllTrim(jQuery:GetJsonText("hrAlmoco"))
-    Local cProjeto      := AllTrim(jQuery:GetJsonText("projeto"))
-    Local cRevisao      := AllTrim(jQuery:GetJsonText("revisao"))
-    Local cTarefa       := AllTrim(jQuery:GetJsonText("tarefa"))
-    Local cChamadoHpsd  := AllTrim(jQuery:GetJsonText("chamadoHpsd"))
-    Local cChamado      := AllTrim(jQuery:GetJsonText("chamado"))
-    Local cOsDesenv     := AllTrim(jQuery:GetJsonText("osDesenv"))
-    Local cLinhaPv      := AllTrim(jQuery:GetJsonText("linhaPv"))
-    Local cValorHora    := AllTrim(jQuery:GetJsonText("valorHora"))
+    Local cCodCliente   := AllTrim(CNSA002_JSONSTR(jQuery,"codCliente"))
+    Local cLojaCliente  := AllTrim(CNSA002_JSONSTR(jQuery,"lojaCliente"))
+    Local cUsuario      := AllTrim(CNSA002_JSONSTR(jQuery,"usuario"))
+    Local cModulo       := AllTrim(CNSA002_JSONSTR(jQuery,"modulo"))
+    Local cMotivo       := AllTrim(CNSA002_JSONSTR(jQuery,"motivo"))
+    Local cDescricao    := DecodeUTF8(AllTrim(CNSA002_JSONSTR(jQuery,"descricao")))
+    Local cCodServico   := AllTrim(CNSA002_JSONSTR(jQuery,"codServico"))
+    Local cDataOs       := AllTrim(CNSA002_JSONSTR(jQuery,"dataOs"))
+    Local cHoraIniDec   := AllTrim(CNSA002_JSONSTR(jQuery,"horaInicialDec"))
+    Local cHoraFimDec   := AllTrim(CNSA002_JSONSTR(jQuery,"horaFinalDec"))
+    Local cHorasTiDec   := AllTrim(CNSA002_JSONSTR(jQuery,"horasTiDec"))
+    Local cCodAnalista  := AllTrim(CNSA002_JSONSTR(jQuery,"codAnalista"))
+    Local cDtDigitacao  := AllTrim(CNSA002_JSONSTR(jQuery,"dtDigitacao"))
+    Local cOsInterna    := AllTrim(CNSA002_JSONSTR(jQuery,"osInterna"))
+    Local cHorasTranDec := AllTrim(CNSA002_JSONSTR(jQuery,"horasTranDec"))
+    Local cPrevPmt      := AllTrim(CNSA002_JSONSTR(jQuery,"prevPmt"))
+    Local cNumProposta  := AllTrim(CNSA002_JSONSTR(jQuery,"numProposta"))
+    Local cPedVenda     := AllTrim(CNSA002_JSONSTR(jQuery,"pedVenda"))
+    Local cHrAlmoco     := AllTrim(CNSA002_JSONSTR(jQuery,"hrAlmoco"))
+    Local cProjeto      := AllTrim(CNSA002_JSONSTR(jQuery,"projeto"))
+    Local cRevisao      := AllTrim(CNSA002_JSONSTR(jQuery,"revisao"))
+    Local cTarefa       := AllTrim(CNSA002_JSONSTR(jQuery,"tarefa"))
+    Local cChamadoHpsd  := AllTrim(CNSA002_JSONSTR(jQuery,"chamadoHpsd"))
+    Local cChamado      := AllTrim(CNSA002_JSONSTR(jQuery,"chamado"))
+    Local cOsDesenv     := AllTrim(CNSA002_JSONSTR(jQuery,"osDesenv"))
+    Local cLinhaPv      := AllTrim(CNSA002_JSONSTR(jQuery,"linhaPv"))
+    Local cValorHora    := AllTrim(CNSA002_JSONSTR(jQuery,"valorHora"))
     Local cOs           := ""
     Local oErro         := Nil
 
@@ -509,7 +554,7 @@ User Function CNSA_OS_INCLUIR() As Logical
         cOs := GetSxeNum("SZ1", "Z1_OS")
 
         RecLock("SZ1", .T.)
-            SZ1->Z1_FILIAL  := xFilial("SZ1")
+            SZ1->Z1_FILIAL  := cFilAnt
             SZ1->Z1_OS      := cOs
             SZ1->Z1_DTDIGIT := STOD(cDtDigitacao)
             SZ1->Z1_CLI     := cCodCliente
@@ -561,36 +606,36 @@ Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
 // OS, entao gravar via FWModel arriscaria tocar linhas de SZ2 de OUTRAS OS do
 // mesmo cliente). Alteracao PARCIAL - so grava o campo que veio.
 ////////////////////////////////////////////////////////////////////////////////
-@Post("/CNSAOSALTERAR")
+@Post(endpoint="/CNSAOSALTERAR")
 User Function CNSA_OS_ALTERAR() As Logical
     Local jQuery         := oRest:getQueryRequest() As Json
-    Local cOs            := AllTrim(jQuery:GetJsonText("os")) As Character
-    Local cCodCliente     := AllTrim(jQuery:GetJsonText("codCliente"))
-    Local cLojaCliente    := AllTrim(jQuery:GetJsonText("lojaCliente"))
-    Local cUsuario        := AllTrim(jQuery:GetJsonText("usuario"))
-    Local cModulo         := AllTrim(jQuery:GetJsonText("modulo"))
-    Local cMotivo         := AllTrim(jQuery:GetJsonText("motivo"))
-    Local cDescricao      := DecodeUTF8(AllTrim(jQuery:GetJsonText("descricao")))
-    Local cCodServico     := AllTrim(jQuery:GetJsonText("codServico"))
-    Local cDataOs         := AllTrim(jQuery:GetJsonText("dataOs"))
-    Local cHoraIniDec     := AllTrim(jQuery:GetJsonText("horaInicialDec"))
-    Local cHoraFimDec     := AllTrim(jQuery:GetJsonText("horaFinalDec"))
-    Local cHorasTranDec   := AllTrim(jQuery:GetJsonText("horasTranDec"))
-    Local cHorasTiDec     := AllTrim(jQuery:GetJsonText("horasTiDec"))
-    Local cCodAnalista    := AllTrim(jQuery:GetJsonText("codAnalista"))
-    Local cOsInterna      := AllTrim(jQuery:GetJsonText("osInterna"))
-    Local cPrevPmt        := AllTrim(jQuery:GetJsonText("prevPmt"))
-    Local cNumProposta    := AllTrim(jQuery:GetJsonText("numProposta"))
-    Local cPedVenda       := AllTrim(jQuery:GetJsonText("pedVenda"))
-    Local cHrAlmoco       := AllTrim(jQuery:GetJsonText("hrAlmoco"))
-    Local cProjeto        := AllTrim(jQuery:GetJsonText("projeto"))
-    Local cRevisao        := AllTrim(jQuery:GetJsonText("revisao"))
-    Local cTarefa         := AllTrim(jQuery:GetJsonText("tarefa"))
-    Local cChamadoHpsd    := AllTrim(jQuery:GetJsonText("chamadoHpsd"))
-    Local cChamado        := AllTrim(jQuery:GetJsonText("chamado"))
-    Local cOsDesenv       := AllTrim(jQuery:GetJsonText("osDesenv"))
-    Local cLinhaPv        := AllTrim(jQuery:GetJsonText("linhaPv"))
-    Local cValorHora      := AllTrim(jQuery:GetJsonText("valorHora"))
+    Local cOs            := AllTrim(CNSA002_JSONSTR(jQuery,"os")) As Character
+    Local cCodCliente     := AllTrim(CNSA002_JSONSTR(jQuery,"codCliente"))
+    Local cLojaCliente    := AllTrim(CNSA002_JSONSTR(jQuery,"lojaCliente"))
+    Local cUsuario        := AllTrim(CNSA002_JSONSTR(jQuery,"usuario"))
+    Local cModulo         := AllTrim(CNSA002_JSONSTR(jQuery,"modulo"))
+    Local cMotivo         := AllTrim(CNSA002_JSONSTR(jQuery,"motivo"))
+    Local cDescricao      := DecodeUTF8(AllTrim(CNSA002_JSONSTR(jQuery,"descricao")))
+    Local cCodServico     := AllTrim(CNSA002_JSONSTR(jQuery,"codServico"))
+    Local cDataOs         := AllTrim(CNSA002_JSONSTR(jQuery,"dataOs"))
+    Local cHoraIniDec     := AllTrim(CNSA002_JSONSTR(jQuery,"horaInicialDec"))
+    Local cHoraFimDec     := AllTrim(CNSA002_JSONSTR(jQuery,"horaFinalDec"))
+    Local cHorasTranDec   := AllTrim(CNSA002_JSONSTR(jQuery,"horasTranDec"))
+    Local cHorasTiDec     := AllTrim(CNSA002_JSONSTR(jQuery,"horasTiDec"))
+    Local cCodAnalista    := AllTrim(CNSA002_JSONSTR(jQuery,"codAnalista"))
+    Local cOsInterna      := AllTrim(CNSA002_JSONSTR(jQuery,"osInterna"))
+    Local cPrevPmt        := AllTrim(CNSA002_JSONSTR(jQuery,"prevPmt"))
+    Local cNumProposta    := AllTrim(CNSA002_JSONSTR(jQuery,"numProposta"))
+    Local cPedVenda       := AllTrim(CNSA002_JSONSTR(jQuery,"pedVenda"))
+    Local cHrAlmoco       := AllTrim(CNSA002_JSONSTR(jQuery,"hrAlmoco"))
+    Local cProjeto        := AllTrim(CNSA002_JSONSTR(jQuery,"projeto"))
+    Local cRevisao        := AllTrim(CNSA002_JSONSTR(jQuery,"revisao"))
+    Local cTarefa         := AllTrim(CNSA002_JSONSTR(jQuery,"tarefa"))
+    Local cChamadoHpsd    := AllTrim(CNSA002_JSONSTR(jQuery,"chamadoHpsd"))
+    Local cChamado        := AllTrim(CNSA002_JSONSTR(jQuery,"chamado"))
+    Local cOsDesenv       := AllTrim(CNSA002_JSONSTR(jQuery,"osDesenv"))
+    Local cLinhaPv        := AllTrim(CNSA002_JSONSTR(jQuery,"linhaPv"))
+    Local cValorHora      := AllTrim(CNSA002_JSONSTR(jQuery,"valorHora"))
     Local lTemAlgumCampo  := !Empty(cCodCliente) .Or. !Empty(cUsuario) .Or. !Empty(cModulo) .Or. ;
         !Empty(cMotivo) .Or. !Empty(cDescricao) .Or. !Empty(cCodServico) .Or. !Empty(cDataOs) .Or. ;
         !Empty(cHoraIniDec) .Or. !Empty(cHoraFimDec) .Or. !Empty(cHorasTiDec) .Or. !Empty(cCodAnalista) .Or. ;
@@ -613,7 +658,7 @@ User Function CNSA_OS_ALTERAR() As Logical
 
         DbSelectArea("SZ1")
         SZ1->(DbSetOrder(1))
-        If !SZ1->(DbSeek(xFilial("SZ1") + cOs))
+        If !SZ1->(DbSeek(cFilAnt + cOs))
             Return oRest:setStatusResponse(404, '{"erro":"OS nao encontrada."}')
         EndIf
 
@@ -711,10 +756,10 @@ Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
 // FWModel cascatearia pro SZ2DETAIL (Horas Contratadas), que e por cliente
 // e nao por OS - apagaria linhas de SZ2 de OUTRAS OS do mesmo cliente.
 ////////////////////////////////////////////////////////////////////////////////
-@Post("/CNSAOSEXCLUIR")
+@Post(endpoint="/CNSAOSEXCLUIR")
 User Function CNSA_OS_EXCLUIR() As Logical
     Local jQuery := oRest:getQueryRequest() As Json
-    Local cOs    := AllTrim(jQuery:GetJsonText("os")) As Character
+    Local cOs    := AllTrim(CNSA002_JSONSTR(jQuery,"os")) As Character
     Local oErro  := Nil
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
@@ -727,7 +772,7 @@ User Function CNSA_OS_EXCLUIR() As Logical
 
         DbSelectArea("SZ1")
         SZ1->(DbSetOrder(1))
-        If !SZ1->(DbSeek(xFilial("SZ1") + cOs))
+        If !SZ1->(DbSeek(cFilAnt + cOs))
             Return oRest:setStatusResponse(404, '{"erro":"OS nao encontrada."}')
         EndIf
 
@@ -749,10 +794,10 @@ Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
 // de todos os campos, mesma decisao ja tomada pra Incluir/Alterar/Excluir vs
 // Listar/Copiar). Replica U_COPIAR_OS (CNSA002.PRW classico).
 ////////////////////////////////////////////////////////////////////////////////
-@Post("/CNSAOSCOPIAR")
+@Post(endpoint="/CNSAOSCOPIAR")
 User Function CNSA_OS_COPIAR() As Logical
     Local jQuery   := oRest:getQueryRequest() As Json
-    Local cOsOrigem := AllTrim(jQuery:GetJsonText("os")) As Character
+    Local cOsOrigem := AllTrim(CNSA002_JSONSTR(jQuery,"os")) As Character
     Local oJson    := JsonObject():New()
     Local oErro    := Nil
     Local aFields  := {}
@@ -769,7 +814,7 @@ User Function CNSA_OS_COPIAR() As Logical
 
         DbSelectArea("SZ1")
         SZ1->(DbSetOrder(1))
-        If !SZ1->(DbSeek(xFilial("SZ1") + cOsOrigem))
+        If !SZ1->(DbSeek(cFilAnt + cOsOrigem))
             Return oRest:setStatusResponse(404, '{"erro":"OS nao encontrada."}')
         EndIf
 

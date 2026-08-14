@@ -10,7 +10,7 @@
 #include "TOPCONN.CH"
 #include "TOTVS.CH"
 #include "tlpp-core.th"
-#INCLUDE 'tlpp-rest.th'
+#INCLUDE "tlpp-rest.th"
 
 ////////////////////////////////////////////////////////////////////////////////
 // Apia-ComponentsRest.tlpp (ex ComponentesRest.prw)
@@ -50,7 +50,7 @@
 // e resposta 200 normal) pro front distinguir "lista vazia" de "erro real".
 ////////////////////////////////////////////////////////////////////////////////
 
-@Get("/CNSACOMPONENTES")
+@Get(endpoint="/CNSACOMPONENTES")
 User Function CNSA_COMPONENTES_LISTAR() As Logical
     Local jQuery        := oRest:getQueryRequest() As Json
     Local cTipoParam    := ""
@@ -71,11 +71,11 @@ User Function CNSA_COMPONENTES_LISTAR() As Logical
         // FIX (busca por nome acentuado, ex "Joao", nao batia): DecodeUTF8 no
         // filtro digitado antes de montar o LIKE - mesmo problema de
         // ANSI/UTF-8 do restante do app.
-        cTipoParam    := Lower(AllTrim(jQuery:GetJsonText("tipo")))
-        cFiltroParam  := DecodeUTF8(AllTrim(jQuery:GetJsonText("filtro")))
-        cProjetoParam := AllTrim(jQuery:GetJsonText("projeto"))
-        cClienteParam := AllTrim(jQuery:GetJsonText("cliente"))
-        cLojaParam    := AllTrim(jQuery:GetJsonText("lojaCliente"))
+        cTipoParam    := Lower(AllTrim(CNSA_COMP_JSONSTR(jQuery,"tipo")))
+        cFiltroParam  := DecodeUTF8(AllTrim(CNSA_COMP_JSONSTR(jQuery,"filtro")))
+        cProjetoParam := AllTrim(CNSA_COMP_JSONSTR(jQuery,"projeto"))
+        cClienteParam := AllTrim(CNSA_COMP_JSONSTR(jQuery,"cliente"))
+        cLojaParam    := AllTrim(CNSA_COMP_JSONSTR(jQuery,"lojaCliente"))
 
         Do Case
             // ---- LUPAS COMPARTILHADAS (pouichamados + pouios) ----
@@ -407,10 +407,14 @@ Static Function CNSA_PROPLUPA(cFiltro, cCliente, cLoja)
     Local cFiltroUp  := Upper(cFiltro)
     Local cFiltroUp2 := cFiltroUp
 
+    // FIX (mesmo bug de total sempre 0 do SZ1/ZA1): xFilial("SZ3") devolve
+    // branco no contexto de rota @Get/@Post do motor REST TLPP - SZ3 e
+    // tabela customizada por filial (mesma familia Z1/ZA1), usa cFilAnt
+    // direto em vez de xFilial().
     BeginSql Alias cAlias
         SELECT Z3_NUM, Z3_DESC
         FROM %Table:SZ3% SZ3
-        WHERE Z3_FILIAL = %xFilial:SZ3%
+        WHERE Z3_FILIAL = %Exp:cFilAnt%
           AND %NotDel%
           AND Z3_CODCLI = %Exp:cCliente%
           AND Z3_LOJA   = %Exp:cLoja%
@@ -458,6 +462,21 @@ Return ""
 ////////////////////////////////////////////////////////////////////////////////
 // Copia local - Static nao atravessa arquivos em ADVPL.
 ////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+// FIX (mesmo bug de total sempre 0 do Apia-OS.tlpp/Apia-Chamados.tlpp):
+// CNSA_COMP_JSONSTR(jQuery,"campo") devolve a STRING literal "null" quando o
+// parametro nao veio na querystring, em vez de string vazia -
+// AllTrim(GetJsonText(...)) nunca fica Empty(). Indexacao direta
+// jDados[cCampo] devolve Nil de verdade pra campo ausente - usar sempre
+// isso em vez de GetJsonText().
+////////////////////////////////////////////////////////////////////////////////
+Static Function CNSA_COMP_JSONSTR(jDados, cCampo)
+    Local xVal := jDados[cCampo]
+    If xVal == Nil .Or. ValType(xVal) != "C"
+        Return ""
+    EndIf
+Return xVal
+
 Static Function CNSA_JSONESC_COMP(cTexto)
     Local cRet := cTexto
     cRet := StrTran(cRet, '\',  '\\')
