@@ -1,6 +1,7 @@
 #include "PROTHEUS.CH"
 #include "TOPCONN.CH"
 #include "TOTVS.CH"
+#include "FWMVCDEF.CH"
 #include "tlpp-core.th"
 #INCLUDE 'tlpp-rest.th'
 
@@ -498,125 +499,28 @@ Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 // tecnico designado, envia e-mail de cancelamento pra ele.
 ////////////////////////////////////////////////////////////////////////////////
 Static Function CNSA_EXCLUIR(cIdCh, cMotivo)
-    Local cConsulAnterior  := ""
-    Local cClienteAnterior := ""
-    Local cLojaAnterior    := ""
-    Local cNomeCli         := ""
-    Local cNomeTec         := ""
-    Local cEmailTec        := ""
-    Local cExclPor         := ""
-    Local cDataAge         := DToC(Date())
-    Local cHmini           := "00:00"
-    Local cHmfim           := "00:00"
-    Local cCorpo           := ""
-    Local cAlias           := ""
-    Local nCham            := 0
-    Local oJson            := JsonObject():New()
-    Local oErro            := Nil
+    Local aResultado := {}
+    Local oJson      := JsonObject():New()
 
-    Begin Sequence
+    If Empty(cIdCh)
+        Return {400, '{"erro":"Informe o idCh do chamado (?idCh=000031)."}'}
+    EndIf
 
-        If Empty(cIdCh)
-            Return {400, '{"erro":"Informe o idCh do chamado (?idCh=000031)."}'}
-        EndIf
+    // lConfirmarPorAgenda:=.F. - apaga todos os agendamentos vinculados sem
+    // perguntar (nao ha como perguntar no meio de uma chamada REST headless),
+    // mesmo comportamento que este endpoint ja tinha antes de chamar o
+    // nucleo compartilhado (CNSA_EXCLUINUCLEO, CNSA001.PRW).
+    aResultado := CNSA_EXCLUINUCLEO(cIdCh, cMotivo, .F.)
 
-        dbSelectArea("ZA1")
-        ZA1->(DbSetOrder(1))
-        If !ZA1->(DbSeek(xFilial("ZA1") + cIdCh))
-            Return {404, '{"erro":"Chamado nao encontrado."}'}
-        EndIf
+    If !aResultado[1]
+        Return {If("nao encontrado" $ aResultado[2], 404, 400), '{"erro":"' + CNSA_JSONESC(EncodeUtf8(aResultado[2])) + '"}'}
+    EndIf
 
-        cConsulAnterior  := AllTrim(ZA1->ZA1_CONSUL)
-        cClienteAnterior := AllTrim(ZA1->ZA1_CLIENT)
-        cLojaAnterior    := AllTrim(ZA1->ZA1_LOJA)
+    oJson['sucesso']  := .T.
+    oJson['idCh']     := cIdCh
+    oJson['mensagem'] := "Chamado excluido com sucesso."
 
-        // Motivo so e obrigatorio se tiver tecnico designado (precisa dele
-        // pro corpo do e-mail) - sem tecnico, ninguem sera notificado.
-        If !Empty(cConsulAnterior) .And. Empty(cMotivo)
-            Return {400, '{"erro":"Informe o motivo do cancelamento - obrigatorio quando o chamado tem tecnico designado."}'}
-        EndIf
-
-        cExclPor := AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_NOMTEC"))
-        cNomeCli := AllTrim(Posicione("SA1", 1, xFilial("SA1") + cClienteAnterior + cLojaAnterior, "A1_NOME"))
-
-        // Busca data/horario do agendamento mais recente, so pra contexto do e-mail
-        nCham  := Val(cIdCh)
-        cAlias := GetNextAlias()
-        BeginSql Alias cAlias
-            SELECT Z6_DTAGE, Z6_HMINI, Z6_HMFIM
-            FROM %Table:SZ6% SZ6
-            WHERE Z6_FILIAL  = %xFilial:SZ6%
-              AND Z6_CHAMADO = %Exp:nCham%
-              AND %NotDel%
-        EndSql
-        If !(cAlias)->(Eof())
-            If ValType((cAlias)->Z6_DTAGE) == "D"
-                cDataAge := DToC((cAlias)->Z6_DTAGE)
-            Else
-                cDataAge := AllTrim((cAlias)->Z6_DTAGE)
-                If Len(cDataAge) == 8
-                    cDataAge := SubStr(cDataAge,7,2) + "/" + SubStr(cDataAge,5,2) + "/" + SubStr(cDataAge,1,4)
-                EndIf
-            EndIf
-            cHmini := AllTrim((cAlias)->Z6_HMINI)
-            cHmfim := AllTrim((cAlias)->Z6_HMFIM)
-        EndIf
-        (cAlias)->(DbCloseArea())
-
-        If Empty(cHmini) ; cHmini := "00:00" ; EndIf
-        If Empty(cHmfim) ; cHmfim := "00:00" ; EndIf
-
-        // Apaga o chamado
-        RecLock("ZA1", .F.)
-            ZA1->(DbDelete())
-        ZA1->(MsUnlock())
-
-        // Remove TODOS os agendamentos vinculados (SZ6) - sem confirmacao
-        // individual (adaptacao explicada acima)
-        cAlias := GetNextAlias()
-        BeginSql Alias cAlias
-            SELECT SZ6.R_E_C_N_O_ RECNO
-            FROM %Table:SZ6% SZ6
-            WHERE SZ6.Z6_FILIAL  = %xFilial:SZ6%
-              AND SZ6.Z6_CHAMADO = %Exp:nCham%
-              AND %NotDel%
-        EndSql
-        dbSelectArea("SZ6")
-        While !(cAlias)->(Eof())
-            SZ6->(DbGoto((cAlias)->RECNO))
-            If !SZ6->(Eof())
-                RecLock("SZ6", .F.)
-                    SZ6->(DbDelete())
-                SZ6->(MsUnlock())
-            EndIf
-            (cAlias)->(DbSkip())
-        EndDo
-        (cAlias)->(DbCloseArea())
-
-        // Envia e-mail de cancelamento, so se tinha tecnico designado
-        If !Empty(cConsulAnterior)
-            cNomeTec  := AllTrim(Posicione("AA1", 1, xFilial("AA1") + cConsulAnterior, "AA1_NOMTEC"))
-            cEmailTec := AllTrim(Posicione("AA1", 1, xFilial("AA1") + cConsulAnterior, "AA1_EMAIL"))
-
-            If !Empty(cEmailTec)
-                cCorpo := CNSA_CANCEL_FRONT(cNomeCli, cDataAge, cHmini, cHmfim, cIdCh, cMotivo, cExclPor)
-                CNSA_ENVIAEMAIL(cEmailTec, "Cancelamento do Chamado " + cIdCh, cCorpo, "apia@apia.com.br")
-            Else
-                ConOut("CNSA_EXCLUIR: tecnico " + cConsulAnterior + " sem AA1_EMAIL cadastrado - e-mail de cancelamento nao enviado.")
-            EndIf
-        EndIf
-
-        oJson['sucesso']  := .T.
-        oJson['idCh']     := cIdCh
-        oJson['mensagem'] := "Chamado excluido com sucesso."
-
-        Return {200, oJson:ToJson()}
-
-    Recover Using oErro
-        Return {500, '{"erro":"' + CNSA_JSONESC(EncodeUtf8(oErro:Description)) + '"}'}
-    End Sequence
-
-Return {500, '{"erro":"Erro desconhecido."}'}
+Return {200, oJson:ToJson()}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Autenticacao Microsoft Graph.
@@ -685,7 +589,7 @@ Return
 // FIX PONTUAL (rodar 1 vez, depois apagar): corrige assunto (ZA1) e
 // anotacoes (ZA2) dos chamados criados por e-mail ANTES do fix do
 // DecodeUTF8 duplicado em CNSA_GERACHAM - texto ja gravado torto no banco
-// (ex "NÃƒÂ£o" em vez de "Não"). DecodeUTF8() aplicado repetidamente
+// (ex "NÃ£o" em vez de "N�o"). DecodeUTF8() aplicado repetidamente
 // enquanto o texto encolhe: texto ja correto nao muda de tamanho (para
 // na 1a volta, no-op), texto corrompido em camadas encolhe a cada volta
 // ate estabilizar no texto certo - seguro rodar em cima de registro que
@@ -882,7 +786,7 @@ Static Function CNSA_GERACHAM()
 
         If ValType(oMsg:GetJsonObject("subject")) == "C"
             // FIX (assunto/corpo/nome chegando com acento corrompido, tipo
-            // "NÃƒÂ£o" em vez de "Não"): JsonObject:FromJson() ja decodifica
+            // "NÃ£o" em vez de "N�o"): JsonObject:FromJson() ja decodifica
             // o UTF-8 do JSON do Graph pra ANSI sozinho - chamar DecodeUTF8()
             // de novo em cima de texto que ja esta em ANSI trata os bytes
             // ANSI como se ainda fossem UTF-8, corrompendo o acento. Usa o
@@ -1108,7 +1012,7 @@ Return {cCod, cLoja}
 // UTF-8): o corpo HTML e o assunto sao montados com texto vindo direto de
 // tabelas do Protheus (AA1_NOMTEC, A1_NOME, ZA1_ASSUNT etc.), que fica em
 // ANSI (CP1252) na memoria do ADVPL. O Graph espera o JSON em UTF-8 - sem
-// essa conversao, nome/assunto com acento (�, �, �...) chegam corrompidos
+// essa conversao, nome/assunto com acento (?, ?, ?...) chegam corrompidos
 // no e-mail. EncodeUtf8() (funcao nativa AdvPL) faz a conversao ANSI -> UTF-8
 // bytes antes do JSON-escape. Ponto unico de conversao (aqui), assim quem
 // monta cCorpo/cAssunto (CNSA_EMAIL_FRONT, CNSA_CANCEL_FRONT) nao precisa se
@@ -1170,6 +1074,11 @@ Static Function CNSA_ASSUMIR(cIdCh)
     Local cNomeTec         := ""
     Local oJson            := JsonObject():New()
     Local oErro            := Nil
+    Local oModel      := Nil
+    Local oModelZA1   := Nil
+    Local lOk         := .F.
+    Local cErro       := ""
+    Local cErroModel  := Nil
 
     Begin Sequence
 
@@ -1220,16 +1129,46 @@ Static Function CNSA_ASSUMIR(cIdCh)
             Return {400, '{"erro":"O chamado precisa ter uma tarefa definida antes de ser assumido."}'}
         EndIf
 
-        RecLock("ZA1", .F.)
-            ZA1->ZA1_CONSUL := cConsultorSessao
-            ZA1->ZA1_STATUS := "2"
-            ZA1->ZA1_MOD    := Date()
-        ZA1->(MsUnlock())
+        Public lCnsaViaRest := .T.
 
-        // E-mail de designacao pro proprio tecnico que assumiu (auto-atribuicao).
-        // Regra unificada com Incluir/Alterar - ver CNSA_DISPARA_DESIGNACAO.
+        oModel    := FWLoadModel("CNSA001")
+        oModel:SetOperation(MODEL_OPERATION_UPDATE)
+        oModel:Activate()
+        oModelZA1 := oModel:GetModel("ZA1MASTER")
+
+        oModelZA1:SetValue("ZA1_CONSUL", cConsultorSessao)
+        oModelZA1:SetValue("ZA1_STATUS", "2")
+        oModelZA1:SetValue("ZA1_MOD",    Date())
+
+        If oModel:VldData()
+            lOk := oModel:CommitData()
+        EndIf
+
+        If !lOk
+            cErroModel := oModel:GetErrorMessage()
+            Do Case
+                Case ValType(cErroModel) == "C"
+                    cErro := cErroModel
+                Case ValType(cErroModel) == "O"
+                    cErro := cErroModel:GetMessage()
+                Case ValType(cErroModel) == "A"
+                    cErro := FwJsonSerialize(cErroModel)
+                Otherwise
+                    cErro := "Falha ao validar/gravar a designacao."
+            EndCase
+        EndIf
+
+        oModel:DeActivate(lOk)
+        lCnsaViaRest := .F.
+
+        If !lOk
+            Return {400, '{"erro":"' + CNSA_JSONESC(EncodeUtf8(cErro)) + '"}'}
+        EndIf
+
+        // CNSA_DISPARA_DESIGNACAO nao e mais chamada aqui - CNSA_APOSCOMMIT
+        // (nOper==4) ja dispara e-mail de designacao nativo (ZA1_CONSUL
+        // mudou de vazio pra preenchido no commit do Model).
         cNomeTec := AllTrim(Posicione("AA1", 1, xFilial("AA1") + cConsultorSessao, "AA1_NOMTEC"))
-        CNSA_DISPARA_DESIGNACAO(cIdCh, cConsultorSessao)
 
         oJson['sucesso'] := .T.
         oJson['idCh']    := cIdCh
@@ -1239,6 +1178,7 @@ Static Function CNSA_ASSUMIR(cIdCh)
         Return {200, oJson:ToJson()}
 
     Recover Using oErro
+        lCnsaViaRest := .F.
         Return {500, '{"erro":"' + CNSA_JSONESC(EncodeUtf8(oErro:Description)) + '"}'}
     End Sequence
 
@@ -1418,9 +1358,14 @@ Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 //    que a tela mostrou (campo Consultor pre-preenchido, mas sem obrigar).
 ////////////////////////////////////////////////////////////////////////////////
 Static Function CNSA_INCLUIR(cAssunto, cDtAbertura, cTipo, cCodCliente, cLojaCliente, cEmailCliente, cCodConsultor, cProjeto, cTarefa)
-    Local cIdCh := ""
-    Local oJson := JsonObject():New()
-    Local oErro := Nil
+    Local cIdCh      := ""
+    Local oJson      := JsonObject():New()
+    Local oErro       := Nil
+    Local oModel      := Nil
+    Local oModelZA1   := Nil
+    Local lOk         := .F.
+    Local cErro       := ""
+    Local cErroModel  := Nil
 
     Begin Sequence
 
@@ -1454,21 +1399,52 @@ Static Function CNSA_INCLUIR(cAssunto, cDtAbertura, cTipo, cCodCliente, cLojaCli
 
         cIdCh := GetSxeNum("ZA1", "ZA1_IDCH")
 
-        RecLock("ZA1", .T.)
-            ZA1->ZA1_FILIAL := xFilial("ZA1")
-            ZA1->ZA1_IDCH   := cIdCh
-            ZA1->ZA1_ASSUNT := cAssunto
-            ZA1->ZA1_DATA   := STOD(cDtAbertura)
-            ZA1->ZA1_STATUS := "1"
-            ZA1->ZA1_TIPO   := cTipo
-            ZA1->ZA1_CLIENT := cCodCliente
-            ZA1->ZA1_LOJA   := cLojaCliente
-            ZA1->ZA1_EMAIL  := cEmailCliente
-            ZA1->ZA1_CONSUL := cCodConsultor
-            ZA1->ZA1_PROJ   := cProjeto
-            ZA1->ZA1_TAREFA := cTarefa
-            ZA1->ZA1_MOD    := Date()
-        ZA1->(MsUnlock())
+        Public lCnsaViaRest := .T.
+
+        oModel    := FWLoadModel("CNSA001")
+        oModel:SetOperation(MODEL_OPERATION_INSERT)
+        oModel:Activate()
+        oModelZA1 := oModel:GetModel("ZA1MASTER")
+
+        oModelZA1:SetValue("ZA1_FILIAL", xFilial("ZA1"))
+        oModelZA1:SetValue("ZA1_IDCH",   cIdCh)
+        oModelZA1:SetValue("ZA1_ASSUNT", cAssunto)
+        oModelZA1:SetValue("ZA1_DATA",   STOD(cDtAbertura))
+        oModelZA1:SetValue("ZA1_STATUS", "1")
+        oModelZA1:SetValue("ZA1_TIPO",   cTipo)
+        oModelZA1:SetValue("ZA1_CLIENT", cCodCliente)
+        oModelZA1:SetValue("ZA1_LOJA",   cLojaCliente)
+        oModelZA1:SetValue("ZA1_EMAIL",  cEmailCliente)
+        oModelZA1:SetValue("ZA1_CONSUL", cCodConsultor)
+        oModelZA1:SetValue("ZA1_PROJ",   cProjeto)
+        oModelZA1:SetValue("ZA1_TAREFA", cTarefa)
+        oModelZA1:SetValue("ZA1_MOD",    Date())
+
+        If oModel:VldData()
+            lOk := oModel:CommitData()
+        EndIf
+
+        If !lOk
+            cErroModel := oModel:GetErrorMessage()
+            Do Case
+                Case ValType(cErroModel) == "C"
+                    cErro := cErroModel
+                Case ValType(cErroModel) == "O"
+                    cErro := cErroModel:GetMessage()
+                Case ValType(cErroModel) == "A"
+                    cErro := FwJsonSerialize(cErroModel)
+                Otherwise
+                    cErro := "Falha ao validar/gravar o chamado."
+            EndCase
+        EndIf
+
+        oModel:DeActivate(lOk)
+        lCnsaViaRest := .F.
+
+        If !lOk
+            ConfirmSX8(.F.)
+            Return {400, '{"erro":"' + CNSA_JSONESC(EncodeUtf8(cErro)) + '"}'}
+        EndIf
 
         ConfirmSX8()
 
@@ -1485,6 +1461,7 @@ Static Function CNSA_INCLUIR(cAssunto, cDtAbertura, cTipo, cCodCliente, cLojaCli
         Return {200, oJson:ToJson()}
 
     Recover Using oErro
+        lCnsaViaRest := .F.
         RollBackSX8()
         Return {500, '{"erro":"' + CNSA_JSONESC(EncodeUtf8(oErro:Description)) + '"}'}
     End Sequence
@@ -1540,6 +1517,11 @@ Static Function CNSA_ALTERAR(cIdCh, cAssunto, cDtAbertura, cTipo, cCodCliente, c
     Local oJson             := JsonObject():New()
     Local oErro             := Nil
     Local cConsultorAnterior := ""
+    Local oModel      := Nil
+    Local oModelZA1   := Nil
+    Local lOk         := .F.
+    Local cErro       := ""
+    Local cErroModel  := Nil
     Local lTemAlgumCampo    := !Empty(cAssunto) .Or. !Empty(cDtAbertura) .Or. !Empty(cTipo) .Or. ;
         !Empty(cCodCliente) .Or. !Empty(cEmailCliente) .Or. !Empty(cCodConsultor) .Or. ;
         !Empty(cProjeto) .Or. !Empty(cTarefa) .Or. lLimparCliente .Or. lLimparConsultor
@@ -1566,46 +1548,73 @@ Static Function CNSA_ALTERAR(cIdCh, cAssunto, cDtAbertura, cTipo, cCodCliente, c
 
         cConsultorAnterior := AllTrim(ZA1->ZA1_CONSUL)
 
-        RecLock("ZA1", .F.)
-            If !Empty(cAssunto)
-                ZA1->ZA1_ASSUNT := cAssunto
-            EndIf
-            If !Empty(cDtAbertura)
-                ZA1->ZA1_DATA := STOD(StrTran(cDtAbertura, "-", ""))
-            EndIf
-            If !Empty(cTipo)
-                ZA1->ZA1_TIPO := cTipo
-            EndIf
-            If lLimparCliente
-                ZA1->ZA1_CLIENT := ""
-                ZA1->ZA1_LOJA   := ""
-            ElseIf !Empty(cCodCliente)
-                ZA1->ZA1_CLIENT := cCodCliente
-                ZA1->ZA1_LOJA   := If(Empty(cLojaCliente), "01", cLojaCliente)
-            EndIf
-            If !Empty(cEmailCliente)
-                ZA1->ZA1_EMAIL := cEmailCliente
-            EndIf
-            If lLimparConsultor
-                ZA1->ZA1_CONSUL := ""
-            ElseIf !Empty(cCodConsultor)
-                ZA1->ZA1_CONSUL := cCodConsultor
-            EndIf
-            If !Empty(cProjeto)
-                ZA1->ZA1_PROJ := cProjeto
-            EndIf
-            If !Empty(cTarefa)
-                ZA1->ZA1_TAREFA := cTarefa
-            EndIf
-            ZA1->ZA1_MOD := Date()
-        ZA1->(MsUnlock())
+        Public lCnsaViaRest := .T.
 
-        // Redesignacao: so dispara e-mail se o consultor mudou de verdade
-        // (evita reenviar e-mail toda vez que o formulario e salvo sem
-        // trocar o tecnico).
-        If !Empty(cCodConsultor) .And. cCodConsultor <> cConsultorAnterior
-            CNSA_DISPARA_DESIGNACAO(cIdCh, cCodConsultor)
+        oModel    := FWLoadModel("CNSA001")
+        oModel:SetOperation(MODEL_OPERATION_UPDATE)
+        oModel:Activate()
+        oModelZA1 := oModel:GetModel("ZA1MASTER")
+
+        If !Empty(cAssunto)
+            oModelZA1:SetValue("ZA1_ASSUNT", cAssunto)
         EndIf
+        If !Empty(cDtAbertura)
+            oModelZA1:SetValue("ZA1_DATA", STOD(StrTran(cDtAbertura, "-", "")))
+        EndIf
+        If !Empty(cTipo)
+            oModelZA1:SetValue("ZA1_TIPO", cTipo)
+        EndIf
+        If lLimparCliente
+            oModelZA1:SetValue("ZA1_CLIENT", "")
+            oModelZA1:SetValue("ZA1_LOJA", "")
+        ElseIf !Empty(cCodCliente)
+            oModelZA1:SetValue("ZA1_CLIENT", cCodCliente)
+            oModelZA1:SetValue("ZA1_LOJA", If(Empty(cLojaCliente), "01", cLojaCliente))
+        EndIf
+        If !Empty(cEmailCliente)
+            oModelZA1:SetValue("ZA1_EMAIL", cEmailCliente)
+        EndIf
+        If lLimparConsultor
+            oModelZA1:SetValue("ZA1_CONSUL", "")
+        ElseIf !Empty(cCodConsultor)
+            oModelZA1:SetValue("ZA1_CONSUL", cCodConsultor)
+        EndIf
+        If !Empty(cProjeto)
+            oModelZA1:SetValue("ZA1_PROJ", cProjeto)
+        EndIf
+        If !Empty(cTarefa)
+            oModelZA1:SetValue("ZA1_TAREFA", cTarefa)
+        EndIf
+        oModelZA1:SetValue("ZA1_MOD", Date())
+
+        If oModel:VldData()
+            lOk := oModel:CommitData()
+        EndIf
+
+        If !lOk
+            cErroModel := oModel:GetErrorMessage()
+            Do Case
+                Case ValType(cErroModel) == "C"
+                    cErro := cErroModel
+                Case ValType(cErroModel) == "O"
+                    cErro := cErroModel:GetMessage()
+                Case ValType(cErroModel) == "A"
+                    cErro := FwJsonSerialize(cErroModel)
+                Otherwise
+                    cErro := "Falha ao validar/gravar a alteracao."
+            EndCase
+        EndIf
+
+        oModel:DeActivate(lOk)
+        lCnsaViaRest := .F.
+
+        If !lOk
+            Return {400, '{"erro":"' + CNSA_JSONESC(EncodeUtf8(cErro)) + '"}'}
+        EndIf
+
+        // CNSA_DISPARA_DESIGNACAO nao e mais chamada aqui - CNSA_APOSCOMMIT
+        // (nOper==4, CNSA001.PRW) ja dispara e-mail de redesignacao nativo
+        // quando ZA1_CONSUL muda no commit do Model.
 
         oJson['sucesso']  := .T.
         oJson['idCh']     := cIdCh
@@ -1614,6 +1623,7 @@ Static Function CNSA_ALTERAR(cIdCh, cAssunto, cDtAbertura, cTipo, cCodCliente, c
         Return {200, oJson:ToJson()}
 
     Recover Using oErro
+        lCnsaViaRest := .F.
         Return {500, '{"erro":"' + CNSA_JSONESC(EncodeUtf8(oErro:Description)) + '"}'}
     End Sequence
 
@@ -1801,6 +1811,8 @@ Static Function CNSA_AGENDAR(cIdCh, cDataIni, cDataFim, cCodTecnico, cHoraIni, c
     Local aConflitos  := {}
     Local nTentativa  := 0
     Local lGravouDia  := .F.
+    Local oModelSZ6Agend := Nil
+    Local oModelSZ6Main  := Nil
 
     Begin Sequence
 
@@ -1904,30 +1916,44 @@ Static Function CNSA_AGENDAR(cIdCh, cDataIni, cDataFim, cCodTecnico, cHoraIni, c
                     Begin Sequence
                         cSeq := CNSA_PROXSEQ_SZ6(cCodTecnico, dAtual)
 
-                        RecLock("SZ6", .T.)
-                            SZ6->Z6_FILIAL  := xFilial("SZ6")
-                            SZ6->Z6_CHAMADO := nCham
-                            SZ6->Z6_DTAGE   := dAtual
-                            SZ6->Z6_TECNICO := cCodTecnico
-                            SZ6->Z6_SEQ     := cSeq
-                            SZ6->Z6_HMINI   := cHoraIni
-                            SZ6->Z6_HMFIM   := cHoraFim
-                            SZ6->Z6_CLIENTE := cCodCliente
-                            SZ6->Z6_LOJA    := cLojaCliente
-                            SZ6->Z6_SERVICO := cDescricao
-                            SZ6->Z6_CONFIRM := If(Empty(cConfirmacao), "NAO", cConfirmacao)
-                            SZ6->Z6_TURNO   := Val(cTurno)
-                            SZ6->Z6_INTERNO := If(Empty(cAgInterna), "NAO", cAgInterna)
-                            SZ6->Z6_COBRAR  := If(Empty(cAgCobravel), "NAO", cAgCobravel)
-                            SZ6->Z6_TIPOAG  := cTipoAgenda
-                            SZ6->Z6_PROJET  := cProjeto
-                            SZ6->Z6_REVISA  := cRevisao
-                            SZ6->Z6_TAREFA  := cTarefa
-                            SZ6->Z6_TIPO_HR := cTipoHora
-                            SZ6->Z6_QGRAVOU := cCodAgendador
-                        SZ6->(MsUnlock())
+                        oModelSZ6Agend := FWLoadModel("CNSA003")
+                        oModelSZ6Agend:SetOperation(MODEL_OPERATION_INSERT)
+                        oModelSZ6Agend:Activate()
+                        oModelSZ6Main := oModelSZ6Agend:GetModel("ModelSZ6_Main")
 
-                        lGravouDia := .T.
+                        oModelSZ6Main:SetValue("Z6_FILIAL",  xFilial("SZ6"))
+                        oModelSZ6Main:SetValue("Z6_CHAMADO", nCham)
+                        oModelSZ6Main:SetValue("Z6_DTAGE",   dAtual)
+                        oModelSZ6Main:SetValue("Z6_TECNICO", cCodTecnico)
+                        oModelSZ6Main:SetValue("Z6_SEQ",     cSeq)
+                        oModelSZ6Main:SetValue("Z6_HMINI",   cHoraIni)
+                        oModelSZ6Main:SetValue("Z6_HMFIM",   cHoraFim)
+                        oModelSZ6Main:SetValue("Z6_CLIENTE", cCodCliente)
+                        oModelSZ6Main:SetValue("Z6_LOJA",    cLojaCliente)
+                        oModelSZ6Main:SetValue("Z6_SERVICO", cDescricao)
+                        oModelSZ6Main:SetValue("Z6_CONFIRM", If(Empty(cConfirmacao), "NAO", cConfirmacao))
+                        oModelSZ6Main:SetValue("Z6_TURNO",   Val(cTurno))
+                        oModelSZ6Main:SetValue("Z6_INTERNO", If(Empty(cAgInterna), "NAO", cAgInterna))
+                        oModelSZ6Main:SetValue("Z6_COBRAR",  If(Empty(cAgCobravel), "NAO", cAgCobravel))
+                        oModelSZ6Main:SetValue("Z6_TIPOAG",  cTipoAgenda)
+                        oModelSZ6Main:SetValue("Z6_PROJET",  cProjeto)
+                        oModelSZ6Main:SetValue("Z6_REVISA",  cRevisao)
+                        oModelSZ6Main:SetValue("Z6_TAREFA",  cTarefa)
+                        oModelSZ6Main:SetValue("Z6_TIPO_HR", cTipoHora)
+                        oModelSZ6Main:SetValue("Z6_QGRAVOU", cCodAgendador)
+
+                        lGravouDia := .F.
+                        If oModelSZ6Agend:VldData()
+                            lGravouDia := oModelSZ6Agend:CommitData()
+                        EndIf
+
+                        oModelSZ6Agend:DeActivate(lGravouDia)
+
+                        If !lGravouDia
+                            // Forca cair no Recover abaixo, igual a um erro
+                            // de RecLock, pra manter o retry de 3 tentativas.
+                            UserException("Falha ao validar/gravar agendamento via Model - tentativa " + AllTrim(Str(nTentativa)))
+                        EndIf
                     Recover Using oErroDia
                         // Erro de chave duplicada (ou outro) - tenta de novo
                         // no proximo loop de nTentativa, com sequencia
@@ -2322,8 +2348,11 @@ Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 // e-mail vira a primeira anotacao do chamado recem-criado).
 ////////////////////////////////////////////////////////////////////////////////
 Static Function CNSA_ZA2_GRAVAR(nChamN, cConsultor, cTexto)
-    Local cAlias := GetNextAlias()
-    Local nSeq   := 1
+    Local cAlias    := GetNextAlias()
+    Local nSeq      := 1
+    Local oModel    := Nil
+    Local oModelZA2 := Nil
+    Local lOk       := .F.
 
     BeginSql Alias cAlias
         SELECT MAX(ZA2_IDGRID) MAXGRID
@@ -2337,15 +2366,29 @@ Static Function CNSA_ZA2_GRAVAR(nChamN, cConsultor, cTexto)
     EndIf
     (cAlias)->(DbCloseArea())
 
-    RecLock("ZA2", .T.)
-        ZA2->ZA2_FILIAL := xFilial("ZA2")
-        ZA2->ZA2_IDCH   := nChamN
-        ZA2->ZA2_IDGRID := StrZero(nSeq, 3)
-        ZA2->ZA2_CONSUL := cConsultor
-        ZA2->ZA2_DATA   := Date()
-        ZA2->ZA2_HORA   := Left(Time(), 5)
-        ZA2->ZA2_DESCRI := cTexto
-    ZA2->(MsUnlock())
+    oModel    := FWLoadModel("CNSAZA2VIEW")
+    oModel:SetOperation(MODEL_OPERATION_INSERT)
+    oModel:Activate()
+    oModelZA2 := oModel:GetModel("ZA2MASTER")
+
+    oModelZA2:SetValue("ZA2_FILIAL", xFilial("ZA2"))
+    oModelZA2:SetValue("ZA2_IDCH",   nChamN)
+    oModelZA2:SetValue("ZA2_IDGRID", StrZero(nSeq, 3))
+    oModelZA2:SetValue("ZA2_CONSUL", cConsultor)
+    oModelZA2:SetValue("ZA2_DATA",   Date())
+    oModelZA2:SetValue("ZA2_HORA",   Left(Time(), 5))
+    oModelZA2:SetValue("ZA2_DESCRI", cTexto)
+
+    If oModel:VldData()
+        lOk := oModel:CommitData()
+    EndIf
+
+    oModel:DeActivate(lOk)
+
+    If !lOk
+        ConOut("CNSA_ZA2_GRAVAR: falha ao gravar anotacao via FWLoadModel(CNSAZA2VIEW) - chamado " + AllTrim(Str(nChamN)))
+        Return ""
+    EndIf
 
 Return StrZero(nSeq, 3)
 
