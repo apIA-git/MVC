@@ -48,6 +48,10 @@ EndIf
 
 **Risco conhecido**: `Public` é mecanismo simples mas frágil nesse ponto - **assunção a validar na implementação**: confirmar se cada request REST roda em thread/sessão isolada (nesse caso o risco de vazamento é baixo) ou se pode haver reentrância problemática.
 
+**Alternativa descartada** (investigada via TDN, doc oficial "D - Todos os métodos" do oREST): `oRest:getThreadPoolUserData()`/`getThreadPoolTlppData()`/`getServerTlppData()`/`getThreadPoolServerUserData()` **não** servem pra isso - são configuração **estática do Thread Pool do serviço REST**, parametrizada uma vez no ambiente/appserver (sem método `set` em runtime), compartilhada por todas as requisições daquele serviço. Não dá pra usar como flag que varia a cada chamada de `CNSA_INCLUIR`/`CNSA_ALTERAR`/`CNSA_ASSUMIR`. `Public lCnsaViaRest` continua sendo o mecanismo certo pra esse caso.
+
+**Nota geral (mesma doc TDN)**: objetos JSON devolvidos por métodos do `oRest` (`getQueryRequest()`, `getPathParamsRequest()`, `getHeaderRequest()`, etc) são **referência** ao objeto interno do motor REST, não cópia - nunca mutar esses objetos diretamente (ex: `jQuery['campo'] := valor`), só ler. Mutação reflete nas próximas requisições e causa bug difícil de rastrear. Os endpoints desta spec só leem (`CNSA_JSONSTR`/`CNSA_JSONNUM`/indexação direta) - nenhuma mutação identificada hoje, mas vale o cuidado na implementação.
+
 ## Incluir
 
 1. Validações de entrada continuam iguais (`Empty(cAssunto)`, `Empty(cTipo)`, `Empty(cProjeto)`, `Empty(cTarefa)` → 400), assim como os defaults (`cLojaCliente:="01"`, `cDtAbertura` default hoje, `cCodConsultor` auto-preenchido pelo técnico da sessão se vazio).
