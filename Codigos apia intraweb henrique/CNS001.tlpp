@@ -29,7 +29,7 @@
 // LISTAGEM / VISUALIZAR / PESQUISAR
 ////////////////////////////////////////////////////////////////////////////////
 @Get(endpoint="/CNSACHAMADOS")
-User Function CNSA_CHAMADOS_LISTAR() As Logical
+User Function CNS001_CHAMADOS_LISTAR() As Logical
     Local jQuery           := oRest:getQueryRequest() As Json
     Local oJson            := JsonObject():New()
     Local aRetorno         := {}
@@ -377,7 +377,7 @@ Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
 // ?idCh=...). Logica real em CNSA_ASSUMIR, mais abaixo neste arquivo.
 ////////////////////////////////////////////////////////////////////////////////
 @Post(endpoint="/CNSACHAMADOSASSUMIR")
-User Function CNSA_CHAMADOS_ASSUMIR() As Logical
+User Function CNS001_CHAMADOS_ASSUMIR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
@@ -475,7 +475,7 @@ Return xVal
 // ?idCh=...&motivo=...). Logica real em CNSA_EXCLUIR, logo abaixo.
 ////////////////////////////////////////////////////////////////////////////////
 @Post(endpoint="/CNSACHAMADOSEXCLUIR")
-User Function CNSA_CHAMADOS_EXCLUIR() As Logical
+User Function CNS001_CHAMADOS_EXCLUIR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
@@ -580,16 +580,16 @@ Return cToken
 // pra marcar o e-mail como lido no Graph). Se nao existir/nao compilar, me
 // avisa que troco pra outra forma de fazer o PATCH.
 ////////////////////////////////////////////////////////////////////////////////
-User Function CNSA_JOB_SINCEMAIL()
+User Function CNS001_JOB_SINCEMAIL()
     Local nCriados := CNSA_GERACHAM()
-    ConOut("CNSA_JOB_SINCEMAIL: " + AllTrim(Str(nCriados)) + " chamado(s) criado(s) a partir de e-mail(s) novo(s) em apia@apia.com.br.")
+    ConOut("CNS001_JOB_SINCEMAIL: " + AllTrim(Str(nCriados)) + " chamado(s) criado(s) a partir de e-mail(s) novo(s) em apia@apia.com.br.")
 Return
 
 ////////////////////////////////////////////////////////////////////////////////
 // FIX PONTUAL (rodar 1 vez, depois apagar): corrige assunto (ZA1) e
 // anotacoes (ZA2) dos chamados criados por e-mail ANTES do fix do
 // DecodeUTF8 duplicado em CNSA_GERACHAM - texto ja gravado torto no banco
-// (ex "NÃ£o" em vez de "N�o"). DecodeUTF8() aplicado repetidamente
+// (ex "Nao" em vez de "N?o"). DecodeUTF8() aplicado repetidamente
 // enquanto o texto encolhe: texto ja correto nao muda de tamanho (para
 // na 1a volta, no-op), texto corrompido em camadas encolhe a cada volta
 // ate estabilizar no texto certo - seguro rodar em cima de registro que
@@ -617,7 +617,7 @@ Static Function CNSA_FIXUTF8_LOOP(cTexto)
 Return cTexto
 
 @Post(endpoint="/CNSAFIXEMAILUTF8")
-User Function CNSA_FIXEMAILUTF8() As Logical
+User Function CNS001_FIXEMAILUTF8() As Logical
     Local cAlias       := GetNextAlias()
     Local cAliasZA2    := ""
     Local aChamados    := {}
@@ -786,7 +786,7 @@ Static Function CNSA_GERACHAM()
 
         If ValType(oMsg:GetJsonObject("subject")) == "C"
             // FIX (assunto/corpo/nome chegando com acento corrompido, tipo
-            // "NÃ£o" em vez de "N�o"): JsonObject:FromJson() ja decodifica
+            // "Nao" em vez de "N?o"): JsonObject:FromJson() ja decodifica
             // o UTF-8 do JSON do Graph pra ANSI sozinho - chamar DecodeUTF8()
             // de novo em cima de texto que ja esta em ANSI trata os bytes
             // ANSI como se ainda fossem UTF-8, corrompendo o acento. Usa o
@@ -1312,7 +1312,7 @@ Return CNSA_ENVIAEMAIL(cEmailTec, "Chamado Designado " + cIdCh, cCorpo, "apia@ap
 // e Tarefa; Cliente/Loja/Consultor/Email do Cliente sao opcionais.
 ////////////////////////////////////////////////////////////////////////////////
 @Post(endpoint="/CNSACHAMADOSINCLUIR")
-User Function CNSA_CHAMADOS_INCLUIR() As Logical
+User Function CNS001_CHAMADOS_INCLUIR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
@@ -1483,7 +1483,7 @@ Return {500, '{"erro":"Erro desconhecido."}'}
 // assunto/cliente.
 ////////////////////////////////////////////////////////////////////////////////
 @Post(endpoint="/CNSACHAMADOSALTERAR")
-User Function CNSA_CHAMADOS_ALTERAR() As Logical
+User Function CNS001_CHAMADOS_ALTERAR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
@@ -1696,7 +1696,7 @@ Return {500, '{"erro":"Erro desconhecido."}'}
 // asterisco vermelho (obrigatorios) na tela real - o resto e opcional.
 ////////////////////////////////////////////////////////////////////////////////
 @Post(endpoint="/CNSACHAMADOSAGENDAR")
-User Function CNSA_CHAMADOS_AGENDAR() As Logical
+User Function CNS001_CHAMADOS_AGENDAR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
@@ -2012,7 +2012,7 @@ Return {500, '{"erro":"Erro desconhecido."}'}
 // Horario, Tecnico e Descricao de cada um, conforme pedido.
 ////////////////////////////////////////////////////////////////////////////////
 @Get(endpoint="/CNSACHAMADOSVERAGENDA")
-User Function CNSA_CHAMADOS_VERAGENDA() As Logical
+User Function CNS001_CHAMADOS_VERAGENDA() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
@@ -2117,7 +2117,7 @@ Return {500, '{"erro":"Erro desconhecido."}'}
 // salvar HTML cortado no meio de uma tag.
 ////////////////////////////////////////////////////////////////////////////////
 @Get(endpoint="/CNSACHAMADOSANOTACAO")
-User Function CNSA_CHAMADOS_ANOTACAO_LER() As Logical
+User Function CNS001_CHAMADOS_ANOTACAO_LER() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
@@ -2159,7 +2159,7 @@ Return {500, '{"erro":"Erro desconhecido."}'}
 
 
 @Post(endpoint="/CNSACHAMADOSANOTACAOSALVAR")
-User Function CNSA_CHAMADOS_ANOTACAO_SALVAR() As Logical
+User Function CNS001_CHAMADOS_ANOTACAO_SALVAR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
@@ -2247,7 +2247,7 @@ Return {500, '{"erro":"Erro desconhecido."}'}
 //   ZA2_IDCH   - id do chamado (Numerico, mesmo padrao de Z6_CHAMADO)
 ////////////////////////////////////////////////////////////////////////////////
 @Get(endpoint="/CNSACHAMADOSANOTACOES")
-User Function CNSA_CHAMADOS_ANOTACOES_LISTAR() As Logical
+User Function CNS001_CHAMADOS_ANOTACOES_LISTAR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
@@ -2330,7 +2330,7 @@ Return {500, '{"erro":"Erro desconhecido."}'}
 
 
 @Post(endpoint="/CNSACHAMADOSANOTACOESINCLUIR")
-User Function CNSA_CHAMADOS_ANOTACOES_INCLUIR() As Logical
+User Function CNS001_CHAMADOS_ANOTACOES_INCLUIR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
@@ -2469,7 +2469,7 @@ Return {500, '{"erro":"Erro desconhecido."}'}
 // Agendador de Tarefas (Schedule), aponta pra User Function CNSA_FECHA30D,
 // frequencia diaria (ex: 1x por dia, de madrugada).
 /////////////////////////////////////////////////////////////////////////////
-User Function CNSA_CLOSE30D()
+User Function CNS001_CLOSE30D()
     Local cEmpAnt      := "01"
     Local cFilAnt      := "01"
     Local dLimite      := Date() - 30
@@ -2478,7 +2478,7 @@ User Function CNSA_CLOSE30D()
 
     RpcSetType(3)
     If !RpcSetEnv(cEmpAnt, cFilAnt, , , "SIGAAGL", , {"ZA1"})
-        ConOut("CNSA_CLOSE30D: falha no RpcSetEnv - job abortado.")
+        ConOut("CNS001_CLOSE30D: falha no RpcSetEnv - job abortado.")
         Return
     EndIf
 
@@ -2502,7 +2502,7 @@ User Function CNSA_CLOSE30D()
             ZA1->(MsUnlock())
 
             nFechados++
-            ConOut("CNSA_CLOSE30D: chamado " + AllTrim(ZA1->ZA1_IDCH) + " fechado automaticamente (30 dias sem modificacao).")
+            ConOut("CNS001_CLOSE30D: chamado " + AllTrim(ZA1->ZA1_IDCH) + " fechado automaticamente (30 dias sem modificacao).")
 
             (cAlias)->(DbSkip())
         EndDo
@@ -2513,7 +2513,7 @@ User Function CNSA_CLOSE30D()
         ConOut("CNSA_FECHA30D: erro durante execucao - ver log acima.")
     End Sequence
 
-    ConOut("CNSA_CLOSE30D: finalizado - " + AllTrim(Str(nFechados)) + " chamado(s) fechado(s).")
+    ConOut("CNS001_CLOSE30D: finalizado - " + AllTrim(Str(nFechados)) + " chamado(s) fechado(s).")
 
     RpcClearEnv()
 
@@ -2564,7 +2564,7 @@ Return
 ////////////////////////////////////////////////////////////////////////////////
 
 @Get(endpoint="/CNSACOMPONENTES")
-User Function CNSA_COMPONENTES_LISTAR() As Logical
+User Function CNS001_COMPONENTES_LISTAR() As Logical
     Local jQuery        := oRest:getQueryRequest() As Json
     Local cTipoParam    := ""
     Local cFiltroParam  := ""
