@@ -105,7 +105,7 @@ Static Function ViewDef()
     l_oView:SetOwnerView("VIEW_SZ6", "GRIDAGE")
 
     l_oView:EnableTitleView("VIEW_ZA1", "Dados do Chamado")
-    l_oView:EnableTitleView("VIEW_ZA2", "AnotaÃ§Ãµes")
+    l_oView:EnableTitleView("VIEW_ZA2", "Anotações")
     l_oView:EnableTitleView("VIEW_SZ6", "Agendamento")
 
     l_oView:SetCloseOnOk({||.T.})
@@ -127,8 +127,8 @@ Static Function ModelDef()
     l_oModel := MPFormModel():New(;
         "FCNSA001",;
         {|oModel| CNSA_TOK(oModel)},;          // Pre-Validacao
-        {|oModel| CNSA_APOSCOMMIT(oModel)},;  // Pos-Validacao (pÃ³s-commit)
-        NIL,;                                // Commit (NIL = comportamento padrÃ£o)
+        {|oModel| CNSA_APOSCOMMIT(oModel)},;  // Pos-Validacao (pós-commit)
+        NIL,;                                // Commit (NIL = comportamento padrão)
         {|oModel| CNSA_CAN(oModel)})        // Cancel
 
     l_oModel:AddFields(;
@@ -173,6 +173,7 @@ User Function CNSA_EXCLUIR()
     Local oBtnOk         := Nil
     Local oBtnCan        := Nil
     Local oGetMotivo     := Nil
+    Local aResultado     := {}
 
     If ZA1->(Eof()) .Or. ZA1->(Bof())
         MsgAlert("Nenhum chamado selecionado.", "Excluir")
@@ -188,16 +189,15 @@ User Function CNSA_EXCLUIR()
     Public lExclusaoConfirm := .F.
 
     // Se nao tem tecnico, nao precisa de modal, vai direto
-    // (mesmo sem tecnico, pode haver agendamentos orfaos vinculados, entao verifica)
     If Empty(cConsulAnterior)
-        CNSA_REMOVEAGENDA(cIdChAnterior)
-        RecLock("ZA1", .F.)
-            ZA1->(DbDelete())
-        ZA1->(MsUnlock())
+        aResultado := CNSA_EXCLUINUCLEO(cIdChAnterior, "", .T.)
+        If !aResultado[1]
+            MsgAlert(aResultado[2], "Excluir")
+        EndIf
         Return
     EndIf
 
-    //CRIAÃ‡ÃƒO DA JANELA POPUP
+    //CRIAÇÃO DA JANELA POPUP
     Private aMotivos := {"Cancelamento pela Apia", "Cancelamento pelo Cliente", "Outro motivo"}
     Private cMotivoSel := aMotivos[1]
     Private cOutroMotivo := Space(100)
@@ -243,94 +243,28 @@ User Function CNSA_EXCLUIR()
 
     lExclusaoConfirm := .T.
 
-    // Executa o delete diretamente
-    RecLock("ZA1", .F.)
-        ZA1->(DbDelete())
-    ZA1->(MsUnlock())
-
-    // Chama o poscommit manualmente
-    CNSA_POSCOMMIT_EXCLUIR()
-
-Return
-
-///////////////////////////////////////////////////////////////
-//POS COMMIT DO EXCLUIR
-///////////////////////////////////////////////////////////////
-Static Function CNSA_POSCOMMIT_EXCLUIR()
-    Local cExclPor  := ""
-    Local cCliente  := ""
-    Local cIdCh     := ""
-    Local cEmailAnt := ""
-    Local cDataAge  := DToC(Date())
-    Local cHmini    := ""
-    Local cHmfim    := ""
-    Local cCorpo    := ""
-    Local cAlias    := GetNextAlias()
-    Local nCham     := 0
-
-    If Empty(cConsulAnterior) .Or. !lExclusaoConfirm
-        Return
+    aResultado := CNSA_EXCLUINUCLEO(cIdChAnterior, cMotivoExclusao, .T.)
+    If !aResultado[1]
+        MsgAlert(aResultado[2], "Excluir")
     EndIf
-
-    cExclPor  := AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_NOMTEC"))
-    cIdCh     := cIdChAnterior
-    cCliente  := AllTrim(Posicione("SA1",1,xFilial("SA1")+cClienteAnterior+cLojaAnterior,"A1_NOME"))
-    cEmailAnt := AllTrim(Posicione("AA1", 1, xFilial("AA1") + cConsulAnterior, "AA1_EMAIL"))
-    nCham     := Val(cIdCh)
-
-    BeginSql Alias cAlias
-        SELECT Z6_DTAGE, Z6_HMINI, Z6_HMFIM
-        FROM %Table:SZ6% SZ6
-        WHERE Z6_FILIAL  = %xFilial:SZ6%
-          AND Z6_CHAMADO = %Exp:nCham%
-          AND %NotDel%
-    EndSql
-    If !(cAlias)->(Eof())
-        // Z6_DTAGE pode vir como string da query BeginSql
-        If ValType((cAlias)->Z6_DTAGE) == "D"
-            cDataAge := DToC((cAlias)->Z6_DTAGE)
-        Else
-            cDataAge := AllTrim((cAlias)->Z6_DTAGE)
-            // converte de YYYYMMDD para DD/MM/AAAA se vier como string
-            If Len(cDataAge) == 8
-                cDataAge := SubStr(cDataAge,7,2) + "/" + SubStr(cDataAge,5,2) + "/" + SubStr(cDataAge,1,4)
-            EndIf
-        EndIf
-        cHmini := AllTrim((cAlias)->Z6_HMINI)
-        cHmfim := AllTrim((cAlias)->Z6_HMFIM)
-    EndIf
-    (cAlias)->(DbCloseArea())
-
-    If Empty(cHmini) ; cHmini := "00:00" ; EndIf
-    If Empty(cHmfim) ; cHmfim := "00:00" ; EndIf
-
-    cCorpo := CNSA_CANCEL_FRONT(cCliente, cDataAge, cHmini, cHmfim, ;
-                cIdCh, cMotivoExclusao, cExclPor)
-
-    CNSA_ENVIAEMAIL(cEmailAnt, ;
-        "Cancelamento do Chamado " + cIdCh, ;
-        cCorpo, ;
-        "apia@apia.com.br")
-
-    CNSA_REMOVEAGENDA(cIdCh)
 
 Return
 
 ///////////////////////////////////////////////////////////////////////////
-//PARTE DA EXCLUSAO/ALTERAÃ‡ÃƒO DE CHAMADOS
+//PARTE DA EXCLUSAO/ALTERAÇÃO DE CHAMADOS
 //////////////////////////////////////////////////////////////////////////
 Static Function CNSA_TOK(p_oModel)
     Local l_bOk  := .T.
     Local nOper  := p_oModel:GetOperation()
 
-    // Bloqueia alteraÃ§Ã£o para quem nÃ£o Ã© do grupo
+    // Bloqueia alteração para quem não é do grupo
     If nOper == 4 .And. !CNSA_NOGRUPO()
         MsgAlert("Voce nao tem permissao para alterar chamados. Utilize a opcao Interagir.", "Acesso")
         Return .F.
     EndIf
 
 
-    // SÃ³ inicializa as Publics se ainda nao existirem
+    // Só inicializa as Publics se ainda nao existirem
     // Para nao sobrescrever o que CNSA_EXCLUIR ja preencheu
     If Type("cConsulAnterior") <> "C"
         Public cConsulAnterior  := ""
@@ -386,8 +320,9 @@ Static Function CNSA_APOSCOMMIT(p_oModel)
     Local cCorpo      := ""
     Local cAlias      := GetNextAlias()
     Local nCham       := 0
+    Local lViaRest    := (Type("lCnsaViaRest") == "L" .And. lCnsaViaRest)
 
-    // VariÃ¡veis para o bloco de agendamento automÃ¡tico
+    // Variáveis para o bloco de agendamento automático
     Local cClienteAp  := ""
     Local cLojaAp     := ""
     Local cProjAp     := ""
@@ -400,7 +335,7 @@ Static Function CNSA_APOSCOMMIT(p_oModel)
 
     cExclPor := AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_NOMTEC"))
 
-    // --- ENVIOS DE E-MAIL (APENAS NA ALTERAÃ‡ÃƒO - OPERAÃ‡ÃƒO 4) ---
+    // --- ENVIOS DE E-MAIL (APENAS NA ALTERAÇÃO - OPERAÇÃO 4) ---
     If nOper == 4
 
         cConsulNovo := AllTrim(p_oModel:GetValue("ZA1MASTER", "ZA1_CONSUL"))
@@ -468,13 +403,13 @@ Static Function CNSA_APOSCOMMIT(p_oModel)
         EndIf
     EndIf
 
-    // --- NOVA INTERAÃ‡ÃƒO: PERGUNTA DE AGENDAMENTO (INCLUSÃƒO OU ALTERAÃ‡ÃƒO) ---
+    // --- NOVA INTERAÇÃO: PERGUNTA DE AGENDAMENTO (INCLUSÃO OU ALTERAÇÃO) ---
     // Agora sempre oferece a criacao de um novo agendamento, mesmo que ja existam outros
     If nOper == 3 .Or. nOper == 4
         cIdCh      := AllTrim(p_oModel:GetValue("ZA1MASTER", "ZA1_IDCH"))
         cTecnicoAp := AllTrim(p_oModel:GetValue("ZA1MASTER", "ZA1_CONSUL"))
 
-        // SÃ³ executa o resto se o chamado tem tÃ©cnico
+        // Só executa o resto se o chamado tem técnico
         If !Empty(cTecnicoAp)
 
             nCham := Val(cIdCh)
@@ -497,7 +432,7 @@ Static Function CNSA_APOSCOMMIT(p_oModel)
                 "Este chamado nao possui agendamento. Deseja criar uma agenda para ele agora?", ;
                 "Este chamado ja possui " + cValToChar(nQtdAgenda) + " agendamento(s). Deseja criar mais um agora?")
 
-            If MsgYesNo(cPergAgenda, "Agendar Chamado")
+            If lViaRest .Or. MsgYesNo(cPergAgenda, "Agendar Chamado")
 
                 cClienteAp := AllTrim(p_oModel:GetValue("ZA1MASTER", "ZA1_CLIENT"))
                 cLojaAp    := AllTrim(p_oModel:GetValue("ZA1MASTER", "ZA1_LOJA"))
@@ -505,20 +440,20 @@ Static Function CNSA_APOSCOMMIT(p_oModel)
                 cProjAp    := AllTrim(p_oModel:GetValue("ZA1MASTER", "ZA1_PROJ"))
                 cTarefaAp  := AllTrim(p_oModel:GetValue("ZA1MASTER", "ZA1_TAREFA"))
 
-                // --- CALCULA O HORÃ RIO DINÃ‚MICO AQUI ---
-                // Captura "HH:MM" do relÃ³gio do servidor
+                // --- CALCULA O HOR� RIO DINÂMICO AQUI ---
+                // Captura "HH:MM" do relógio do servidor
                 cHoraAtual := Left(Time(), 5)
 
                 // Adiciona 1 hora na hora final
                 cHoraFim   := StrZero(Val(Left(cHoraAtual, 2)) + 1, 2) + ":" + Right(cHoraAtual, 2)
 
-                // Trava de seguranÃ§a para nÃ£o passar de "23:59"
+                // Trava de segurança para não passar de "23:59"
                 If Val(Left(cHoraFim, 2)) >= 24
                     cHoraFim := "23:59"
                 EndIf
                 // ---------------------------------------
 
-                // Chama a funÃ§Ã£o passando a hora dinÃ¢mica
+                // Chama a função passando a hora dinâmica
                 CNSA_CRIAAGENDA_INT(cTecnicoAp, Date(), cHoraAtual, cHoraFim, ;
                     cClienteAp, cLojaAp, cAssunto, cProjAp, cTarefaAp, cIdCh)
             EndIf
@@ -942,7 +877,7 @@ User Function CNSA_INTERAGIR()
     EndIf
 
     If cStatus == "4"
-        MsgAlert("Chamado fechado nao pode receber anotaÃ§Ãµes.", "Anotar")
+        MsgAlert("Chamado fechado nao pode receber anotações.", "Anotar")
         Return
     EndIf
 
@@ -1062,7 +997,7 @@ Static Function CNSA_JSONESC(cTexto)
 Return cRet
 
 ////////////////////////////////////////////////////////////////////////////////
-//AUTENTICAÃ‡ÃƒO DO EMAIL VIA AZZURE ID, PERMISSÃ•ES ETC
+//AUTENTICAÇÃO DO EMAIL VIA AZZURE ID, PERMISSÕES ETC
 ////////////////////////////////////////////////////////////////////////////////
 Static Function CNSA_TOKEN()
     Local cTenant := ""
@@ -1191,7 +1126,7 @@ Static Function CNSA_GERACHAM()
 
         cNewId := GetSXENum("ZA1", "ZA1_IDCH")
 
-        //cria o chamado com as informaÃ§Ãµes presentes no corpo do email
+        //cria o chamado com as informações presentes no corpo do email
         RecLock("ZA1", .T.)
             ZA1->ZA1_FILIAL  := xFilial("ZA1")
             ZA1->ZA1_IDCH    := cNewId
@@ -1378,12 +1313,12 @@ Return cNome
 // FUCNAO QUE VERIFICA QUEM ESTA NO GRUPO DE ADMINISTRADORES
 ////////////////////////////////////////////////////////////////////////////////
 Static Function CNSA_NOGRUPO()
-    // FWSFUsrGrps(__cUserId) retorna um array com os IDs dos grupos do usuÃ¡rio logado nativamente
+    // FWSFUsrGrps(__cUserId) retorna um array com os IDs dos grupos do usuário logado nativamente
     Local aGrupos   := FWSFUsrGrps(__cUserId)
     Local cGrpPerm  := GetMV("MV_CNSAGRP")
     Local nI        := 0
 
-    // Verifica se a funÃ§Ã£o retornou corretamente um Array
+    // Verifica se a função retornou corretamente um Array
     If ValType(aGrupos) != "A"
         Return .F.
     endif
@@ -1401,7 +1336,7 @@ Static Function CNSA_NOGRUPO()
 Return .F.
 
 /////////////////////////////////////////////////////////////////////////////////////////////
-// Função intermediÃ¡ria para barrar ou filtrar o acesso na AlteraÃ§Ã£o
+// Fun��o intermediária para barrar ou filtrar o acesso na Alteração
 /////////////////////////////////////////////////////////////////////////////////////////////
 User Function CNSA_ALT()
 
@@ -1823,3 +1758,136 @@ Static Function CNSA_DTAGE_ISO(cDtAge)
         Return SubStr(cDtAge, 1, 4) + "-" + SubStr(cDtAge, 5, 2) + "-" + SubStr(cDtAge, 7, 2)
     EndIf
 Return cDtAge
+
+////////////////////////////////////////////////////////////////////////////////
+// Nucleo compartilhado de exclusao de chamado (ZA1) - usado pela tela
+// classica (CNSA_EXCLUIR, apos o dialog de motivo) e pelo REST
+// (CNS001.tlpp, CNSA_CHAMADOS_EXCLUIR). Sem Public, sem MsgAlert - so
+// logica de negocio, parametros explicitos, retorno estruturado.
+//
+// lConfirmarPorAgenda (Default .F.): .F. apaga TODOS os agendamentos
+// vinculados sem perguntar (comportamento do REST); .T. pergunta
+// agendamento por agendamento via CNSA_REMOVEAGENDA (comportamento da
+// tela classica, preservado).
+//
+// Retorno: array {lOk, cErro} - lOk .T. e cErro "" em sucesso; lOk .F. e
+// cErro com a mensagem em caso de falha.
+////////////////////////////////////////////////////////////////////////////////
+User Function CNSA_EXCLUINUCLEO(cIdCh, cMotivo, lConfirmarPorAgenda)
+    Local cConsulAnterior  := ""
+    Local cClienteAnterior := ""
+    Local cLojaAnterior    := ""
+    Local cNomeCli         := ""
+    Local cNomeTec         := ""
+    Local cEmailTec        := ""
+    Local cExclPor         := ""
+    Local cDataAge         := DToC(Date())
+    Local cHmini           := "00:00"
+    Local cHmfim           := "00:00"
+    Local cCorpo           := ""
+    Local cAlias           := ""
+    Local nCham            := 0
+    Local oErro            := Nil
+
+    Default lConfirmarPorAgenda := .F.
+
+    Begin Sequence
+
+        If Empty(cIdCh)
+            Return {.F., "Informe o idCh do chamado."}
+        EndIf
+
+        dbSelectArea("ZA1")
+        ZA1->(DbSetOrder(1))
+        If !ZA1->(DbSeek(xFilial("ZA1") + cIdCh))
+            Return {.F., "Chamado nao encontrado."}
+        EndIf
+
+        cConsulAnterior  := AllTrim(ZA1->ZA1_CONSUL)
+        cClienteAnterior := AllTrim(ZA1->ZA1_CLIENT)
+        cLojaAnterior    := AllTrim(ZA1->ZA1_LOJA)
+
+        If !Empty(cConsulAnterior) .And. Empty(cMotivo)
+            Return {.F., "Informe o motivo do cancelamento - obrigatorio quando o chamado tem tecnico designado."}
+        EndIf
+
+        cExclPor := AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_NOMTEC"))
+        cNomeCli := AllTrim(Posicione("SA1", 1, xFilial("SA1") + cClienteAnterior + cLojaAnterior, "A1_NOME"))
+
+        nCham  := Val(cIdCh)
+        cAlias := GetNextAlias()
+        BeginSql Alias cAlias
+            SELECT Z6_DTAGE, Z6_HMINI, Z6_HMFIM
+            FROM %Table:SZ6% SZ6
+            WHERE Z6_FILIAL  = %xFilial:SZ6%
+              AND Z6_CHAMADO = %Exp:nCham%
+              AND %NotDel%
+        EndSql
+        If !(cAlias)->(Eof())
+            If ValType((cAlias)->Z6_DTAGE) == "D"
+                cDataAge := DToC((cAlias)->Z6_DTAGE)
+            Else
+                cDataAge := AllTrim((cAlias)->Z6_DTAGE)
+                If Len(cDataAge) == 8
+                    cDataAge := SubStr(cDataAge,7,2) + "/" + SubStr(cDataAge,5,2) + "/" + SubStr(cDataAge,1,4)
+                EndIf
+            EndIf
+            cHmini := AllTrim((cAlias)->Z6_HMINI)
+            cHmfim := AllTrim((cAlias)->Z6_HMFIM)
+        EndIf
+        (cAlias)->(DbCloseArea())
+
+        If Empty(cHmini) ; cHmini := "00:00" ; EndIf
+        If Empty(cHmfim) ; cHmfim := "00:00" ; EndIf
+
+        RecLock("ZA1", .F.)
+            ZA1->(DbDelete())
+        ZA1->(MsUnlock())
+
+        If lConfirmarPorAgenda
+            // Comportamento da tela classica - pergunta agendamento por
+            // agendamento (CNSA_REMOVEAGENDA ja existe nesse arquivo).
+            CNSA_REMOVEAGENDA(cIdCh)
+        Else
+            // Comportamento do REST - apaga TODOS sem perguntar (nao ha
+            // como perguntar no meio de uma chamada headless).
+            cAlias := GetNextAlias()
+            BeginSql Alias cAlias
+                SELECT SZ6.R_E_C_N_O_ RECNO
+                FROM %Table:SZ6% SZ6
+                WHERE SZ6.Z6_FILIAL  = %xFilial:SZ6%
+                  AND SZ6.Z6_CHAMADO = %Exp:nCham%
+                  AND %NotDel%
+            EndSql
+            dbSelectArea("SZ6")
+            While !(cAlias)->(Eof())
+                SZ6->(DbGoto((cAlias)->RECNO))
+                If !SZ6->(Eof())
+                    RecLock("SZ6", .F.)
+                        SZ6->(DbDelete())
+                    SZ6->(MsUnlock())
+                EndIf
+                (cAlias)->(DbSkip())
+            EndDo
+            (cAlias)->(DbCloseArea())
+        EndIf
+
+        If !Empty(cConsulAnterior)
+            cNomeTec  := AllTrim(Posicione("AA1", 1, xFilial("AA1") + cConsulAnterior, "AA1_NOMTEC"))
+            cEmailTec := AllTrim(Posicione("AA1", 1, xFilial("AA1") + cConsulAnterior, "AA1_EMAIL"))
+
+            If !Empty(cEmailTec)
+                cCorpo := CNSA_CANCEL_FRONT(cNomeCli, cDataAge, cHmini, cHmfim, cIdCh, cMotivo, cExclPor)
+                CNSA_ENVIAEMAIL(cEmailTec, "Cancelamento do Chamado " + cIdCh, cCorpo, "apia@apia.com.br")
+            Else
+                ConOut("CNSA_EXCLUINUCLEO: tecnico " + cConsulAnterior + " sem AA1_EMAIL cadastrado - e-mail de cancelamento nao enviado.")
+            EndIf
+        EndIf
+
+        Return {.T., ""}
+
+    Recover Using oErro
+        Return {.F., oErro:Description}
+    End Sequence
+
+Return {.F., "Erro desconhecido."}
