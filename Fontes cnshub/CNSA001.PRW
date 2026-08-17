@@ -105,7 +105,7 @@ Static Function ViewDef()
     l_oView:SetOwnerView("VIEW_SZ6", "GRIDAGE")
 
     l_oView:EnableTitleView("VIEW_ZA1", "Dados do Chamado")
-    l_oView:EnableTitleView("VIEW_ZA2", "Anota√ß√µes")
+    l_oView:EnableTitleView("VIEW_ZA2", "AnotaÁıes")
     l_oView:EnableTitleView("VIEW_SZ6", "Agendamento")
 
     l_oView:SetCloseOnOk({||.T.})
@@ -127,8 +127,8 @@ Static Function ModelDef()
     l_oModel := MPFormModel():New(;
         "FCNSA001",;
         {|oModel| CNSA_TOK(oModel)},;          // Pre-Validacao
-        {|oModel| CNSA_APOSCOMMIT(oModel)},;  // Pos-Validacao (p√≥s-commit)
-        NIL,;                                // Commit (NIL = comportamento padr√£o)
+        {|oModel| CNSA_APOSCOMMIT(oModel)},;  // Pos-Validacao (pÛs-commit)
+        NIL,;                                // Commit (NIL = comportamento padr„o)
         {|oModel| CNSA_CAN(oModel)})        // Cancel
 
     l_oModel:AddFields(;
@@ -197,7 +197,7 @@ User Function CNSA_EXCLUIR()
         Return
     EndIf
 
-    //CRIA√á√ÉO DA JANELA POPUP
+    //CRIA«√O DA JANELA POPUP
     Private aMotivos := {"Cancelamento pela Apia", "Cancelamento pelo Cliente", "Outro motivo"}
     Private cMotivoSel := aMotivos[1]
     Private cOutroMotivo := Space(100)
@@ -251,20 +251,20 @@ User Function CNSA_EXCLUIR()
 Return
 
 ///////////////////////////////////////////////////////////////////////////
-//PARTE DA EXCLUSAO/ALTERA√á√ÉO DE CHAMADOS
+//PARTE DA EXCLUSAO/ALTERA«√O DE CHAMADOS
 //////////////////////////////////////////////////////////////////////////
 Static Function CNSA_TOK(p_oModel)
     Local l_bOk  := .T.
     Local nOper  := p_oModel:GetOperation()
 
-    // Bloqueia altera√ß√£o para quem n√£o √© do grupo
+    // Bloqueia alteraÁ„o para quem n„o È do grupo
     If nOper == 4 .And. !CNSA_NOGRUPO()
         MsgAlert("Voce nao tem permissao para alterar chamados. Utilize a opcao Interagir.", "Acesso")
         Return .F.
     EndIf
 
 
-    // S√≥ inicializa as Publics se ainda nao existirem
+    // SÛ inicializa as Publics se ainda nao existirem
     // Para nao sobrescrever o que CNSA_EXCLUIR ja preencheu
     If Type("cConsulAnterior") <> "C"
         Public cConsulAnterior  := ""
@@ -322,7 +322,7 @@ Static Function CNSA_APOSCOMMIT(p_oModel)
     Local nCham       := 0
     Local lViaRest    := (Type("lCnsaViaRest") == "L" .And. lCnsaViaRest)
 
-    // Vari√°veis para o bloco de agendamento autom√°tico
+    // Vari·veis para o bloco de agendamento autom·tico
     Local cClienteAp  := ""
     Local cLojaAp     := ""
     Local cProjAp     := ""
@@ -335,7 +335,7 @@ Static Function CNSA_APOSCOMMIT(p_oModel)
 
     cExclPor := AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_NOMTEC"))
 
-    // --- ENVIOS DE E-MAIL (APENAS NA ALTERA√á√ÉO - OPERA√á√ÉO 4) ---
+    // --- ENVIOS DE E-MAIL (APENAS NA ALTERA«√O - OPERA«√O 4) ---
     If nOper == 4
 
         cConsulNovo := AllTrim(p_oModel:GetValue("ZA1MASTER", "ZA1_CONSUL"))
@@ -403,13 +403,13 @@ Static Function CNSA_APOSCOMMIT(p_oModel)
         EndIf
     EndIf
 
-    // --- NOVA INTERA√á√ÉO: PERGUNTA DE AGENDAMENTO (INCLUS√ÉO OU ALTERA√á√ÉO) ---
+    // --- NOVA INTERA«√O: PERGUNTA DE AGENDAMENTO (INCLUS√O OU ALTERA«√O) ---
     // Agora sempre oferece a criacao de um novo agendamento, mesmo que ja existam outros
     If nOper == 3 .Or. nOper == 4
         cIdCh      := AllTrim(p_oModel:GetValue("ZA1MASTER", "ZA1_IDCH"))
         cTecnicoAp := AllTrim(p_oModel:GetValue("ZA1MASTER", "ZA1_CONSUL"))
 
-        // S√≥ executa o resto se o chamado tem t√©cnico
+        // SÛ executa o resto se o chamado tem tÈcnico
         If !Empty(cTecnicoAp)
 
             nCham := Val(cIdCh)
@@ -440,20 +440,20 @@ Static Function CNSA_APOSCOMMIT(p_oModel)
                 cProjAp    := AllTrim(p_oModel:GetValue("ZA1MASTER", "ZA1_PROJ"))
                 cTarefaAp  := AllTrim(p_oModel:GetValue("ZA1MASTER", "ZA1_TAREFA"))
 
-                // --- CALCULA O HOR√ RIO DIN√ÇMICO AQUI ---
-                // Captura "HH:MM" do rel√≥gio do servidor
+                // --- CALCULA O HOR? RIO DIN¬MICO AQUI ---
+                // Captura "HH:MM" do relÛgio do servidor
                 cHoraAtual := Left(Time(), 5)
 
                 // Adiciona 1 hora na hora final
                 cHoraFim   := StrZero(Val(Left(cHoraAtual, 2)) + 1, 2) + ":" + Right(cHoraAtual, 2)
 
-                // Trava de seguran√ßa para n√£o passar de "23:59"
+                // Trava de seguranÁa para n„o passar de "23:59"
                 If Val(Left(cHoraFim, 2)) >= 24
                     cHoraFim := "23:59"
                 EndIf
                 // ---------------------------------------
 
-                // Chama a fun√ß√£o passando a hora din√¢mica
+                // Chama a funÁ„o passando a hora din‚mica
                 CNSA_CRIAAGENDA_INT(cTecnicoAp, Date(), cHoraAtual, cHoraFim, ;
                     cClienteAp, cLojaAp, cAssunto, cProjAp, cTarefaAp, cIdCh)
             EndIf
@@ -877,7 +877,7 @@ User Function CNSA_INTERAGIR()
     EndIf
 
     If cStatus == "4"
-        MsgAlert("Chamado fechado nao pode receber anota√ß√µes.", "Anotar")
+        MsgAlert("Chamado fechado nao pode receber anotaÁıes.", "Anotar")
         Return
     EndIf
 
@@ -997,13 +997,18 @@ Static Function CNSA_JSONESC(cTexto)
 Return cRet
 
 ////////////////////////////////////////////////////////////////////////////////
-//AUTENTICA√á√ÉO DO EMAIL VIA AZZURE ID, PERMISS√ïES ETC
+//AUTENTICA«√O DO EMAIL VIA AZZURE ID, PERMISS’ES ETC
 ////////////////////////////////////////////////////////////////////////////////
 Static Function CNSA_TOKEN()
-    Local cTenant := ""
-    Local cClient := ""
-    Local cSecret := ""
+    Local cTenant := AllTrim(GETMV("MV_CNSATEN"))
+    Local cClient := AllTrim(GETMV("MV_CNSACLI"))
+    Local cSecret := AllTrim(GETMV("MV_CNSASEC"))
     Local oRest, oJson, cBody, cToken := ""
+
+    If Empty(cTenant) .Or. Empty(cClient) .Or. Empty(cSecret)
+        ConOut("CNSA_TOKEN: MV_CNSATEN/MV_CNSACLI/MV_CNSASEC nao configurados no Configurador - e-mail nao sera enviado/verificado.")
+        Return ""
+    EndIf
 
     cBody := "grant_type=client_credentials"
     cBody += "&client_id="     + CNSA_URLENC(cClient)
@@ -1014,6 +1019,7 @@ Static Function CNSA_TOKEN()
     oRest:setPath("/" + cTenant + "/oauth2/v2.0/token")
     oRest:SetPostParams(cBody)
     If !oRest:Post({"Content-Type: application/x-www-form-urlencoded"})
+        ConOut("CNSA_TOKEN: falha no POST de token (Azure AD): " + oRest:GetLastError())
         Return ""
     EndIf
 
@@ -1126,7 +1132,7 @@ Static Function CNSA_GERACHAM()
 
         cNewId := GetSXENum("ZA1", "ZA1_IDCH")
 
-        //cria o chamado com as informa√ß√µes presentes no corpo do email
+        //cria o chamado com as informaÁıes presentes no corpo do email
         RecLock("ZA1", .T.)
             ZA1->ZA1_FILIAL  := xFilial("ZA1")
             ZA1->ZA1_IDCH    := cNewId
@@ -1313,12 +1319,12 @@ Return cNome
 // FUCNAO QUE VERIFICA QUEM ESTA NO GRUPO DE ADMINISTRADORES
 ////////////////////////////////////////////////////////////////////////////////
 Static Function CNSA_NOGRUPO()
-    // FWSFUsrGrps(__cUserId) retorna um array com os IDs dos grupos do usu√°rio logado nativamente
+    // FWSFUsrGrps(__cUserId) retorna um array com os IDs dos grupos do usu·rio logado nativamente
     Local aGrupos   := FWSFUsrGrps(__cUserId)
     Local cGrpPerm  := GetMV("MV_CNSAGRP")
     Local nI        := 0
 
-    // Verifica se a fun√ß√£o retornou corretamente um Array
+    // Verifica se a funÁ„o retornou corretamente um Array
     If ValType(aGrupos) != "A"
         Return .F.
     endif
@@ -1336,7 +1342,7 @@ Static Function CNSA_NOGRUPO()
 Return .F.
 
 /////////////////////////////////////////////////////////////////////////////////////////////
-// FunÁ„o intermedi√°ria para barrar ou filtrar o acesso na Altera√ß√£o
+// Fun??o intermedi·ria para barrar ou filtrar o acesso na AlteraÁ„o
 /////////////////////////////////////////////////////////////////////////////////////////////
 User Function CNSA_ALT()
 
