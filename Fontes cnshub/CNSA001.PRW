@@ -1,4 +1,3 @@
-#include "RESTFUL.CH"
 #include "PROTHEUS.CH"
 #include "RWMAKE.CH"
 #include "TOPCONN.CH"
@@ -6,11 +5,10 @@
 #include "FWMBROWSE.CH"
 #include "FWMVCDEF.CH"
 #include "COLORS.CH"
+#include "RESTFUL.CH"
 
-#define CNSA_FWMODEL_HOST  "http://10.0.0.3:3624"
-#define CNSA_FWMODEL_PATH  "/rest/FwModel/agenda/"
-#define CNSA_FWMODEL_MODEL "ModelSZ6_Main"
 
+PUBLISH MODEL REST NAME chamado
 
 ////////////////////////////////////////////////////////////////////////////////////////////
 //FUNCAO PRINCIPAL
@@ -1065,9 +1063,9 @@ Return cRet
 //AUTENTICAÃ‡ÃƒO DO EMAIL VIA AZZURE ID, PERMISSÃ•ES ETC
 ////////////////////////////////////////////////////////////////////////////////
 Static Function CNSA_TOKEN()
-    Local cTenant := ""
-    Local cClient := ""
-    Local cSecret := ""
+    Local cTenant := AllTrim(GETMV("MV_CNSATEN"))
+    Local cClient := AllTrim(GETMV("MV_CNSACLI"))
+    Local cSecret := AllTrim(GETMV("MV_CNSASEC"))
     Local oRest, oJson, cBody, cToken := ""
 
     cBody := "grant_type=client_credentials"
