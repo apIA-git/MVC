@@ -326,25 +326,27 @@ User Function CNS001_CHAMADOS_LISTAR() As Logical
                 AAdd(aCacheTaf, {cProjeto + cTarefa, cNomeTaf})
             EndIf
 
-            // FIX (acentos virando caractere de substituicao no front):
-            // EncodeUtf8 em todo texto livre/nome antes do JSON - o WSRESTFUL
-            // classico nao converte ANSI/CP1252 pra UTF-8 sozinho. Codigos
-            // puros (idCh, status, codConsultor, codCliente, lojaCliente,
-            // tipo, projeto, tarefa, emailCliente, data) nao precisam.
+            // FIX (mojibake "Ã§Ã£o" no front - EncodeUtf8 manual duplicava
+            // codificacao): o HTTP server do Protheus (socksrvint.cpp) ja
+            // converte o corpo da resposta de cp1252 pra utf-8 sozinho (log
+            // do console mostra "error in conversion routine. to: utf-8
+            // from: cp1252" nessa conversao automatica). Chamar EncodeUtf8
+            // aqui fazia o texto ser codificado 2x. Campo texto/nome vai em
+            // cp1252 puro, servidor converte uma unica vez.
             oLinha := JsonObject():New()
             oLinha['idCh']         := aTodos[nI][1]
-            oLinha['assunto']      := EncodeUtf8(aTodos[nI][2])
+            oLinha['assunto']      := aTodos[nI][2]
             oLinha['status']       := aTodos[nI][3]
-            oLinha['tecnico']      := EncodeUtf8(cNomeTec)
+            oLinha['tecnico']      := cNomeTec
             oLinha['codConsultor'] := cCodConsul
-            oLinha['cliente']      := EncodeUtf8(cNomeCli)
+            oLinha['cliente']      := cNomeCli
             oLinha['codCliente']   := cCodCli
             oLinha['lojaCliente']  := cLoja
             oLinha['tipo']         := cTipo
             oLinha['projeto']      := cProjeto
-            oLinha['nomeProjeto']  := EncodeUtf8(cNomeProj)
+            oLinha['nomeProjeto']  := cNomeProj
             oLinha['tarefa']       := cTarefa
-            oLinha['nomeTarefa']   := EncodeUtf8(cNomeTaf)
+            oLinha['nomeTarefa']   := cNomeTaf
             oLinha['emailCliente'] := cEmailCli
             // FIX (argument #0 error, expected D->C, function dtos):
             // ZA1_DATA vindo do cursor da consulta paginada (ROWNUM/subquery
@@ -365,11 +367,29 @@ User Function CNS001_CHAMADOS_LISTAR() As Logical
 
     Recover Using oErro
         If oErro != Nil
-            Return oRest:setStatusResponse(500, '{"erro":"' + CNS001_JSONESC(EncodeUtf8(oErro:Description)) + '"}')
+            Return oRest:setStatusResponse(500, '{"erro":"' + CNS001_JSONESC(oErro:Description) + '"}')
         EndIf
     End Sequence
 
 Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
+
+////////////////////////////////////////////////////////////////////////////////
+// TESTE ISOLADO (rodar 1 vez pra diagnostico, depois apagar): confirma se
+// DecodeUTF8/EncodeUTF8 realmente convertem nesse AppServer, sem Graph/banco
+// no meio. Devolve o resultado via ConOut (console nao sofre a conversao
+// automatica cp1252->utf8 do socksrvint.cpp) - conferir log apos GET.
+////////////////////////////////////////////////////////////////////////////////
+@Get(endpoint="/CNS001TESTEUTF8")
+User Function CNS001_TESTE_UTF8() As Logical
+    // bytes UTF-8 reais de "ção" (C3 A7 = ç, C3 A3 = ã)
+    Local cUtf8 := Chr(195)+Chr(167)+Chr(195)+Chr(163)+"o"
+    Local cDec  := DecodeUTF8(cUtf8)
+
+    ConOut("CNS001_TESTE_UTF8: bruto len=" + cValToChar(Len(cUtf8)) + " bytes=" + cValToChar(Asc(SubStr(cUtf8,1,1))) + "," + cValToChar(Asc(SubStr(cUtf8,2,1))) + "," + cValToChar(Asc(SubStr(cUtf8,3,1))) + "," + cValToChar(Asc(SubStr(cUtf8,4,1))))
+    ConOut("CNS001_TESTE_UTF8: decodificado tipo=" + ValType(cDec) + " vazio=" + cValToChar(Empty(cDec)) + " valor=[" + cValToChar(cDec) + "]")
+
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
+Return oRest:setStatusResponse(200, '{"ok":true,"veja":"console do appserver"}')
 
 ////////////////////////////////////////////////////////////////////////////////
 // ASSUMIR - @Post, mesma URL/querystring de sempre (POST /CNS001CHAMADOSASSUMIR
@@ -613,7 +633,7 @@ Static Function CNS001_EXCLUIR(cIdCh, cMotivo)
         Return {200, oJson:ToJson()}
 
     Recover Using oErro
-        Return {500, '{"erro":"' + CNS001_JSONESC(EncodeUtf8(oErro:Description)) + '"}'}
+        Return {500, '{"erro":"' + CNS001_JSONESC(oErro:Description) + '"}'}
     End Sequence
 
 Return {500, '{"erro":"Erro desconhecido."}'}
@@ -623,19 +643,19 @@ Return {500, '{"erro":"Erro desconhecido."}'}
 //
 // FIX: tenant/client/secret NAO ficam mais hardcoded no fonte (risco de
 // vazamento via repositorio/RPO). Seguem o mesmo padrao ja usado pra
-// MV_CNS001AUT: parametros de sistema via GETMV. Cadastrar em Configurador:
-//   MV_CNS001TEN -> Tenant ID do Azure AD
-//   MV_CNS001CLI -> Client ID do App Registration
-//   MV_CNS001SEC -> Client Secret do App Registration
+//   MV_CNSAAUT: parametros de sistema via GETMV. Cadastrar em Configurador:
+//   MV_CNSATEN -> Tenant ID do Azure AD
+//   MV_CNSACLI -> Client ID do App Registration
+//   MV_CNSASEC -> Client Secret do App Registration
 ////////////////////////////////////////////////////////////////////////////////
 Static Function CNS001_TOKEN()
-    Local cTenant := AllTrim(GETMV("MV_CNS001TEN"))
-    Local cClient := AllTrim(GETMV("MV_CNS001CLI"))
-    Local cSecret := AllTrim(GETMV("MV_CNS001SEC"))
+    Local cTenant := AllTrim(GETMV("MV_CNSATEN"))
+    Local cClient := AllTrim(GETMV("MV_CNSACLI"))
+    Local cSecret := AllTrim(GETMV("MV_CNSASEC"))
     Local oRest, oJson, cBody, cToken := ""
 
     If Empty(cTenant) .Or. Empty(cClient) .Or. Empty(cSecret)
-        ConOut("CNS001_TOKEN: MV_CNS001TEN/MV_CNS001CLI/MV_CNS001SEC nao configurados no Configurador - e-mail nao sera enviado.")
+        ConOut("CNS001_TOKEN: MV_CNSATEN/MV_CNSACLI/MV_CNSASEC nao configurados no Configurador - e-mail nao sera enviado.")
         Return ""
     EndIf
 
@@ -802,7 +822,7 @@ User Function CNS001_FIXEMAILUTF8() As Logical
         Return oRest:setStatusResponse(200, oJson:ToJson())
 
     Recover Using oErro
-        Return oRest:setStatusResponse(500, '{"erro":"' + CNS001_JSONESC(EncodeUtf8(oErro:Description)) + '"}')
+        Return oRest:setStatusResponse(500, '{"erro":"' + CNS001_JSONESC(oErro:Description) + '"}')
     End Sequence
 
 Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
@@ -881,13 +901,16 @@ Static Function CNS001_GERACHAM()
         EndIf
 
         If ValType(oMsg:GetJsonObject("subject")) == "C"
-            // FIX (assunto/corpo/nome chegando com acento corrompido, tipo
-            // "NÃƒÂ£o" em vez de "Não"): JsonObject:FromJson() ja decodifica
-            // o UTF-8 do JSON do Graph pra ANSI sozinho - chamar DecodeUTF8()
-            // de novo em cima de texto que ja esta em ANSI trata os bytes
-            // ANSI como se ainda fossem UTF-8, corrompendo o acento. Usa o
-            // valor direto do JSON, sem decodificar de novo.
+            // FIX (assunto chegando com acento corrompido, tipo "NÃ£o" em vez
+            // de "Não"): JsonObject:FromJson() NAO decodifica UTF-8 pra ANSI
+            // sozinho (assuncao anterior estava errada) - mesmo tratamento
+            // ja usado pro corpo (cDec/DecodeUTF8 abaixo) e pro nome do
+            // remetente, que ja funcionavam certo.
             cAssunto := oMsg:GetJsonObject("subject")
+            cDec     := DecodeUTF8(cAssunto)
+            If ValType(cDec) == "C" .And. !Empty(cDec)
+                cAssunto := cDec
+            EndIf
             cAssunto := AllTrim(cAssunto)
             While .T.
                 If Upper(Left(cAssunto, 4)) == "RES:" .Or. Upper(Left(cAssunto, 4)) == "ENC:" .Or. Upper(Left(cAssunto, 4)) == "FWD:"
@@ -1234,12 +1257,12 @@ Static Function CNS001_ASSUMIR(cIdCh)
         oJson['sucesso'] := .T.
         oJson['idCh']    := cIdCh
         oJson['status']  := "2"
-        oJson['tecnico'] := EncodeUtf8(cNomeTec)
+        oJson['tecnico'] := cNomeTec
 
         Return {200, oJson:ToJson()}
 
     Recover Using oErro
-        Return {500, '{"erro":"' + CNS001_JSONESC(EncodeUtf8(oErro:Description)) + '"}'}
+        Return {500, '{"erro":"' + CNS001_JSONESC(oErro:Description) + '"}'}
     End Sequence
 
 Return {500, '{"erro":"Erro desconhecido."}'}
@@ -1486,7 +1509,7 @@ Static Function CNS001_INCLUIR(cAssunto, cDtAbertura, cTipo, cCodCliente, cLojaC
 
     Recover Using oErro
         RollBackSX8()
-        Return {500, '{"erro":"' + CNS001_JSONESC(EncodeUtf8(oErro:Description)) + '"}'}
+        Return {500, '{"erro":"' + CNS001_JSONESC(oErro:Description) + '"}'}
     End Sequence
 
 Return {500, '{"erro":"Erro desconhecido."}'}
@@ -1614,7 +1637,7 @@ Static Function CNS001_ALTERAR(cIdCh, cAssunto, cDtAbertura, cTipo, cCodCliente,
         Return {200, oJson:ToJson()}
 
     Recover Using oErro
-        Return {500, '{"erro":"' + CNS001_JSONESC(EncodeUtf8(oErro:Description)) + '"}'}
+        Return {500, '{"erro":"' + CNS001_JSONESC(oErro:Description) + '"}'}
     End Sequence
 
 Return {500, '{"erro":"Erro desconhecido."}'}
@@ -1960,7 +1983,7 @@ Static Function CNS001_AGENDAR(cIdCh, cDataIni, cDataFim, cCodTecnico, cHoraIni,
         UnLockByName(cLockKey, .T.)
 
         If oErroLoop != Nil
-            Return {500, '{"erro":"' + CNS001_JSONESC(EncodeUtf8(oErroLoop:Description)) + '"}'}
+            Return {500, '{"erro":"' + CNS001_JSONESC(oErroLoop:Description) + '"}'}
         EndIf
 
         oJson['sucesso']    := nCriados > 0
@@ -1972,7 +1995,7 @@ Static Function CNS001_AGENDAR(cIdCh, cDataIni, cDataFim, cCodTecnico, cHoraIni,
         Return {If(nCriados > 0, 200, 500), oJson:ToJson()}
 
     Recover Using oErro
-        Return {500, '{"erro":"' + CNS001_JSONESC(EncodeUtf8(oErro:Description)) + '"}'}
+        Return {500, '{"erro":"' + CNS001_JSONESC(oErro:Description) + '"}'}
     End Sequence
 
 Return {500, '{"erro":"Erro desconhecido."}'}
@@ -2050,15 +2073,16 @@ Static Function CNS001_VERAGENDA(cIdCh)
             cCodCli := AllTrim((cAlias)->Z6_CLIENTE)
             cLoja   := AllTrim((cAlias)->Z6_LOJA)
 
-            // FIX (acentos virando caractere de substituicao) - EncodeUtf8
+            // FIX (mojibake - EncodeUtf8 manual duplicava codificacao, servidor
+            // ja converte sozinho) - SEM EncodeUtf8
             // no texto livre/nomes antes do JSON, mesmo padrao da listagem.
             oLinha := JsonObject():New()
             oLinha['data']        := cDataIso
             oLinha['horaInicio']  := AllTrim((cAlias)->Z6_HMINI)
             oLinha['horaFim']     := AllTrim((cAlias)->Z6_HMFIM)
-            oLinha['tecnico']     := EncodeUtf8(AllTrim(Posicione("AA1", 1, xFilial("AA1") + AllTrim((cAlias)->Z6_TECNICO), "AA1_NOMTEC")))
-            oLinha['cliente']     := EncodeUtf8(AllTrim(Posicione("SA1", 1, xFilial("SA1") + cCodCli + cLoja, "A1_NOME")))
-            oLinha['descricao']   := EncodeUtf8(AllTrim((cAlias)->Z6_SERVICO))
+            oLinha['tecnico']     := AllTrim(Posicione("AA1", 1, xFilial("AA1") + AllTrim((cAlias)->Z6_TECNICO), "AA1_NOMTEC"))
+            oLinha['cliente']     := AllTrim(Posicione("SA1", 1, xFilial("SA1") + cCodCli + cLoja, "A1_NOME"))
+            oLinha['descricao']   := AllTrim((cAlias)->Z6_SERVICO)
             AAdd(aItens, oLinha)
 
             (cAlias)->(DbSkip())
@@ -2071,7 +2095,7 @@ Static Function CNS001_VERAGENDA(cIdCh)
         Return {200, oJson:ToJson()}
 
     Recover Using oErro
-        Return {500, '{"erro":"' + CNS001_JSONESC(EncodeUtf8(oErro:Description)) + '"}'}
+        Return {500, '{"erro":"' + CNS001_JSONESC(oErro:Description) + '"}'}
     End Sequence
 
 Return {500, '{"erro":"Erro desconhecido."}'}
@@ -2117,16 +2141,16 @@ Static Function CNS001_ANOT_LER(cIdCh)
             Return {404, '{"erro":"Chamado nao encontrado."}'}
         EndIf
 
-        // FIX (acentos virando caractere de substituicao no front): EncodeUtf8
+        // FIX (mojibake - EncodeUtf8 manual duplicava codificacao): SEM EncodeUtf8
         // antes de devolver no JSON - o motor TLPP REST nao converte
         // ANSI/CP1252 (interno do ADVPL) pra UTF-8 sozinho.
         oJson['idCh']     := cIdCh
-        oJson['anotacao'] := If(ZA1->(FieldPos("ZA1_ANOT")) > 0, EncodeUtf8(AllTrim(ZA1->ZA1_ANOT)), "")
+        oJson['anotacao'] := If(ZA1->(FieldPos("ZA1_ANOT")) > 0, AllTrim(ZA1->ZA1_ANOT), "")
 
         Return {200, oJson:ToJson()}
 
     Recover Using oErro
-        Return {500, '{"erro":"' + CNS001_JSONESC(EncodeUtf8(oErro:Description)) + '"}'}
+        Return {500, '{"erro":"' + CNS001_JSONESC(oErro:Description) + '"}'}
     End Sequence
 
 Return {500, '{"erro":"Erro desconhecido."}'}
@@ -2193,7 +2217,7 @@ Static Function CNS001_ANOTACAO_SALVAR(cIdCh, cAnotacao)
         Return {200, oJson:ToJson()}
 
     Recover Using oErro
-        Return {500, '{"erro":"' + CNS001_JSONESC(EncodeUtf8(oErro:Description)) + '"}'}
+        Return {500, '{"erro":"' + CNS001_JSONESC(oErro:Description) + '"}'}
     End Sequence
 
 Return {500, '{"erro":"Erro desconhecido."}'}
@@ -2281,10 +2305,10 @@ Static Function CNS001_ZA2LISTAR(cIdCh)
 
             oLinha := JsonObject():New()
             oLinha['seq']       := AllTrim((cAlias)->ZA2_IDGRID)
-            oLinha['consultor'] := EncodeUtf8(cNomeCons)
+            oLinha['consultor'] := cNomeCons
             oLinha['data']      := cDataIso
             oLinha['hora']      := AllTrim((cAlias)->ZA2_HORA)
-            oLinha['texto']     := EncodeUtf8(AllTrim((cAlias)->ZA2_DESCRI))
+            oLinha['texto']     := AllTrim((cAlias)->ZA2_DESCRI)
             AAdd(aItens, oLinha)
 
             (cAlias)->(DbSkip())
@@ -2297,7 +2321,7 @@ Static Function CNS001_ZA2LISTAR(cIdCh)
         Return {200, oJson:ToJson()}
 
     Recover Using oErro
-        Return {500, '{"erro":"' + CNS001_JSONESC(EncodeUtf8(oErro:Description)) + '"}'}
+        Return {500, '{"erro":"' + CNS001_JSONESC(oErro:Description) + '"}'}
     End Sequence
 
 Return {500, '{"erro":"Erro desconhecido."}'}
@@ -2394,7 +2418,7 @@ Static Function CNS001_ZA2INCLUIR(cIdCh, cTexto)
         Return {200, oJson:ToJson()}
 
     Recover Using oErro
-        Return {500, '{"erro":"' + CNS001_JSONESC(EncodeUtf8(oErro:Description)) + '"}'}
+        Return {500, '{"erro":"' + CNS001_JSONESC(oErro:Description) + '"}'}
     End Sequence
 
 Return {500, '{"erro":"Erro desconhecido."}'}
@@ -2597,7 +2621,7 @@ User Function CNS001_COMPONENTES_LISTAR() As Logical
 
     Recover Using oErro
         If oErro != Nil
-            Return oRest:setStatusResponse(500, '{"resultado":false,"erro":"' + CNS001_JSONESC_COMP(EncodeUtf8(oErro:Description)) + '"}')
+            Return oRest:setStatusResponse(500, '{"resultado":false,"erro":"' + CNS001_JSONESC_COMP(oErro:Description) + '"}')
         EndIf
     End Sequence
 
@@ -2918,14 +2942,13 @@ Return aRet
 // inteiro cair (erro nao capturavel pelo Begin/Recover). Blinda cada valor
 // antes de expor no JSON.
 //
-// FIX (acentos virando caractere de substituicao no front): EncodeUtf8 aqui
-// cobre os 4 lupas de uma vez so (TECLUPA/CLILUPA/PROJLUPA/TARLUPA), ja que
-// todos passam pelo mesmo funil. Em codigo puro (AA1_CODTEC, A1_COD etc,
-// sem acento) EncodeUtf8 e inofensivo/no-op.
+// FIX (mojibake "Ã§Ã£o" no front): EncodeUtf8 aqui duplicava a codificacao -
+// o HTTP server do Protheus ja converte cp1252->utf-8 sozinho no corpo da
+// resposta. Cobre os 4 lupas de uma vez so (TECLUPA/CLILUPA/PROJLUPA/TARLUPA).
 ////////////////////////////////////////////////////////////////////////////////
 Static Function CNS001_COMPSTR(xValor)
     If ValType(xValor) == "C"
-        Return EncodeUtf8(AllTrim(xValor))
+        Return AllTrim(xValor)
     EndIf
 Return ""
 

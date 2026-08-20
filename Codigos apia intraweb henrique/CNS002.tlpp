@@ -266,15 +266,15 @@ User Function CNS002_OS_LISTAR() As Logical
             oLinha['dtDigitacao']    := CNSA_OS_DATA_ISO(aTodos[nI][2])
             oLinha['codCliente']     := aTodos[nI][3]
             oLinha['lojaCliente']    := aTodos[nI][4]
-            oLinha['nomeCliente']    := EncodeUtf8(CNSA_CLINOME(aTodos[nI][3], aTodos[nI][4]))
-            oLinha['usuario']        := EncodeUtf8(aTodos[nI][5])
+            oLinha['nomeCliente']    := CNSA_CLINOME(aTodos[nI][3], aTodos[nI][4])
+            oLinha['usuario']        := aTodos[nI][5]
             oLinha['modulo']         := aTodos[nI][6]
-            oLinha['nomeModulo']     := EncodeUtf8(CNSA_GENNOME("Z2", aTodos[nI][6]))
+            oLinha['nomeModulo']     := CNSA_GENNOME("Z2", aTodos[nI][6])
             oLinha['motivo']         := aTodos[nI][7]
-            oLinha['nomeMotivo']     := EncodeUtf8(CNSA_GENNOME("Z1", aTodos[nI][7]))
-            oLinha['descricao']      := EncodeUtf8(aTodos[nI][8])
+            oLinha['nomeMotivo']     := CNSA_GENNOME("Z1", aTodos[nI][7])
+            oLinha['descricao']      := aTodos[nI][8]
             oLinha['codServico']     := aTodos[nI][9]
-            oLinha['nomeServico']    := EncodeUtf8(CNSA_SRVNOME(aTodos[nI][9]))
+            oLinha['nomeServico']    := CNSA_SRVNOME(aTodos[nI][9])
             oLinha['dataOs']         := CNSA_OS_DATA_ISO(aTodos[nI][10])
             oLinha['osInterna']      := aTodos[nI][11]
             oLinha['horaInicial']    := aTodos[nI][12]
@@ -286,15 +286,15 @@ User Function CNS002_OS_LISTAR() As Logical
             oLinha['totalHoras']     := aTodos[nI][18]
             oLinha['horasTiDec']     := aTodos[nI][19]
             oLinha['codAnalista']    := aTodos[nI][20]
-            oLinha['nomeAnalista']   := EncodeUtf8(CNSA_TECNOME(aTodos[nI][20]))
+            oLinha['nomeAnalista']   := CNSA_TECNOME(aTodos[nI][20])
             oLinha['numProposta']    := aTodos[nI][21]
             oLinha['pedVenda']       := aTodos[nI][22]
             oLinha['hrAlmoco']       := aTodos[nI][23]
             oLinha['projeto']        := aTodos[nI][24]
-            oLinha['nomeProjeto']    := EncodeUtf8(CNSA_PRJNOME(aTodos[nI][24]))
+            oLinha['nomeProjeto']    := CNSA_PRJNOME(aTodos[nI][24])
             oLinha['revisao']        := aTodos[nI][25]
             oLinha['tarefa']         := aTodos[nI][26]
-            oLinha['nomeTarefa']     := EncodeUtf8(CNSA_TRFNOME(aTodos[nI][24], aTodos[nI][26]))
+            oLinha['nomeTarefa']     := CNSA_TRFNOME(aTodos[nI][24], aTodos[nI][26])
             oLinha['chamadoHpsd']    := aTodos[nI][27]
             oLinha['chamado']        := aTodos[nI][28]
             oLinha['osDesenv']       := aTodos[nI][29]
@@ -314,7 +314,7 @@ User Function CNS002_OS_LISTAR() As Logical
 
     Recover Using oErro
         If oErro != Nil
-            Return oRest:setStatusResponse(500, '{"erro":"' + CNSA_OS_JSONESC(EncodeUtf8(oErro:Description)) + '"}')
+            Return oRest:setStatusResponse(500, '{"erro":"' + CNSA_OS_JSONESC(oErro:Description) + '"}')
         EndIf
     End Sequence
 
@@ -469,7 +469,7 @@ Static Function CNSA002_RESPOK(cOs, cMsg)
     Local oJson := JsonObject():New()
     oJson["sucesso"]  := .T.
     oJson["os"]       := cOs
-    oJson["mensagem"] := EncodeUtf8(cMsg)
+    oJson["mensagem"] := cMsg
 Return oJson:ToJson()
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -637,7 +637,7 @@ User Function CNS002_OS_INCLUIR() As Logical
 
         If !lOk
             ConfirmSX8(.F.)
-            Return oRest:setStatusResponse(400, '{"erro":"' + CNSA_OS_JSONESC(EncodeUtf8(cErro)) + '"}')
+            Return oRest:setStatusResponse(400, '{"erro":"' + CNSA_OS_JSONESC(cErro) + '"}')
         EndIf
 
         ConfirmSX8()
@@ -646,7 +646,7 @@ User Function CNS002_OS_INCLUIR() As Logical
 
     Recover Using oErro
         RollBackSX8()
-        Return oRest:setStatusResponse(500, '{"erro":"' + CNSA_OS_JSONESC(EncodeUtf8(oErro:Description)) + '"}')
+        Return oRest:setStatusResponse(500, '{"erro":"' + CNSA_OS_JSONESC(oErro:Description) + '"}')
     End Sequence
 
 Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
@@ -823,13 +823,13 @@ User Function CNS002_OS_ALTERAR() As Logical
         oModel:DeActivate(lOk)
 
         If !lOk
-            Return oRest:setStatusResponse(400, '{"erro":"' + CNSA_OS_JSONESC(EncodeUtf8(cErro)) + '"}')
+            Return oRest:setStatusResponse(400, '{"erro":"' + CNSA_OS_JSONESC(cErro) + '"}')
         EndIf
 
         Return oRest:setStatusResponse(200, CNSA002_RESPOK(cOs, "OS alterada com sucesso."))
 
     Recover Using oErro
-        Return oRest:setStatusResponse(500, '{"erro":"' + CNSA_OS_JSONESC(EncodeUtf8(oErro:Description)) + '"}')
+        Return oRest:setStatusResponse(500, '{"erro":"' + CNSA_OS_JSONESC(oErro:Description) + '"}')
     End Sequence
 
 Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
@@ -890,13 +890,13 @@ User Function CNS002_OS_EXCLUIR() As Logical
         oModel:DeActivate(lOk)
 
         If !lOk
-            Return oRest:setStatusResponse(400, '{"erro":"' + CNSA_OS_JSONESC(EncodeUtf8(cErro)) + '"}')
+            Return oRest:setStatusResponse(400, '{"erro":"' + CNSA_OS_JSONESC(cErro) + '"}')
         EndIf
 
         Return oRest:setStatusResponse(200, CNSA002_RESPOK(cOs, "OS excluida com sucesso."))
 
     Recover Using oErro
-        Return oRest:setStatusResponse(500, '{"erro":"' + CNSA_OS_JSONESC(EncodeUtf8(oErro:Description)) + '"}')
+        Return oRest:setStatusResponse(500, '{"erro":"' + CNSA_OS_JSONESC(oErro:Description) + '"}')
     End Sequence
 
 Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
@@ -994,7 +994,7 @@ User Function CNS002_OS_COPIAR() As Logical
 
         If !lOk
             ConfirmSX8(.F.)
-            Return oRest:setStatusResponse(400, '{"erro":"' + CNSA_OS_JSONESC(EncodeUtf8(cErro)) + '"}')
+            Return oRest:setStatusResponse(400, '{"erro":"' + CNSA_OS_JSONESC(cErro) + '"}')
         EndIf
 
         ConfirmSX8()
@@ -1008,7 +1008,7 @@ User Function CNS002_OS_COPIAR() As Logical
 
     Recover Using oErro
         RollBackSX8()
-        Return oRest:setStatusResponse(500, '{"erro":"' + CNSA_OS_JSONESC(EncodeUtf8(oErro:Description)) + '"}')
+        Return oRest:setStatusResponse(500, '{"erro":"' + CNSA_OS_JSONESC(oErro:Description) + '"}')
     End Sequence
 
 Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
