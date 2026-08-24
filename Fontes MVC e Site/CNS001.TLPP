@@ -1,12 +1,3 @@
-// FIX: TLPP exige namespace declarado quando o arquivo usa MVC classico
-// (ModelDef/ViewDef/MenuDef) - sem isso, "ACTION VIEWDEF.CNS001" nao resolve
-// ("Undefined View for CNS001"), Incluir nao abre nada, e o Destroy do
-// FWMBrowse quebra ("variable is not an object") - confirmado por 3 erros
-// reais em producao. TLPP tambem exige que ModelDef/ViewDef/MenuDef deixem
-// de ser Static Function (viram User Function), e toda referencia ao
-// identificador "CNS001" (ACTION do menu, FWLoadModel, FWExecView) precisa
-// do caminho completo do namespace: "apia.cns.CNS001".
-
 #Include "Protheus.ch"
 #Include "FWMVCDef.ch"
 #Include "Totvs.ch"
@@ -15,10 +6,7 @@
 #Include "Colors.ch"
 #include "tlpp-core.th"
 #include "tlpp-rest.th"
-// NAO REMOVER OS 2 INCLUDES ACIMA (ja foi removido por engano 3x nesta
-// consolidacao). Sem eles, a sintaxe @Get/@Post/"oRest"/"As Logical" usada
-// nos 6 endpoints REST deste arquivo (CH_APIASSUMIR/CH_APIEXCLUIR/CH_APIAGENDAR/
-// CH_APIVERAGENDA/CH_APILISTANOTAS/CH_APINOVANOTA)
+
 Namespace apia.cns001
 
 PUBLISH MODEL REST NAME chamado RESOURCE OBJECT oRestChamado
@@ -30,7 +18,7 @@ User Function CNS001()
 
     Local l_oBrowse := Nil
     Local nCriados  := 0
-    Private aRotina := MenuDef()
+    Private aRotina := u_MenuDef()
     Private cConsultor := " "
 
     cConsultor := Posicione("AA1",4,xFilial("AA1")+__cUserId,"AA1_CODTEC")
@@ -71,16 +59,16 @@ User Function MenuDef()
 
 Local aRotina := {}
 
-    ADD OPTION aRotina TITLE "Pesquisar"        ACTION "AxPesqui"                                    OPERATION 1 ACCESS 0
-    ADD OPTION aRotina TITLE "Visualizar"       ACTION "ViewDef.apia.cns.CNS001"              OPERATION 2 ACCESS 0
-    ADD OPTION aRotina TITLE "Incluir"          ACTION "ViewDef.apia.cns.CNS001"              OPERATION 3 ACCESS 0
-    ADD OPTION aRotina TITLE "Alterar"          ACTION "U_CH_ALTERARTELA"       OPERATION 4 ACCESS 0
-    ADD OPTION aRotina TITLE "Excluir"          ACTION "U_CH_EXCLUIRTELA"       OPERATION 0 ACCESS 0
-    ADD OPTION aRotina TITLE "Agendar"          ACTION "U_CNSA_CRIAAGENDA"      OPERATION 0 ACCESS 0
-    ADD OPTION aRotina TITLE "Assumir"          ACTION "U_CH_ASSUMIRTELA"       OPERATION 0 ACCESS 0
-    ADD OPTION aRotina TITLE "Anotacoes"        ACTION "U_CNSA_INTERAGIR"       OPERATION 0 ACCESS 0
-    ADD OPTION aRotina TITLE "Ver Agendas"      ACTION "U_ABREAGENDA"           OPERATION 0 ACCESS 0
-    ADD OPTION aRotina TITLE "Legenda"          ACTION "U_CNSA_LEG"             OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Pesquisar"        ACTION "AxPesqui"                           OPERATION 1 ACCESS 0
+    ADD OPTION aRotina TITLE "Visualizar"       ACTION "ViewDef.apia.cns001.CNS001"         OPERATION 2 ACCESS 0
+    ADD OPTION aRotina TITLE "Incluir"          ACTION "ViewDef.apia.cns001.CNS001"         OPERATION 3 ACCESS 0
+    ADD OPTION aRotina TITLE "Alterar"          ACTION "apia.cns001.U_CH_ALTERARTELA"       OPERATION 4 ACCESS 0
+    ADD OPTION aRotina TITLE "Excluir"          ACTION "apia.cns001.U_CH_EXCLUIRTELA"       OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Agendar"          ACTION "apia.cns001.U_CNSA_CRIAAGENDA"      OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Assumir"          ACTION "apia.cns001.U_CH_ASSUMIRTELA"       OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Anotacoes"        ACTION "apia.cns001.U_CNSA_INTERAGIR"       OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Ver Agendas"      ACTION "apia.cns001.U_ABREAGENDA"           OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Legenda"          ACTION "apia.cns001.U_CNSA_LEG"             OPERATION 0 ACCESS 0
 
 Return aRotina
 
@@ -90,7 +78,7 @@ Return aRotina
 User Function ViewDef()
 
     Local l_oView    := Nil
-    Local l_oModel   := FWLoadModel("apia.cns.CNS001")
+    Local l_oModel   := FWLoadModel("apia.cns001.CNS001")
     Local l_oStruZA1 := FWFormStruct(2, "ZA1")
     Local l_oStruZA2 := FWFormStruct(2, "ZA2")
     Local l_oStruSZ6 := FWFormStruct(2, "SZ6")
@@ -418,7 +406,7 @@ Return .F.
 User Function CH_ALTERARTELA()
 
     If CH_TEMACESSOGRUPO()
-        FWExecView("Registro de Chamados", "apia.cns.CNS001", 4)
+        FWExecView("Registro de Chamados", "apia.cns001.CNS001", 4)
         Return
     EndIf
 
@@ -737,7 +725,7 @@ Static Function CH_NUCLEOASSUMIR(cIdCh)
 
         Public lCnsaViaRest := .T.
 
-        oModel := FWLoadModel("apia.cns.CNS001")
+        oModel := FWLoadModel("apia.cns001.CNS001")
         oModel:SetOperation(MODEL_OPERATION_UPDATE)
         oModel:Activate()
 

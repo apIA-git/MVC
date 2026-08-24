@@ -1,11 +1,3 @@
-// FIX: TLPP exige namespace declarado quando o arquivo usa MVC classico
-// (ModelDef/ViewDef/MenuDef) - sem isso, "ACTION VIEWDEF.CNS002" nao resolve
-// ("Undefined View"), Incluir/Alterar nao abrem, e o Destroy do FWMBrowse
-// quebra - mesmo problema real confirmado no CNS001.TLPP. TLPP tambem exige
-// que ModelDef/ViewDef/MenuDef deixem de ser Static Function (viram User
-// Function), e toda referencia ao identificador "CNS002" (ACTION do menu,
-// FWLoadModel) precisa do caminho completo: "apia.cns002.CNS002".
-
 #Include "Protheus.ch"
 #Include "FWMVCDef.ch"
 #Include "Totvs.ch"
@@ -14,59 +6,11 @@
 #Include "Colors.ch"
 #include "tlpp-core.th"
 #include "tlpp-rest.th"
-// NAO REMOVER OS 2 INCLUDES ACIMA - necessarios pros endpoints @Get/@Post
-// (Listar/Excluir/Copiar, que nao cabem no CRUD generico da Class abaixo).
-// Mesmo problema ja resolvido 3x no CNS001.TLPP - nao repetir aqui.
+
 Namespace apia.cns002
 
 PUBLISH MODEL REST NAME OS RESOURCE OBJECT oRestOS
 
-////////////////////////////////////////////////////////////////////////////////
-// CNS002.TLPP - Ordens de Servico (SZ1), fonte NOVO que consolida
-// CNSA002.PRW (tela classica) + CNS002.tlpp (REST customizado) num so lugar,
-// mesmo padrao usado no CNS001.TLPP (Chamados) - ModelDef/ViewDef/MenuDef
-// classico + PUBLISH MODEL REST + Class From FwRestModel.
-//
-// NAO APAGA NEM EDITA os fontes antigos (CNSA002.PRW, CNS002.tlpp) - eles
-// continuam intactos, de proposito.
-//
-// ================================================================
-// DIFERENCA IMPORTANTE vs CNS001.TLPP - NAO delega Alterar pro generico
-// ================================================================
-// O ModelDef classico (CNSA002.PRW) relaciona o grid SZ2DETAIL (Horas
-// Contratadas) por CLIENTE (Z2_CODCLI+Z2_LOJA = Z1_CLI+Z1_LOJA), NAO por OS.
-// Se o SaveData da Class delegasse pro `_Super:SaveData` (motor generico,
-// que usaria esse Model completo), um Alterar/Incluir de UMA OS arriscaria
-// cascatear e tocar linhas de SZ2 de OUTRAS OS do MESMO cliente - bug de
-// dado grave. Por isso, ao contrario do CNS001 (onde Alterar delega pro
-// `_Super`), aqui o `SaveData` da `Class oRestOS` SEMPRE grava na mao via
-// um Model leve (`OS_MODELLEVE`, so SZ1, sem grid nenhum) - mesma decisao
-// que o `CNS002.tlpp` original ja tinha tomado (variavel `CNS002_MODELREST`
-// la, renomeada aqui). `GetData` fica sem override (leitura nao tem risco
-// de cascata, e nao ha gatilho/campo derivado faltando como no CNS001).
-//
-// ================================================================
-// AVISO CRITICO - NAO COMPILAR JUNTO COM OS FONTES ANTIGOS SEM CUTOVER
-// ================================================================
-//   1) `PUBLISH MODEL REST NAME OS` - CNSA002.PRW JA declara este MESMO
-//      nome de recurso, sem Class. Dois fontes publicando o mesmo nome de
-//      recurso REST ao mesmo tempo e conflito de registro.
-//   2) Os endpoints @Get/@Post abaixo (/CNSAOS, /CNSAOSEXCLUIR,
-//      /CNSAOSCOPIAR) usam DE PROPOSITO os MESMOS paths que CNS002.tlpp ja
-//      registra hoje (pra nao mudar contrato do front nessas operacoes).
-//   3) Incluir/Alterar SIM mudam de contrato: em vez de /CNSAOSINCLUIR e
-//      /CNSAOSALTERAR customizados, o front passa a chamar o generico
-//      /rest/FwModel/OS (GET/POST/PUT) exposto pela Class oRestOS - ISSO
-//      PRECISA DE AJUSTE NO FRONT (apia-po-cnshub/cns003) antes do cutover.
-//      Excluir NAO muda (fica custom @Post, mesma decisao do CNS001 -
-//      incerteza sobre o hook de delete exato do FwRestModel).
-//
-// ================================================================
-// O QUE ESTE ARQUIVO NAO PORTA (deixado de fora de proposito)
-// ================================================================
-//   - Nada identificado como codigo morto nos dois fontes antigos (arquivo
-//     pequeno, sem historico de retrabalho como o CNS001).
-////////////////////////////////////////////////////////////////////////////////
 
 ////////////////////////////////////////////////////////////////////////////////
 //FUNCAO PRINCIPAL - Browse (ponto de entrada da tela)
@@ -74,7 +18,9 @@ PUBLISH MODEL REST NAME OS RESOURCE OBJECT oRestOS
 User Function CNS002()
 
     Local l_oBrowse := Nil
-    Private aRotina := MenuDef()
+    // FIX: User Function precisa ser chamada com prefixo "u_" mesmo dentro do
+    // mesmo arquivo/namespace (mesmo problema real confirmado no CNS001.TLPP).
+    Private aRotina := u_MenuDef()
 
     l_oBrowse := FWMBrowse():New()
     If l_oBrowse <> Nil
@@ -100,13 +46,13 @@ User Function MenuDef()
 
 Local aRotina  := {}
 
-    ADD OPTION aRotina TITLE "Pesquisar"    ACTION "AxPesqui"                              OPERATION 1 ACCESS 0
-    ADD OPTION aRotina TITLE "Visualizar"   ACTION "ViewDef.apia.cns002.CNS002"        OPERATION 2 ACCESS 0
-    ADD OPTION aRotina TITLE "Incluir"      ACTION "ViewDef.apia.cns002.CNS002"        OPERATION 3 ACCESS 0
-    ADD OPTION aRotina TITLE "Alterar"      ACTION "ViewDef.apia.cns002.CNS002"        OPERATION 4 ACCESS 0
-    ADD OPTION aRotina TITLE "Excluir"      ACTION "ViewDef.apia.cns002.CNS002"        OPERATION 5 ACCESS 0
-    ADD OPTION aRotina TITLE "Copiar"       ACTION "U_OS_COPIARTELA"    OPERATION 0 ACCESS 0
-    ADD OPTION aRotina TITLE "Legenda"      ACTION "U_OS_LEGENDA"       OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Pesquisar"    ACTION "AxPesqui"                       OPERATION 1 ACCESS 0
+    ADD OPTION aRotina TITLE "Visualizar"   ACTION "ViewDef.apia.cns002.CNS002"     OPERATION 2 ACCESS 0
+    ADD OPTION aRotina TITLE "Incluir"      ACTION "ViewDef.apia.cns002.CNS002"     OPERATION 3 ACCESS 0
+    ADD OPTION aRotina TITLE "Alterar"      ACTION "ViewDef.apia.cns002.CNS002"     OPERATION 4 ACCESS 0
+    ADD OPTION aRotina TITLE "Excluir"      ACTION "ViewDef.apia.cns002.CNS002"     OPERATION 5 ACCESS 0
+    ADD OPTION aRotina TITLE "Copiar"       ACTION "apia.cns002.U_OS_COPIARTELA"    OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Legenda"      ACTION "apia.cns002.U_OS_LEGENDA"       OPERATION 0 ACCESS 0
 
 Return aRotina
 
