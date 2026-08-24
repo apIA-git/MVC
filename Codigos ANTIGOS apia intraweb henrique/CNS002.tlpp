@@ -1,6 +1,7 @@
 #include "PROTHEUS.CH"
 #include "TOPCONN.CH"
 #include "TOTVS.CH"
+#include "FWMVCDEF.CH"
 #include "tlpp-core.th"
 #INCLUDE 'tlpp-rest.th'
 
@@ -36,7 +37,7 @@
 // LISTAGEM / VISUALIZAR / PESQUISAR
 ////////////////////////////////////////////////////////////////////////////////
 @Get(endpoint="/CNSAOS")
-User Function CNSA_OS_LISTAR() As Logical
+User Function CNS002_OS_LISTAR() As Logical
     Local jQuery         := oRest:getQueryRequest() As Json
     Local oJson          := JsonObject():New()
     Local aRetorno       := {}
@@ -265,15 +266,15 @@ User Function CNSA_OS_LISTAR() As Logical
             oLinha['dtDigitacao']    := CNSA_OS_DATA_ISO(aTodos[nI][2])
             oLinha['codCliente']     := aTodos[nI][3]
             oLinha['lojaCliente']    := aTodos[nI][4]
-            oLinha['nomeCliente']    := EncodeUtf8(CNSA_CLINOME(aTodos[nI][3], aTodos[nI][4]))
-            oLinha['usuario']        := EncodeUtf8(aTodos[nI][5])
+            oLinha['nomeCliente']    := CNSA_CLINOME(aTodos[nI][3], aTodos[nI][4])
+            oLinha['usuario']        := aTodos[nI][5]
             oLinha['modulo']         := aTodos[nI][6]
-            oLinha['nomeModulo']     := EncodeUtf8(CNSA_GENNOME("Z2", aTodos[nI][6]))
+            oLinha['nomeModulo']     := CNSA_GENNOME("Z2", aTodos[nI][6])
             oLinha['motivo']         := aTodos[nI][7]
-            oLinha['nomeMotivo']     := EncodeUtf8(CNSA_GENNOME("Z1", aTodos[nI][7]))
-            oLinha['descricao']      := EncodeUtf8(aTodos[nI][8])
+            oLinha['nomeMotivo']     := CNSA_GENNOME("Z1", aTodos[nI][7])
+            oLinha['descricao']      := aTodos[nI][8]
             oLinha['codServico']     := aTodos[nI][9]
-            oLinha['nomeServico']    := EncodeUtf8(CNSA_SRVNOME(aTodos[nI][9]))
+            oLinha['nomeServico']    := CNSA_SRVNOME(aTodos[nI][9])
             oLinha['dataOs']         := CNSA_OS_DATA_ISO(aTodos[nI][10])
             oLinha['osInterna']      := aTodos[nI][11]
             oLinha['horaInicial']    := aTodos[nI][12]
@@ -285,15 +286,15 @@ User Function CNSA_OS_LISTAR() As Logical
             oLinha['totalHoras']     := aTodos[nI][18]
             oLinha['horasTiDec']     := aTodos[nI][19]
             oLinha['codAnalista']    := aTodos[nI][20]
-            oLinha['nomeAnalista']   := EncodeUtf8(CNSA_TECNOME(aTodos[nI][20]))
+            oLinha['nomeAnalista']   := CNSA_TECNOME(aTodos[nI][20])
             oLinha['numProposta']    := aTodos[nI][21]
             oLinha['pedVenda']       := aTodos[nI][22]
             oLinha['hrAlmoco']       := aTodos[nI][23]
             oLinha['projeto']        := aTodos[nI][24]
-            oLinha['nomeProjeto']    := EncodeUtf8(CNSA_PRJNOME(aTodos[nI][24]))
+            oLinha['nomeProjeto']    := CNSA_PRJNOME(aTodos[nI][24])
             oLinha['revisao']        := aTodos[nI][25]
             oLinha['tarefa']         := aTodos[nI][26]
-            oLinha['nomeTarefa']     := EncodeUtf8(CNSA_TRFNOME(aTodos[nI][24], aTodos[nI][26]))
+            oLinha['nomeTarefa']     := CNSA_TRFNOME(aTodos[nI][24], aTodos[nI][26])
             oLinha['chamadoHpsd']    := aTodos[nI][27]
             oLinha['chamado']        := aTodos[nI][28]
             oLinha['osDesenv']       := aTodos[nI][29]
@@ -313,7 +314,7 @@ User Function CNSA_OS_LISTAR() As Logical
 
     Recover Using oErro
         If oErro != Nil
-            Return oRest:setStatusResponse(500, '{"erro":"' + CNSA_OS_JSONESC(EncodeUtf8(oErro:Description)) + '"}')
+            Return oRest:setStatusResponse(500, '{"erro":"' + CNSA_OS_JSONESC(oErro:Description) + '"}')
         EndIf
     End Sequence
 
@@ -468,8 +469,27 @@ Static Function CNSA002_RESPOK(cOs, cMsg)
     Local oJson := JsonObject():New()
     oJson["sucesso"]  := .T.
     oJson["os"]       := cOs
-    oJson["mensagem"] := EncodeUtf8(cMsg)
+    oJson["mensagem"] := cMsg
 Return oJson:ToJson()
+
+////////////////////////////////////////////////////////////////////////////////
+// Model leve so com a SZ1 (sem grid SZ2DETAIL) - usado pelos 4 endpoints de
+// escrita deste arquivo em vez de FWLoadModel("CNSA002"). O ModelDef da tela
+// classica (CNSA002.PRW) relaciona SZ2DETAIL (Horas Contratadas) por CLIENTE
+// (Z2_CODCLI+Z2_LOJA = Z1_CLI+Z1_LOJA), nao por OS - usar aquele Model aqui
+// cascatearia no grid e arriscaria tocar linhas de SZ2 de OUTRAS OS's do
+// mesmo cliente. Este Model nao tem grid nenhum - sem risco de cascata,
+// sem tocar em CNSA002.PRW.
+////////////////////////////////////////////////////////////////////////////////
+Static Function CNS002_MODELREST()
+    Local oModel  := Nil
+    Local oStrSZ1 := FWFormStruct(1, "SZ1")
+
+    oModel := MPFormModel():New("FCNS002REST", NIL, NIL, NIL, NIL)
+    oModel:AddFields("SZ1MASTER", NIL, oStrSZ1, NIL, NIL)
+    oModel:SetPrimaryKey({"Z1_FILIAL", "Z1_OS"})
+
+Return oModel
 
 ////////////////////////////////////////////////////////////////////////////////
 // INCLUIR - @Post, mesma URL/querystring de sempre (POST /CNSAOSINCLUIR).
@@ -478,7 +498,7 @@ Return oJson:ToJson()
 // SZ2DETAIL, que e por cliente, nao por OS). So o wrapper de rota mudou.
 ////////////////////////////////////////////////////////////////////////////////
 @Post(endpoint="/CNSAOSINCLUIR")
-User Function CNSA_OS_INCLUIR() As Logical
+User Function CNS002_OS_INCLUIR() As Logical
     Local jQuery       := oRest:getQueryRequest() As Json
     Local cCodCliente   := AllTrim(CNSA002_JSONSTR(jQuery,"codCliente"))
     Local cLojaCliente  := AllTrim(CNSA002_JSONSTR(jQuery,"lojaCliente"))
@@ -509,6 +529,11 @@ User Function CNSA_OS_INCLUIR() As Logical
     Local cValorHora    := AllTrim(CNSA002_JSONSTR(jQuery,"valorHora"))
     Local cOs           := ""
     Local oErro         := Nil
+    Local oModel        := Nil
+    Local oModelSZ1     := Nil
+    Local lOk           := .F.
+    Local cErro         := ""
+    Local cErroModel    := Nil
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -553,39 +578,67 @@ User Function CNSA_OS_INCLUIR() As Logical
 
         cOs := GetSxeNum("SZ1", "Z1_OS")
 
-        RecLock("SZ1", .T.)
-            SZ1->Z1_FILIAL  := cFilAnt
-            SZ1->Z1_OS      := cOs
-            SZ1->Z1_DTDIGIT := STOD(cDtDigitacao)
-            SZ1->Z1_CLI     := cCodCliente
-            SZ1->Z1_LOJA    := cLojaCliente
-            SZ1->Z1_USR     := cUsuario
-            SZ1->Z1_MODULO  := cModulo
-            SZ1->Z1_MOTIV   := cMotivo
-            SZ1->Z1_SERV    := cDescricao
-            SZ1->Z1_TIPO    := cCodServico
-            SZ1->Z1_DTOS    := STOD(StrTran(cDataOs, "-", ""))
-            SZ1->Z1_INTERNO := If(Empty(cOsInterna), "N", cOsInterna)
-            SZ1->Z1_INI     := Val(cHoraIniDec)
-            SZ1->Z1_FIM     := Val(cHoraFimDec)
-            SZ1->Z1_TRANS   := Val(cHorasTranDec)
-            SZ1->Z1_PREVIST := If(Empty(cPrevPmt), "N", cPrevPmt)
-            SZ1->Z1_TOTAL   := Val(cHorasTiDec)
-            SZ1->Z1_TEC     := cCodAnalista
-            SZ1->Z1_NUMPRO  := cNumProposta
-            SZ1->Z1_PV      := cPedVenda
-            SZ1->Z1_ALMOCO  := Val(cHrAlmoco)
-            SZ1->Z1_PROJET  := cProjeto
-            SZ1->Z1_REVISA  := cRevisao
-            SZ1->Z1_TAREFA  := cTarefa
-            SZ1->Z1_CHPSD   := cChamadoHpsd
-            SZ1->Z1_CHHDK   := Val(cChamado)
-            SZ1->Z1_OSDESE  := If(Empty(cOsDesenv), "N", cOsDesenv)
-            SZ1->Z1_LIN     := cLinhaPv
-            SZ1->Z1_VLRHR   := Val(cValorHora)
-            SZ1->Z1_APROVAD := "N"
-            SZ1->Z1_FATURAR := "N"
-        SZ1->(MsUnlock())
+        oModel    := CNS002_MODELREST()
+        oModel:SetOperation(MODEL_OPERATION_INSERT)
+        oModel:Activate()
+        oModelSZ1 := oModel:GetModel("SZ1MASTER")
+
+        oModelSZ1:SetValue("Z1_FILIAL",  cFilAnt)
+        oModelSZ1:SetValue("Z1_OS",      cOs)
+        oModelSZ1:SetValue("Z1_DTDIGIT", STOD(cDtDigitacao))
+        oModelSZ1:SetValue("Z1_CLI",     cCodCliente)
+        oModelSZ1:SetValue("Z1_LOJA",    cLojaCliente)
+        oModelSZ1:SetValue("Z1_USR",     cUsuario)
+        oModelSZ1:SetValue("Z1_MODULO",  cModulo)
+        oModelSZ1:SetValue("Z1_MOTIV",   cMotivo)
+        oModelSZ1:SetValue("Z1_SERV",    cDescricao)
+        oModelSZ1:SetValue("Z1_TIPO",    cCodServico)
+        oModelSZ1:SetValue("Z1_DTOS",    STOD(StrTran(cDataOs, "-", "")))
+        oModelSZ1:SetValue("Z1_INTERNO", If(Empty(cOsInterna), "N", cOsInterna))
+        oModelSZ1:SetValue("Z1_INI",     Val(cHoraIniDec))
+        oModelSZ1:SetValue("Z1_FIM",     Val(cHoraFimDec))
+        oModelSZ1:SetValue("Z1_TRANS",   Val(cHorasTranDec))
+        oModelSZ1:SetValue("Z1_PREVIST", If(Empty(cPrevPmt), "N", cPrevPmt))
+        oModelSZ1:SetValue("Z1_TOTAL",   Val(cHorasTiDec))
+        oModelSZ1:SetValue("Z1_TEC",     cCodAnalista)
+        oModelSZ1:SetValue("Z1_NUMPRO",  cNumProposta)
+        oModelSZ1:SetValue("Z1_PV",      cPedVenda)
+        oModelSZ1:SetValue("Z1_ALMOCO",  Val(cHrAlmoco))
+        oModelSZ1:SetValue("Z1_PROJET",  cProjeto)
+        oModelSZ1:SetValue("Z1_REVISA",  cRevisao)
+        oModelSZ1:SetValue("Z1_TAREFA",  cTarefa)
+        oModelSZ1:SetValue("Z1_CHPSD",   cChamadoHpsd)
+        oModelSZ1:SetValue("Z1_CHHDK",   Val(cChamado))
+        oModelSZ1:SetValue("Z1_OSDESE",  If(Empty(cOsDesenv), "N", cOsDesenv))
+        oModelSZ1:SetValue("Z1_LIN",     cLinhaPv)
+        oModelSZ1:SetValue("Z1_VLRHR",   Val(cValorHora))
+        oModelSZ1:SetValue("Z1_APROVAD", "N")
+        oModelSZ1:SetValue("Z1_FATURAR", "N")
+
+        If oModel:VldData()
+            lOk := oModel:CommitData()
+        EndIf
+
+        If !lOk
+            cErroModel := oModel:GetErrorMessage()
+            Do Case
+                Case ValType(cErroModel) == "C"
+                    cErro := cErroModel
+                Case ValType(cErroModel) == "O"
+                    cErro := cErroModel:GetMessage()
+                Case ValType(cErroModel) == "A"
+                    cErro := FwJsonSerialize(cErroModel)
+                Otherwise
+                    cErro := "Falha ao validar/gravar a OS."
+            EndCase
+        EndIf
+
+        oModel:DeActivate(lOk)
+
+        If !lOk
+            ConfirmSX8(.F.)
+            Return oRest:setStatusResponse(400, '{"erro":"' + CNSA_OS_JSONESC(cErro) + '"}')
+        EndIf
 
         ConfirmSX8()
 
@@ -593,7 +646,7 @@ User Function CNSA_OS_INCLUIR() As Logical
 
     Recover Using oErro
         RollBackSX8()
-        Return oRest:setStatusResponse(500, '{"erro":"' + CNSA_OS_JSONESC(EncodeUtf8(oErro:Description)) + '"}')
+        Return oRest:setStatusResponse(500, '{"erro":"' + CNSA_OS_JSONESC(oErro:Description) + '"}')
     End Sequence
 
 Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
@@ -607,7 +660,7 @@ Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
 // mesmo cliente). Alteracao PARCIAL - so grava o campo que veio.
 ////////////////////////////////////////////////////////////////////////////////
 @Post(endpoint="/CNSAOSALTERAR")
-User Function CNSA_OS_ALTERAR() As Logical
+User Function CNS002_OS_ALTERAR() As Logical
     Local jQuery         := oRest:getQueryRequest() As Json
     Local cOs            := AllTrim(CNSA002_JSONSTR(jQuery,"os")) As Character
     Local cCodCliente     := AllTrim(CNSA002_JSONSTR(jQuery,"codCliente"))
@@ -643,7 +696,12 @@ User Function CNSA_OS_ALTERAR() As Logical
         !Empty(cPedVenda) .Or. !Empty(cHrAlmoco) .Or. !Empty(cProjeto) .Or. !Empty(cRevisao) .Or. ;
         !Empty(cTarefa) .Or. !Empty(cChamadoHpsd) .Or. !Empty(cChamado) .Or. !Empty(cOsDesenv) .Or. ;
         !Empty(cLinhaPv) .Or. !Empty(cValorHora)
-    Local oErro := Nil
+    Local oErro      := Nil
+    Local oModel     := Nil
+    Local oModelSZ1  := Nil
+    Local lOk        := .F.
+    Local cErro      := ""
+    Local cErroModel := Nil
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -662,89 +720,116 @@ User Function CNSA_OS_ALTERAR() As Logical
             Return oRest:setStatusResponse(404, '{"erro":"OS nao encontrada."}')
         EndIf
 
-        RecLock("SZ1", .F.)
-            If !Empty(cCodCliente)
-                SZ1->Z1_CLI  := cCodCliente
-                SZ1->Z1_LOJA := If(Empty(cLojaCliente), "01", cLojaCliente)
-            EndIf
-            If !Empty(cUsuario)
-                SZ1->Z1_USR := cUsuario
-            EndIf
-            If !Empty(cModulo)
-                SZ1->Z1_MODULO := cModulo
-            EndIf
-            If !Empty(cMotivo)
-                SZ1->Z1_MOTIV := cMotivo
-            EndIf
-            If !Empty(cDescricao)
-                SZ1->Z1_SERV := cDescricao
-            EndIf
-            If !Empty(cCodServico)
-                SZ1->Z1_TIPO := cCodServico
-            EndIf
-            If !Empty(cDataOs)
-                SZ1->Z1_DTOS := STOD(StrTran(cDataOs, "-", ""))
-            EndIf
-            If !Empty(cHoraIniDec)
-                SZ1->Z1_INI := Val(cHoraIniDec)
-            EndIf
-            If !Empty(cHoraFimDec)
-                SZ1->Z1_FIM := Val(cHoraFimDec)
-            EndIf
-            If !Empty(cHorasTranDec)
-                SZ1->Z1_TRANS := Val(cHorasTranDec)
-            EndIf
-            If !Empty(cHorasTiDec)
-                SZ1->Z1_TOTAL := Val(cHorasTiDec)
-            EndIf
-            If !Empty(cCodAnalista)
-                SZ1->Z1_TEC := cCodAnalista
-            EndIf
-            If !Empty(cOsInterna)
-                SZ1->Z1_INTERNO := cOsInterna
-            EndIf
-            If !Empty(cPrevPmt)
-                SZ1->Z1_PREVIST := cPrevPmt
-            EndIf
-            If !Empty(cNumProposta)
-                SZ1->Z1_NUMPRO := cNumProposta
-            EndIf
-            If !Empty(cPedVenda)
-                SZ1->Z1_PV := cPedVenda
-            EndIf
-            If !Empty(cHrAlmoco)
-                SZ1->Z1_ALMOCO := Val(cHrAlmoco)
-            EndIf
-            If !Empty(cProjeto)
-                SZ1->Z1_PROJET := cProjeto
-            EndIf
-            If !Empty(cRevisao)
-                SZ1->Z1_REVISA := cRevisao
-            EndIf
-            If !Empty(cTarefa)
-                SZ1->Z1_TAREFA := cTarefa
-            EndIf
-            If !Empty(cChamadoHpsd)
-                SZ1->Z1_CHPSD := cChamadoHpsd
-            EndIf
-            If !Empty(cChamado)
-                SZ1->Z1_CHHDK := Val(cChamado)
-            EndIf
-            If !Empty(cOsDesenv)
-                SZ1->Z1_OSDESE := cOsDesenv
-            EndIf
-            If !Empty(cLinhaPv)
-                SZ1->Z1_LIN := cLinhaPv
-            EndIf
-            If !Empty(cValorHora)
-                SZ1->Z1_VLRHR := Val(cValorHora)
-            EndIf
-        SZ1->(MsUnlock())
+        oModel    := CNS002_MODELREST()
+        oModel:SetOperation(MODEL_OPERATION_UPDATE)
+        oModel:Activate()
+        oModelSZ1 := oModel:GetModel("SZ1MASTER")
+
+        If !Empty(cCodCliente)
+            oModelSZ1:SetValue("Z1_CLI",  cCodCliente)
+            oModelSZ1:SetValue("Z1_LOJA", If(Empty(cLojaCliente), "01", cLojaCliente))
+        EndIf
+        If !Empty(cUsuario)
+            oModelSZ1:SetValue("Z1_USR", cUsuario)
+        EndIf
+        If !Empty(cModulo)
+            oModelSZ1:SetValue("Z1_MODULO", cModulo)
+        EndIf
+        If !Empty(cMotivo)
+            oModelSZ1:SetValue("Z1_MOTIV", cMotivo)
+        EndIf
+        If !Empty(cDescricao)
+            oModelSZ1:SetValue("Z1_SERV", cDescricao)
+        EndIf
+        If !Empty(cCodServico)
+            oModelSZ1:SetValue("Z1_TIPO", cCodServico)
+        EndIf
+        If !Empty(cDataOs)
+            oModelSZ1:SetValue("Z1_DTOS", STOD(StrTran(cDataOs, "-", "")))
+        EndIf
+        If !Empty(cHoraIniDec)
+            oModelSZ1:SetValue("Z1_INI", Val(cHoraIniDec))
+        EndIf
+        If !Empty(cHoraFimDec)
+            oModelSZ1:SetValue("Z1_FIM", Val(cHoraFimDec))
+        EndIf
+        If !Empty(cHorasTranDec)
+            oModelSZ1:SetValue("Z1_TRANS", Val(cHorasTranDec))
+        EndIf
+        If !Empty(cHorasTiDec)
+            oModelSZ1:SetValue("Z1_TOTAL", Val(cHorasTiDec))
+        EndIf
+        If !Empty(cCodAnalista)
+            oModelSZ1:SetValue("Z1_TEC", cCodAnalista)
+        EndIf
+        If !Empty(cOsInterna)
+            oModelSZ1:SetValue("Z1_INTERNO", cOsInterna)
+        EndIf
+        If !Empty(cPrevPmt)
+            oModelSZ1:SetValue("Z1_PREVIST", cPrevPmt)
+        EndIf
+        If !Empty(cNumProposta)
+            oModelSZ1:SetValue("Z1_NUMPRO", cNumProposta)
+        EndIf
+        If !Empty(cPedVenda)
+            oModelSZ1:SetValue("Z1_PV", cPedVenda)
+        EndIf
+        If !Empty(cHrAlmoco)
+            oModelSZ1:SetValue("Z1_ALMOCO", Val(cHrAlmoco))
+        EndIf
+        If !Empty(cProjeto)
+            oModelSZ1:SetValue("Z1_PROJET", cProjeto)
+        EndIf
+        If !Empty(cRevisao)
+            oModelSZ1:SetValue("Z1_REVISA", cRevisao)
+        EndIf
+        If !Empty(cTarefa)
+            oModelSZ1:SetValue("Z1_TAREFA", cTarefa)
+        EndIf
+        If !Empty(cChamadoHpsd)
+            oModelSZ1:SetValue("Z1_CHPSD", cChamadoHpsd)
+        EndIf
+        If !Empty(cChamado)
+            oModelSZ1:SetValue("Z1_CHHDK", Val(cChamado))
+        EndIf
+        If !Empty(cOsDesenv)
+            oModelSZ1:SetValue("Z1_OSDESE", cOsDesenv)
+        EndIf
+        If !Empty(cLinhaPv)
+            oModelSZ1:SetValue("Z1_LIN", cLinhaPv)
+        EndIf
+        If !Empty(cValorHora)
+            oModelSZ1:SetValue("Z1_VLRHR", Val(cValorHora))
+        EndIf
+
+        If oModel:VldData()
+            lOk := oModel:CommitData()
+        EndIf
+
+        If !lOk
+            cErroModel := oModel:GetErrorMessage()
+            Do Case
+                Case ValType(cErroModel) == "C"
+                    cErro := cErroModel
+                Case ValType(cErroModel) == "O"
+                    cErro := cErroModel:GetMessage()
+                Case ValType(cErroModel) == "A"
+                    cErro := FwJsonSerialize(cErroModel)
+                Otherwise
+                    cErro := "Falha ao validar/gravar a alteracao."
+            EndCase
+        EndIf
+
+        oModel:DeActivate(lOk)
+
+        If !lOk
+            Return oRest:setStatusResponse(400, '{"erro":"' + CNSA_OS_JSONESC(cErro) + '"}')
+        EndIf
 
         Return oRest:setStatusResponse(200, CNSA002_RESPOK(cOs, "OS alterada com sucesso."))
 
     Recover Using oErro
-        Return oRest:setStatusResponse(500, '{"erro":"' + CNSA_OS_JSONESC(EncodeUtf8(oErro:Description)) + '"}')
+        Return oRest:setStatusResponse(500, '{"erro":"' + CNSA_OS_JSONESC(oErro:Description) + '"}')
     End Sequence
 
 Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
@@ -757,10 +842,14 @@ Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
 // e nao por OS - apagaria linhas de SZ2 de OUTRAS OS do mesmo cliente.
 ////////////////////////////////////////////////////////////////////////////////
 @Post(endpoint="/CNSAOSEXCLUIR")
-User Function CNSA_OS_EXCLUIR() As Logical
-    Local jQuery := oRest:getQueryRequest() As Json
-    Local cOs    := AllTrim(CNSA002_JSONSTR(jQuery,"os")) As Character
-    Local oErro  := Nil
+User Function CNS002_OS_EXCLUIR() As Logical
+    Local jQuery     := oRest:getQueryRequest() As Json
+    Local cOs        := AllTrim(CNSA002_JSONSTR(jQuery,"os")) As Character
+    Local oErro      := Nil
+    Local oModel     := Nil
+    Local lOk        := .F.
+    Local cErro      := ""
+    Local cErroModel := Nil
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -776,14 +865,38 @@ User Function CNSA_OS_EXCLUIR() As Logical
             Return oRest:setStatusResponse(404, '{"erro":"OS nao encontrada."}')
         EndIf
 
-        RecLock("SZ1", .F.)
-            SZ1->(DbDelete())
-        SZ1->(MsUnlock())
+        oModel := CNS002_MODELREST()
+        oModel:SetOperation(MODEL_OPERATION_DELETE)
+        oModel:Activate()
+
+        If oModel:VldData()
+            lOk := oModel:CommitData()
+        EndIf
+
+        If !lOk
+            cErroModel := oModel:GetErrorMessage()
+            Do Case
+                Case ValType(cErroModel) == "C"
+                    cErro := cErroModel
+                Case ValType(cErroModel) == "O"
+                    cErro := cErroModel:GetMessage()
+                Case ValType(cErroModel) == "A"
+                    cErro := FwJsonSerialize(cErroModel)
+                Otherwise
+                    cErro := "Falha ao excluir a OS."
+            EndCase
+        EndIf
+
+        oModel:DeActivate(lOk)
+
+        If !lOk
+            Return oRest:setStatusResponse(400, '{"erro":"' + CNSA_OS_JSONESC(cErro) + '"}')
+        EndIf
 
         Return oRest:setStatusResponse(200, CNSA002_RESPOK(cOs, "OS excluida com sucesso."))
 
     Recover Using oErro
-        Return oRest:setStatusResponse(500, '{"erro":"' + CNSA_OS_JSONESC(EncodeUtf8(oErro:Description)) + '"}')
+        Return oRest:setStatusResponse(500, '{"erro":"' + CNSA_OS_JSONESC(oErro:Description) + '"}')
     End Sequence
 
 Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
@@ -795,14 +908,22 @@ Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
 // Listar/Copiar). Replica U_COPIAR_OS (CNSA002.PRW classico).
 ////////////////////////////////////////////////////////////////////////////////
 @Post(endpoint="/CNSAOSCOPIAR")
-User Function CNSA_OS_COPIAR() As Logical
-    Local jQuery   := oRest:getQueryRequest() As Json
+User Function CNS002_OS_COPIAR() As Logical
+    Local jQuery    := oRest:getQueryRequest() As Json
     Local cOsOrigem := AllTrim(CNSA002_JSONSTR(jQuery,"os")) As Character
-    Local oJson    := JsonObject():New()
-    Local oErro    := Nil
-    Local aFields  := {}
-    Local nI       := 0
-    Local cOsNova  := ""
+    Local oJson     := JsonObject():New()
+    Local oErro     := Nil
+    Local aFields   := {}
+    Local nI        := 0
+    Local cOsNova   := ""
+    Local aFixos    := {"Z1_OS", "Z1_FILIAL", "Z1_DTDIGIT", "Z1_APROVAD", "Z1_FATURAR", ;
+        "Z1_APVDOR", "Z1_APVMAIL", "Z1_APVIP", "Z1_APVDATA", "Z1_APVHORA", ;
+        "D_E_L_E_T_", "R_E_C_N_O_", "R_E_C_D_E_L_"}
+    Local oModel     := Nil
+    Local oModelSZ1  := Nil
+    Local lOk        := .F.
+    Local cErro      := ""
+    Local cErroModel := Nil
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -818,28 +939,63 @@ User Function CNSA_OS_COPIAR() As Logical
             Return oRest:setStatusResponse(404, '{"erro":"OS nao encontrada."}')
         EndIf
 
+        // Captura todos os campos da OS origem, exceto os que sempre mudam
+        // na copia (aFixos abaixo) - mesma lista do U_COPIAR_OS classico
+        // (CNSA002.PRW).
         For nI := 1 To SZ1->(FCount())
-            AAdd(aFields, {SZ1->(FieldName(nI)), SZ1->(FieldGet(nI))})
+            If AScan(aFixos, SZ1->(FieldName(nI))) == 0
+                AAdd(aFields, {SZ1->(FieldName(nI)), SZ1->(FieldGet(nI))})
+            EndIf
         Next nI
 
         cOsNova := GetSxeNum("SZ1", "Z1_OS")
 
-        RecLock("SZ1", .T.)
-            For nI := 1 To Len(aFields)
-                SZ1->(FieldPut(FieldPos(aFields[nI][1]), aFields[nI][2]))
-            Next nI
-            // Campos que devem ser diferentes na copia - mesma lista do
-            // U_COPIAR_OS classico (CNSA002.PRW).
-            SZ1->Z1_OS      := cOsNova
-            SZ1->Z1_DTDIGIT := Date()
-            SZ1->Z1_APROVAD := "N"
-            SZ1->Z1_FATURAR := "N"
-            SZ1->Z1_APVDOR  := ""
-            SZ1->Z1_APVMAIL := ""
-            SZ1->Z1_APVIP   := ""
-            SZ1->Z1_APVDATA := CtoD("")
-            SZ1->Z1_APVHORA := ""
-        SZ1->(MsUnlock())
+        oModel    := CNS002_MODELREST()
+        oModel:SetOperation(MODEL_OPERATION_INSERT)
+        oModel:Activate()
+        oModelSZ1 := oModel:GetModel("SZ1MASTER")
+
+        For nI := 1 To Len(aFields)
+            oModelSZ1:SetValue(aFields[nI][1], aFields[nI][2])
+        Next nI
+
+        // Campos que devem ser diferentes na copia - mesma lista do
+        // U_COPIAR_OS classico (CNSA002.PRW).
+        oModelSZ1:SetValue("Z1_FILIAL",  cFilAnt)
+        oModelSZ1:SetValue("Z1_OS",      cOsNova)
+        oModelSZ1:SetValue("Z1_DTDIGIT", Date())
+        oModelSZ1:SetValue("Z1_APROVAD", "N")
+        oModelSZ1:SetValue("Z1_FATURAR", "N")
+        oModelSZ1:SetValue("Z1_APVDOR",  "")
+        oModelSZ1:SetValue("Z1_APVMAIL", "")
+        oModelSZ1:SetValue("Z1_APVIP",   "")
+        oModelSZ1:SetValue("Z1_APVDATA", CtoD(""))
+        oModelSZ1:SetValue("Z1_APVHORA", "")
+
+        If oModel:VldData()
+            lOk := oModel:CommitData()
+        EndIf
+
+        If !lOk
+            cErroModel := oModel:GetErrorMessage()
+            Do Case
+                Case ValType(cErroModel) == "C"
+                    cErro := cErroModel
+                Case ValType(cErroModel) == "O"
+                    cErro := cErroModel:GetMessage()
+                Case ValType(cErroModel) == "A"
+                    cErro := FwJsonSerialize(cErroModel)
+                Otherwise
+                    cErro := "Falha ao copiar a OS."
+            EndCase
+        EndIf
+
+        oModel:DeActivate(lOk)
+
+        If !lOk
+            ConfirmSX8(.F.)
+            Return oRest:setStatusResponse(400, '{"erro":"' + CNSA_OS_JSONESC(cErro) + '"}')
+        EndIf
 
         ConfirmSX8()
 
@@ -852,7 +1008,7 @@ User Function CNSA_OS_COPIAR() As Logical
 
     Recover Using oErro
         RollBackSX8()
-        Return oRest:setStatusResponse(500, '{"erro":"' + CNSA_OS_JSONESC(EncodeUtf8(oErro:Description)) + '"}')
+        Return oRest:setStatusResponse(500, '{"erro":"' + CNSA_OS_JSONESC(oErro:Description) + '"}')
     End Sequence
 
 Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
