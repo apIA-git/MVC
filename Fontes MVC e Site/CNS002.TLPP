@@ -1,0 +1,948 @@
+#Include "Protheus.ch"
+#Include "FWMVCDef.ch"
+#Include "Totvs.ch"
+#Include "TopConn.ch"
+#Include "RwMake.ch"
+#Include "Colors.ch"
+#include "tlpp-core.th"
+#include "tlpp-rest.th"
+
+Namespace apia.cns002
+
+PUBLISH MODEL REST NAME OS RESOURCE OBJECT oRestOS
+
+
+////////////////////////////////////////////////////////////////////////////////
+//FUNCAO PRINCIPAL - Browse (ponto de entrada da tela)
+////////////////////////////////////////////////////////////////////////////////
+User Function CNS002()
+
+    Local l_oBrowse := Nil
+    // FIX: User Function precisa ser chamada com prefixo "u_" mesmo dentro do
+    // mesmo arquivo/namespace (mesmo problema real confirmado no CNS001.TLPP).
+    Private aRotina := u_MenuDef()
+
+    l_oBrowse := FWMBrowse():New()
+    If l_oBrowse <> Nil
+
+        l_oBrowse:SetDescription("OS - APIA")
+        l_oBrowse:SetAlias("SZ1")
+
+        l_oBrowse:AddLegend("(SZ1->Z1_APROVAD=='S'.OR.SZ1->Z1_APROVAD=='A').AND.SZ1->Z1_FATURAR=='S'",                    "BLUE",     "Aprovada e Faturada")
+        l_oBrowse:AddLegend("SZ1->Z1_FATURAR=='S'.AND.SZ1->Z1_APROVAD!='S'.AND.SZ1->Z1_APROVAD!='A'",                    "PINK",     "Faturada sem Aprovacao")
+        l_oBrowse:AddLegend("(SZ1->Z1_APROVAD=='S'.OR.SZ1->Z1_APROVAD=='A').AND.SZ1->Z1_FATURAR!='S'",                   "GREEN",    "Aprovada")
+        l_oBrowse:AddLegend("SZ1->Z1_APROVAD!='S'.AND.SZ1->Z1_APROVAD!='A'.AND.!Empty(SZ1->Z1_TEC)",                     "YELLOW",   "Aguardando Aprovacao")
+        l_oBrowse:AddLegend("SZ1->Z1_APROVAD!='S'.AND.SZ1->Z1_APROVAD!='A'.AND.Empty(SZ1->Z1_TEC)",                      "BR_CANCEL","Negada")
+
+        l_oBrowse:Activate()
+
+    EndIf
+
+Return
+
+///////////////////////////////////////////////////////////////////////////////////
+//ROTINA MENU
+User Function MenuDef()
+
+Local aRotina  := {}
+
+    ADD OPTION aRotina TITLE "Pesquisar"    ACTION "AxPesqui"                       OPERATION 1 ACCESS 0
+    ADD OPTION aRotina TITLE "Visualizar"   ACTION "ViewDef.apia.cns002.CNS002"     OPERATION 2 ACCESS 0
+    ADD OPTION aRotina TITLE "Incluir"      ACTION "ViewDef.apia.cns002.CNS002"     OPERATION 3 ACCESS 0
+    ADD OPTION aRotina TITLE "Alterar"      ACTION "ViewDef.apia.cns002.CNS002"     OPERATION 4 ACCESS 0
+    ADD OPTION aRotina TITLE "Excluir"      ACTION "ViewDef.apia.cns002.CNS002"     OPERATION 5 ACCESS 0
+    ADD OPTION aRotina TITLE "Copiar"       ACTION "apia.cns002.U_OS_COPIARTELA"    OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Legenda"      ACTION "apia.cns002.U_OS_LEGENDA"       OPERATION 0 ACCESS 0
+
+Return aRotina
+
+//////////////////////////////////////////////////////////////////////////////////////////////
+// VIEW - identico ao CNSA002.PRW, so troca o modelo carregado por "CNS002"
+//////////////////////////////////////////////////////////////////////////////////////////////
+User Function ViewDef()
+
+    Local l_oView    := Nil
+    Local l_oModel   := FWLoadModel("apia.cns002.CNS002")
+    Local l_oStruSZ1 := FWFormStruct(2, "SZ1")
+    Local l_oStruSZ2 := FWFormStruct(2, "SZ2")
+
+    If l_oModel == Nil
+        MsgStop("Erro: O Modelo (ModelDef) nao foi carregado.", "Erro")
+        Return Nil
+    EndIf
+
+    l_oView := FWFormView():New()
+    l_oView:SetModel(l_oModel)
+
+    l_oView:AddField("VIEW_SZ1", l_oStruSZ1, "SZ1MASTER")
+    l_oView:AddGrid("VIEW_SZ2",  l_oStruSZ2, "SZ2DETAIL")
+
+    l_oView:CreateHorizontalBox("CABEC", 60)
+    l_oView:CreateHorizontalBox("GRID",  40)
+
+    l_oView:SetOwnerView("VIEW_SZ1", "CABEC")
+    l_oView:SetOwnerView("VIEW_SZ2", "GRID")
+
+    l_oView:EnableTitleView("VIEW_SZ1", "Dados da OS")
+    l_oView:EnableTitleView("VIEW_SZ2", "Horas Contratadas")
+
+    l_oView:SetCloseOnOk({||.T.})
+
+Return l_oView
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+//MODELACAO - identica ao CNSA002.PRW (mesmas tabelas/relacoes)
+User Function ModelDef()
+
+    Local l_oModel  := Nil
+    Local l_oStrSZ1 := FWFormStruct(1, "SZ1")
+    Local l_oStrSZ2 := FWFormStruct(1, "SZ2")
+    Local aRelSZ2   := {}
+
+    l_oModel := MPFormModel():New(;
+        "FCNS002",;
+        {|oModel| OS_PREVALIDA(oModel)},;
+        {|oModel| OS_VALIDACANCELA(oModel)})
+
+    // Tabela pai: SZ1 (OS)
+    l_oModel:AddFields(;
+        "SZ1MASTER",;
+        NIL,;
+        l_oStrSZ1,;
+        {|_f,_a,_c,_v| OS_VALIDACAMPO(_f,_a,_c,_v)},;
+        NIL)
+
+    // Tabela filha 1: SZ2 (horas contratadas) - relacao por CLIENTE, nao por
+    // OS (ver aviso no topo do arquivo sobre risco de cascata).
+    l_oModel:AddGrid("SZ2DETAIL", "SZ1MASTER", l_oStrSZ2)
+    aAdd(aRelSZ2, {"Z2_CODCLI", "Z1_CLI"})
+    aAdd(aRelSZ2, {"Z2_LOJA",   "Z1_LOJA"})
+    l_oModel:SetRelation("SZ2DETAIL", aRelSZ2, SZ2->(IndexKey(2)))
+
+    l_oModel:SetPrimaryKey({"Z1_FILIAL","Z1_OS"})
+
+Return l_oModel
+
+//////////////////////////////////////////////////////////////////////////////////////////
+// Valida os campos do cabecalho (tabela SZ1) - identico ao FSZ1PosValid original
+Static Function OS_VALIDACAMPO(p_oField, p_sAcao, p_sCampo, p_vValor)
+    Local l_bOk := .T.
+    Local aObrigatorios := {"Z1_CLI", "Z1_LOJA", "Z1_USR", "Z1_MODULO", "Z1_MOTIV", ;
+        "Z1_SERV", "Z1_TIPO", "Z1_DTOS", "Z1_INI", "Z1_FIM", "Z1_TOTAL", "Z1_TEC"}
+
+    If AScan(aObrigatorios, p_sCampo) > 0 .And. Empty(p_vValor)
+        l_bOk := .F.
+    EndIf
+
+Return l_bOk
+
+Static Function OS_PREVALIDA(p_oModel)
+    Local l_bOk := .T.
+Return l_bOk
+
+Static Function OS_VALIDACANCELA(p_oModel)
+Return .T.
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+//                                                                                              //
+//                    COPIAR - nucleo compartilhado (tela + REST)                              //
+//                                                                                              //
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////
+// Model leve so com a SZ1 (sem grid SZ2DETAIL) - usado por Incluir/Alterar/
+// Copiar em vez de FWLoadModel("CNS002"). Ver aviso no topo do arquivo sobre
+// o motivo (SZ2DETAIL relacionado por CLIENTE, nao por OS).
+////////////////////////////////////////////////////////////////////////////////
+Static Function OS_MODELLEVE()
+    Local oModel  := Nil
+    Local oStrSZ1 := FWFormStruct(1, "SZ1")
+
+    oModel := MPFormModel():New("FCNS002REST", NIL, NIL, NIL, NIL)
+    // FIX: faltava plugar OS_VALIDACAMPO como PosValidacao (4o parametro) -
+    // sem isso, Incluir/Alterar via Class oRestOS aceitava OS sem cliente/
+    // tecnico/nada, sem erro (a validacao dos 12 campos obrigatorios so
+    // existia no ModelDef completo da tela classica, nunca rodava aqui).
+    oModel:AddFields("SZ1MASTER", NIL, oStrSZ1, {|_f,_a,_c,_v| OS_VALIDACAMPO(_f,_a,_c,_v)}, NIL)
+    oModel:SetPrimaryKey({"Z1_FILIAL", "Z1_OS"})
+
+Return oModel
+
+////////////////////////////////////////////////////////////////////////////////
+// Nucleo de copia - usado pela tela (OS_COPIARTELA) e pelo REST (OS_APICOPIAR).
+// Retorna {lOk, cErro, cOsNova}.
+////////////////////////////////////////////////////////////////////////////////
+Static Function OS_NUCLEOCOPIAR(cOsOrigem)
+    Local aFields    := {}
+    Local nI         := 0
+    Local cOsNova    := ""
+    Local aFixos     := {"Z1_OS", "Z1_FILIAL", "Z1_DTDIGIT", "Z1_APROVAD", "Z1_FATURAR", ;
+        "Z1_APVDOR", "Z1_APVMAIL", "Z1_APVIP", "Z1_APVDATA", "Z1_APVHORA", ;
+        "D_E_L_E_T_", "R_E_C_N_O_", "R_E_C_D_E_L_"}
+    Local oModel     := Nil
+    Local oModelSZ1  := Nil
+    Local lOk        := .F.
+    Local cErro      := ""
+    Local cErroModel := Nil
+    Local oErroExcpt := Nil
+
+    If Empty(cOsOrigem)
+        Return {.F., "Informe o numero da OS a copiar.", ""}
+    EndIf
+
+    DbSelectArea("SZ1")
+    SZ1->(DbSetOrder(1))
+    If !SZ1->(DbSeek(cFilAnt + cOsOrigem))
+        Return {.F., "OS nao encontrada.", ""}
+    EndIf
+
+    For nI := 1 To SZ1->(FCount())
+        If AScan(aFixos, SZ1->(FieldName(nI))) == 0
+            AAdd(aFields, {SZ1->(FieldName(nI)), SZ1->(FieldGet(nI))})
+        EndIf
+    Next nI
+
+    // FIX: sem Begin Sequence/Recover, uma excecao real entre Activate() e
+    // DeActivate() deixava o model pendurado pra sempre (mesma classe de bug
+    // ja corrigida no CH_GRAVARAGENDA do CNS001.TLPP).
+    Begin Sequence
+
+        cOsNova := GetSxeNum("SZ1", "Z1_OS")
+
+        oModel    := OS_MODELLEVE()
+        oModel:SetOperation(MODEL_OPERATION_INSERT)
+        oModel:Activate()
+        oModelSZ1 := oModel:GetModel("SZ1MASTER")
+
+        For nI := 1 To Len(aFields)
+            oModelSZ1:SetValue(aFields[nI][1], aFields[nI][2])
+        Next nI
+
+        // Campos que devem ser diferentes na copia
+        oModelSZ1:SetValue("Z1_FILIAL",  cFilAnt)
+        oModelSZ1:SetValue("Z1_OS",      cOsNova)
+        oModelSZ1:SetValue("Z1_DTDIGIT", Date())
+        oModelSZ1:SetValue("Z1_APROVAD", "N")
+        oModelSZ1:SetValue("Z1_FATURAR", "N")
+        oModelSZ1:SetValue("Z1_APVDOR",  "")
+        oModelSZ1:SetValue("Z1_APVMAIL", "")
+        oModelSZ1:SetValue("Z1_APVIP",   "")
+        oModelSZ1:SetValue("Z1_APVDATA", CtoD(""))
+        oModelSZ1:SetValue("Z1_APVHORA", "")
+
+        If oModel:VldData()
+            lOk := oModel:CommitData()
+        EndIf
+
+        If !lOk
+            cErroModel := oModel:GetErrorMessage()
+            Do Case
+                Case ValType(cErroModel) == "C"
+                    cErro := cErroModel
+                Case ValType(cErroModel) == "O"
+                    cErro := cErroModel:GetMessage()
+                Case ValType(cErroModel) == "A"
+                    cErro := FwJsonSerialize(cErroModel)
+                Otherwise
+                    cErro := "Falha ao copiar a OS."
+            EndCase
+        EndIf
+
+        oModel:DeActivate(lOk)
+
+    Recover Using oErroExcpt
+        lOk   := .F.
+        cErro := "Erro interno: " + oErroExcpt:Description
+        If oModel <> Nil
+            oModel:DeActivate()
+        EndIf
+    End Sequence
+
+    If !lOk
+        ConfirmSX8(.F.)
+        Return {.F., cErro, ""}
+    EndIf
+
+    ConfirmSX8()
+
+Return {.T., "", cOsNova}
+
+////////////////////////////////////////////////////////////////////////////////
+// Copiar (item de menu, tela classica) - mesmo dialog do COPIAR_OS original,
+// agora chamando o nucleo (via Model leve) em vez de RecLock direto.
+////////////////////////////////////////////////////////////////////////////////
+User Function OS_COPIARTELA()
+    Local cOs       := ""
+    Local aResultado := {}
+
+    If SZ1->(Eof())
+        MsgStop("Selecione uma OS para copiar.", "Copiar OS")
+        Return
+    EndIf
+
+    cOs := AllTrim(SZ1->Z1_OS)
+
+    If !MsgYesNo("Deseja copiar a OS " + cOs + "?", "Copiar OS")
+        Return
+    EndIf
+
+    aResultado := OS_NUCLEOCOPIAR(cOs)
+
+    If aResultado[1]
+        MsgInfo("OS copiada com sucesso! Nova OS: " + aResultado[3], "Copiar OS")
+    Else
+        MsgStop("Erro ao copiar a OS: " + aResultado[2], "Copiar OS")
+    EndIf
+
+Return
+
+////////////////////////////////////////////////////////////////////////////////
+//legenda dos STATUS de OS - identico ao LEGENDA original
+////////////////////////////////////////////////////////////////////////////////
+User Function OS_LEGENDA()
+
+    BrwLegenda("Legenda de Status", "Status da OS", ;
+        { ;
+            { "BR_AZUL",      "Faturada e Aprovada"    }, ;
+            { "BR_PINK",      "Faturada sem Aprovacao" }, ;
+            { "BR_VERDE",     "Aprovada"               }, ;
+            { "BR_AMARELO",   "Aguardando Aprovacao"   }, ;
+            { "BR_CANCEL",    "Negada"                 }  ;
+        })
+
+Return
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+//                                                                                              //
+//                       CLASS REST GENERICA - Incluir/Alterar/Visualizar                      //
+//                                                                                              //
+////////////////////////////////////////////////////////////////////////////////////////////////
+Class oRestOS From FwRestModel
+
+Method SaveData(cPK, cData, cError)
+
+EndClass
+
+////////////////////////////////////////////////////////////////////////////////
+// SaveData - NUNCA delega pro `_Super` (ver aviso no topo do arquivo sobre o
+// risco de cascata no SZ2DETAIL por-cliente). Incluir e Alterar sempre gravam
+// na mao via Model leve (OS_MODELLEVE), sem grid.
+////////////////////////////////////////////////////////////////////////////////
+Method SaveData(cPK, cData, cError) Class oRestOS
+Local jBody      := Nil
+Local oModel     := Nil
+Local oModelSZ1  := Nil
+Local lOk        := .F.
+Local cErro      := ""
+Local cErroModel := Nil
+Local oErroExcpt := Nil
+Local cOs        := ""
+Local lIncluir   := Empty(cPK)
+
+    Begin Sequence
+        jBody := JsonObject():New()
+        jBody:fromJson(cData)
+        If jBody == Nil
+            cError := "Corpo da requisicao invalido (JSON malformado)."
+            lOk    := .F.
+        Else
+            oModel := OS_MODELLEVE()
+
+            If lIncluir
+                oModel:SetOperation(MODEL_OPERATION_INSERT)
+                oModel:Activate()
+                oModelSZ1 := oModel:GetModel("SZ1MASTER")
+
+                cOs := GetSxeNum("SZ1", "Z1_OS")
+                oModelSZ1:SetValue("Z1_FILIAL",  cFilAnt)
+                oModelSZ1:SetValue("Z1_OS",      cOs)
+                oModelSZ1:SetValue("Z1_APROVAD", "N")
+                oModelSZ1:SetValue("Z1_FATURAR", "N")
+            Else
+                cOs := cPK
+                DbSelectArea("SZ1")
+                SZ1->(DbSetOrder(1))
+                If !SZ1->(DbSeek(cFilAnt + cOs))
+                    cError := "OS nao encontrada."
+                    Return .F.
+                EndIf
+                oModel:SetOperation(MODEL_OPERATION_UPDATE)
+                oModel:Activate()
+                oModelSZ1 := oModel:GetModel("SZ1MASTER")
+            EndIf
+
+            // Mapeamento generico: qualquer campo Z1_* que vier no JSON e
+            // setado - Incluir grava tudo, Alterar so o que veio (parcial).
+            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_CLI")
+            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_LOJA")
+            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_USR")
+            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_MODULO")
+            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_MOTIV")
+            OS_SETTEXTOUTF8(oModelSZ1, jBody, "Z1_SERV")
+            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_TIPO")
+            OS_SETDATAOS(oModelSZ1, jBody, "Z1_DTOS")
+            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_INTERNO")
+            OS_SETNUM(oModelSZ1, jBody, "Z1_INI")
+            OS_SETNUM(oModelSZ1, jBody, "Z1_FIM")
+            OS_SETNUM(oModelSZ1, jBody, "Z1_TRANS")
+            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_PREVIST")
+            OS_SETNUM(oModelSZ1, jBody, "Z1_TOTAL")
+            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_TEC")
+            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_NUMPRO")
+            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_PV")
+            OS_SETNUM(oModelSZ1, jBody, "Z1_ALMOCO")
+            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_PROJET")
+            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_REVISA")
+            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_TAREFA")
+            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_CHPSD")
+            OS_SETNUM(oModelSZ1, jBody, "Z1_CHHDK")
+            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_OSDESE")
+            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_LIN")
+            OS_SETNUM(oModelSZ1, jBody, "Z1_VLRHR")
+
+            // Z1_LOJA NAO recebe default silencioso: e campo obrigatorio
+            // (aObrigatorios em OS_VALIDACAMPO) - se faltar, VldData() reprova
+            // com erro, igual o original exigia explicitamente.
+            If lIncluir .And. Empty(oModelSZ1:GetValue("Z1_INTERNO"))
+                oModelSZ1:SetValue("Z1_INTERNO", "N")
+            EndIf
+            If lIncluir .And. Empty(oModelSZ1:GetValue("Z1_OSDESE"))
+                oModelSZ1:SetValue("Z1_OSDESE", "N")
+            EndIf
+            If lIncluir .And. Empty(oModelSZ1:GetValue("Z1_DTDIGIT"))
+                oModelSZ1:SetValue("Z1_DTDIGIT", Date())
+            EndIf
+
+            If oModel:VldData()
+                lOk := oModel:CommitData()
+            Else
+                lOk := .F.
+            EndIf
+
+            If !lOk
+                cErroModel := oModel:GetErrorMessage()
+                Do Case
+                    Case ValType(cErroModel) == "C"
+                        cErro := cErroModel
+                    Case ValType(cErroModel) == "O"
+                        cErro := cErroModel:GetMessage()
+                    Case ValType(cErroModel) == "A"
+                        cErro := FwJsonSerialize(cErroModel)
+                    Otherwise
+                        cErro := "Falha ao validar/gravar a OS."
+                EndCase
+                cError := cErro
+            EndIf
+
+            oModel:DeActivate(lOk)
+
+            If lIncluir
+                If lOk
+                    ConfirmSX8()
+                Else
+                    ConfirmSX8(.F.)
+                EndIf
+            EndIf
+        EndIf
+    Recover Using oErroExcpt
+        lOk    := .F.
+        cError := "Erro interno: " + oErroExcpt:Description
+        If lIncluir
+            ConfirmSX8(.F.)
+        EndIf
+        If oModel <> Nil
+            oModel:DeActivate()
+        EndIf
+    End Sequence
+
+Return lOk
+
+////////////////////////////////////////////////////////////////////////////////
+// Helpers do SaveData - setam campo so se veio no JSON (Alterar parcial) ou
+// sempre (Incluir, jBody[cCampo]==Nil vira valor vazio, igual campo omitido).
+////////////////////////////////////////////////////////////////////////////////
+Static Function OS_SETSEFICOU(oModelSZ1, jBody, cCampo)
+    Local xVal := jBody[cCampo]
+    If xVal != Nil
+        oModelSZ1:SetValue(cCampo, AllTrim(cValToChar(xVal)))
+    EndIf
+Return
+
+Static Function OS_SETTEXTOUTF8(oModelSZ1, jBody, cCampo)
+    Local xVal := jBody[cCampo]
+    // DecodeUTF8 removido a pedido do usuario (2026-08-22): causava erro de
+    // dupla conversao no log do appserver - o socket ja trata o encoding.
+    If xVal != Nil
+        oModelSZ1:SetValue(cCampo, AllTrim(cValToChar(xVal)))
+    EndIf
+Return
+
+Static Function OS_SETNUM(oModelSZ1, jBody, cCampo)
+    Local xVal := jBody[cCampo]
+    If xVal != Nil
+        oModelSZ1:SetValue(cCampo, Val(cValToChar(xVal)))
+    EndIf
+Return
+
+Static Function OS_SETDATAOS(oModelSZ1, jBody, cCampo)
+    Local xVal := jBody[cCampo]
+    If xVal != Nil .And. !Empty(cValToChar(xVal))
+        oModelSZ1:SetValue(cCampo, STOD(StrTran(cValToChar(xVal), "-", "")))
+    EndIf
+Return
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+//                                                                                              //
+//                       HELPERS DE LEITURA (nomes derivados via Posicione)                    //
+//                                                                                              //
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////
+// Descricao (Z1_SERV) - campo Memo, lido via Posicione (acesso nativo na
+// tabela, o cursor virtual do BeginSql nao expoe coluna Memo pelo nome).
+////////////////////////////////////////////////////////////////////////////////
+Static Function OS_DESC(cOs)
+    If Empty(cOs)
+        Return ""
+    EndIf
+Return AllTrim(Posicione("SZ1", 1, cFilAnt + cOs, "Z1_SERV"))
+
+Static Function OS_NOMECLI(cCodCliente, cLoja)
+    If Empty(cCodCliente)
+        Return ""
+    EndIf
+Return AllTrim(Posicione("SA1", 1, xFilial("SA1") + cCodCliente + cLoja, "A1_NOME"))
+
+////////////////////////////////////////////////////////////////////////////////
+// Descricao da tabela generica SX5 (Modulo=tipo "Z2", Motivo=tipo "Z1").
+////////////////////////////////////////////////////////////////////////////////
+Static Function OS_NOMEGEN(cTabela, cChave)
+    If Empty(cChave)
+        Return ""
+    EndIf
+Return AllTrim(Posicione("SX5", 1, xFilial("SX5") + cTabela + cChave, "X5_DESCRI"))
+
+Static Function OS_NOMEPROJ(cProjeto)
+    If Empty(cProjeto)
+        Return ""
+    EndIf
+Return AllTrim(Posicione("AF8", 1, xFilial("AF8") + cProjeto, "AF8_DESCRI"))
+
+Static Function OS_NOMETAREFA(cProjeto, cTarefa)
+    If Empty(cTarefa)
+        Return ""
+    EndIf
+Return AllTrim(Posicione("AF9", 1, xFilial("AF9") + cProjeto + cTarefa, "AF9_DESCRI"))
+
+////////////////////////////////////////////////////////////////////////////////
+// Nome do servico (SB1) e do analista (AA1) - Z1_NMTEC/Z1_NMTIPO existem no
+// dicionario (SX3) mas NAO sao coluna fisica na SZ1 (gatilho so-tela, nunca
+// gravado) - nunca ler direto da tabela, sempre calcular ao vivo aqui.
+////////////////////////////////////////////////////////////////////////////////
+Static Function OS_NOMESERV(cCodServico)
+    If Empty(cCodServico)
+        Return ""
+    EndIf
+Return AllTrim(Posicione("SB1", 1, xFilial("SB1") + cCodServico, "B1_DESC"))
+
+Static Function OS_NOMETEC(cCodAnalista)
+    If Empty(cCodAnalista)
+        Return ""
+    EndIf
+Return AllTrim(Posicione("AA1", 1, xFilial("AA1") + cCodAnalista, "AA1_NOMTEC"))
+
+////////////////////////////////////////////////////////////////////////////////
+// Status derivado - mesma regra das 5 legendas (AddLegend) da tela classica.
+////////////////////////////////////////////////////////////////////////////////
+Static Function OS_STATUSCALC(cAprovad, cFaturar, cTec)
+    Local lAprovada := cAprovad == "S" .Or. cAprovad == "A"
+
+    If lAprovada .And. cFaturar == "S"
+        Return "aprovada_faturada"
+    ElseIf cFaturar == "S" .And. !lAprovada
+        Return "faturada_sem_aprovacao"
+    ElseIf lAprovada
+        Return "aprovada"
+    ElseIf !Empty(cTec)
+        Return "aguardando_aprovacao"
+    EndIf
+Return "negada"
+
+////////////////////////////////////////////////////////////////////////////////
+// Data no formato ISO "AAAA-MM-DD" - trata Date ou Character (cursor do
+// BeginSql pode devolver os dois, dependendo do banco/driver).
+////////////////////////////////////////////////////////////////////////////////
+Static Function OS_DATAISO(dData)
+    Local cData := ""
+
+    If ValType(dData) == "D"
+        If Empty(dData)
+            Return ""
+        EndIf
+        cData := DToS(dData)
+    ElseIf ValType(dData) == "C"
+        cData := AllTrim(dData)
+    Else
+        Return ""
+    EndIf
+
+    If Len(cData) == 8
+        Return SubStr(cData, 1, 4) + "-" + SubStr(cData, 5, 2) + "-" + SubStr(cData, 7, 2)
+    EndIf
+Return ""
+
+////////////////////////////////////////////////////////////////////////////////
+Static Function OS_ESCAPARJSON(cTexto)
+    Local cRet := cTexto
+    cRet := StrTran(cRet, '\',  '\\')
+    cRet := StrTran(cRet, '"',  '\"')
+    cRet := StrTran(cRet, Chr(13)+Chr(10), '\n')
+    cRet := StrTran(cRet, Chr(10), '\n')
+    cRet := StrTran(cRet, Chr(13), '\n')
+    cRet := StrTran(cRet, Chr(9),  '\t')
+Return cRet
+
+////////////////////////////////////////////////////////////////////////////////
+// Helpers compartilhados pelos endpoints @Get/@Post - FIX ja existente no
+// original (nao GetJsonText): indexacao direta jDados[cCampo] devolve Nil de
+// verdade pra campo ausente, GetJsonText devolvia a string literal "null".
+////////////////////////////////////////////////////////////////////////////////
+Static Function OS_LERJSONNUM(jDados, cCampo)
+    Local xVal := jDados[cCampo]
+    If xVal == Nil
+        Return 0
+    EndIf
+Return Val(cValToChar(xVal))
+
+Static Function OS_LERJSONTXT(jDados, cCampo)
+    Local xVal := jDados[cCampo]
+    If xVal == Nil .Or. ValType(xVal) != "C"
+        Return ""
+    EndIf
+Return xVal
+
+Static Function OS_RESPOSTAOK(cOs, cMsg)
+    Local oJson := JsonObject():New()
+    oJson["sucesso"]  := .T.
+    oJson["os"]       := cOs
+    oJson["mensagem"] := cMsg
+Return oJson:ToJson()
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+//                                                                                              //
+//                       LISTAGEM / VISUALIZAR / PESQUISAR - fica custom                       //
+//                       (SQL direto por performance, nao cabe no generico)                    //
+//                                                                                              //
+////////////////////////////////////////////////////////////////////////////////////////////////
+@Get(endpoint="/CNSAOS")
+User Function OS_APILISTAR() As Logical
+    Local jQuery           := oRest:getQueryRequest() As Json
+    Local oJson            := JsonObject():New()
+    Local aRetorno         := {}
+    Local aTodos           := {}
+    Local aFiltrado        := {}
+    Local oLinha           := Nil
+    Local cAlias           := GetNextAlias()
+    Local nPagina          := 1
+    Local nTamanho         := 10
+    Local nStartIdx        := 1
+    Local nTotal           := 0
+    Local nI               := 0
+    Local cDataOsParam     := ""
+    Local cOsParam         := ""
+    Local cTextoParam      := ""
+    Local cTextoLike       := ""
+    Local cClienteParam    := ""
+    Local cAnalistaParam   := ""
+    Local dDataIni         := CToD("")
+    Local dDataFim         := CToD("")
+    Local nTemPeriodo      := 0
+    Local nMinRow          := 0
+    Local nMaxRow          := 0
+    Local nTotalSql        := 0
+    Local oErro            := Nil
+
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
+
+    Begin Sequence
+
+        nPagina      := OS_LERJSONNUM(jQuery, "pagina")
+        nPagina      := If(nPagina < 1, 1, nPagina)
+        nTamanho     := OS_LERJSONNUM(jQuery, "tamanho")
+        nTamanho     := If(nTamanho < 1 .Or. nTamanho > 100, 10, nTamanho)
+        nStartIdx    := (nPagina - 1) * nTamanho + 1
+        cOsParam     := AllTrim(OS_LERJSONTXT(jQuery,"os"))
+        cTextoParam  := AllTrim(OS_LERJSONTXT(jQuery,"texto"))
+        cTextoLike   := Upper(cTextoParam)
+        cClienteParam  := AllTrim(OS_LERJSONTXT(jQuery,"cliente"))
+        cAnalistaParam := AllTrim(OS_LERJSONTXT(jQuery,"analista"))
+        cDataOsParam   := AllTrim(OS_LERJSONTXT(jQuery,"dataOs"))
+
+        If !Empty(cDataOsParam)
+            dDataIni    := StoD(StrTran(cDataOsParam, "-", ""))
+            dDataFim    := dDataIni
+            nTemPeriodo := 1
+        EndIf
+
+        If Empty(cTextoLike)
+            nMinRow := nStartIdx - 1
+            nMaxRow := nStartIdx + nTamanho - 1
+        Else
+            nMinRow := 0
+            nMaxRow := 999999999
+        EndIf
+
+        Do While .T.
+            BeginSql Alias cAlias
+            SELECT * FROM (
+                SELECT OSQ.*, ROWNUM AS OS_RNUM
+                FROM (
+                    SELECT Z1_OS, Z1_DTDIGIT, Z1_CLI, Z1_LOJA, Z1_USR, Z1_MODULO, Z1_MOTIV, ;
+                        Z1_TIPO, Z1_DTOS, Z1_INTERNO, Z1_HRINI, Z1_INI, Z1_HRFIM, Z1_FIM, ;
+                        Z1_TRANS, Z1_PREVIST, Z1_HRTOT, Z1_TOTAL, Z1_TEC, Z1_NUMPRO, Z1_PV, ;
+                        Z1_ALMOCO, Z1_PROJET, Z1_REVISA, Z1_TAREFA, Z1_CHPSD, Z1_CHHDK, Z1_OSDESE, ;
+                        Z1_LIN, Z1_VLRHR, Z1_APROVAD, Z1_FATURAR, ;
+                        COUNT(*) OVER() AS OS_TOTAL
+                    FROM %Table:SZ1% SZ1
+                    WHERE Z1_FILIAL = %Exp:cFilAnt%
+                      AND %NotDel%
+                      AND (%Exp:cOsParam% IS NULL OR Z1_OS = %Exp:cOsParam%)
+                      AND (%Exp:cClienteParam% IS NULL OR Z1_CLI = %Exp:cClienteParam%)
+                      AND (%Exp:cAnalistaParam% IS NULL OR Z1_TEC = %Exp:cAnalistaParam%)
+                      AND (%Exp:cOsParam% IS NOT NULL OR %Exp:nTemPeriodo% <> 1 OR Z1_DTOS BETWEEN %Exp:dDataIni% AND %Exp:dDataFim%)
+                    ORDER BY Z1_DTOS DESC, Z1_OS DESC
+                ) OSQ
+                WHERE ROWNUM <= %Exp:nMaxRow%
+            )
+            WHERE OS_RNUM > %Exp:nMinRow%
+        EndSql
+
+        If !(cAlias)->(Eof())
+            nTotalSql := (cAlias)->OS_TOTAL
+        EndIf
+
+        While !(cAlias)->(Eof())
+            AAdd(aTodos, {;
+                AllTrim((cAlias)->Z1_OS), ;
+                (cAlias)->Z1_DTDIGIT, ;
+                AllTrim((cAlias)->Z1_CLI), ;
+                AllTrim((cAlias)->Z1_LOJA), ;
+                AllTrim((cAlias)->Z1_USR), ;
+                AllTrim((cAlias)->Z1_MODULO), ;
+                AllTrim((cAlias)->Z1_MOTIV), ;
+                OS_DESC(AllTrim((cAlias)->Z1_OS)), ;
+                AllTrim((cAlias)->Z1_TIPO), ;
+                (cAlias)->Z1_DTOS, ;
+                AllTrim((cAlias)->Z1_INTERNO), ;
+                AllTrim((cAlias)->Z1_HRINI), ;
+                (cAlias)->Z1_INI, ;
+                AllTrim((cAlias)->Z1_HRFIM), ;
+                (cAlias)->Z1_FIM, ;
+                (cAlias)->Z1_TRANS, ;
+                AllTrim((cAlias)->Z1_PREVIST), ;
+                AllTrim((cAlias)->Z1_HRTOT), ;
+                (cAlias)->Z1_TOTAL, ;
+                AllTrim((cAlias)->Z1_TEC), ;
+                AllTrim((cAlias)->Z1_NUMPRO), ;
+                AllTrim((cAlias)->Z1_PV), ;
+                (cAlias)->Z1_ALMOCO, ;
+                AllTrim((cAlias)->Z1_PROJET), ;
+                AllTrim((cAlias)->Z1_REVISA), ;
+                AllTrim((cAlias)->Z1_TAREFA), ;
+                AllTrim((cAlias)->Z1_CHPSD), ;
+                cValToChar((cAlias)->Z1_CHHDK), ;
+                AllTrim((cAlias)->Z1_OSDESE), ;
+                AllTrim((cAlias)->Z1_LIN), ;
+                (cAlias)->Z1_VLRHR, ;
+                AllTrim((cAlias)->Z1_APROVAD), ;
+                AllTrim((cAlias)->Z1_FATURAR) ;
+            })
+            (cAlias)->(DbSkip())
+        EndDo
+        (cAlias)->(DbCloseArea())
+
+            If nTemPeriodo == 1 .And. nTotalSql == 0
+                nTemPeriodo := 0
+                aTodos      := {}
+                Loop
+            EndIf
+            Exit
+        EndDo
+
+        If !Empty(cTextoLike)
+            aFiltrado := {}
+            For nI := 1 To Len(aTodos)
+                If cTextoLike $ Upper(aTodos[nI][8])
+                    AAdd(aFiltrado, aTodos[nI])
+                EndIf
+            Next nI
+            aTodos := aFiltrado
+            nTotal := Len(aTodos)
+        Else
+            nTotal := nTotalSql
+        EndIf
+
+        For nI := If(Empty(cTextoLike), 1, nStartIdx) To If(Empty(cTextoLike), Len(aTodos), Min(nStartIdx + nTamanho - 1, nTotal))
+            oLinha := JsonObject():New()
+            oLinha['os']             := aTodos[nI][1]
+            oLinha['dtDigitacao']    := OS_DATAISO(aTodos[nI][2])
+            oLinha['codCliente']     := aTodos[nI][3]
+            oLinha['lojaCliente']    := aTodos[nI][4]
+            oLinha['nomeCliente']    := OS_NOMECLI(aTodos[nI][3], aTodos[nI][4])
+            oLinha['usuario']        := aTodos[nI][5]
+            oLinha['modulo']         := aTodos[nI][6]
+            oLinha['nomeModulo']     := OS_NOMEGEN("Z2", aTodos[nI][6])
+            oLinha['motivo']         := aTodos[nI][7]
+            oLinha['nomeMotivo']     := OS_NOMEGEN("Z1", aTodos[nI][7])
+            oLinha['descricao']      := aTodos[nI][8]
+            oLinha['codServico']     := aTodos[nI][9]
+            oLinha['nomeServico']    := OS_NOMESERV(aTodos[nI][9])
+            oLinha['dataOs']         := OS_DATAISO(aTodos[nI][10])
+            oLinha['osInterna']      := aTodos[nI][11]
+            oLinha['horaInicial']    := aTodos[nI][12]
+            oLinha['horaInicialDec'] := aTodos[nI][13]
+            oLinha['horaFinal']      := aTodos[nI][14]
+            oLinha['horaFinalDec']   := aTodos[nI][15]
+            oLinha['horasTranDec']   := aTodos[nI][16]
+            oLinha['prevPmt']        := aTodos[nI][17]
+            oLinha['totalHoras']     := aTodos[nI][18]
+            oLinha['horasTiDec']     := aTodos[nI][19]
+            oLinha['codAnalista']    := aTodos[nI][20]
+            oLinha['nomeAnalista']   := OS_NOMETEC(aTodos[nI][20])
+            oLinha['numProposta']    := aTodos[nI][21]
+            oLinha['pedVenda']       := aTodos[nI][22]
+            oLinha['hrAlmoco']       := aTodos[nI][23]
+            oLinha['projeto']        := aTodos[nI][24]
+            oLinha['nomeProjeto']    := OS_NOMEPROJ(aTodos[nI][24])
+            oLinha['revisao']        := aTodos[nI][25]
+            oLinha['tarefa']         := aTodos[nI][26]
+            oLinha['nomeTarefa']     := OS_NOMETAREFA(aTodos[nI][24], aTodos[nI][26])
+            oLinha['chamadoHpsd']    := aTodos[nI][27]
+            oLinha['chamado']        := aTodos[nI][28]
+            oLinha['osDesenv']       := aTodos[nI][29]
+            oLinha['linhaPv']        := aTodos[nI][30]
+            oLinha['valorHora']      := aTodos[nI][31]
+            oLinha['status']         := OS_STATUSCALC(aTodos[nI][32], aTodos[nI][33], aTodos[nI][20])
+            AAdd(aRetorno, oLinha)
+        Next nI
+
+        oJson['total']        := nTotal
+        oJson['totalPaginas'] := If(nTotal == 0, 0, Ceiling(nTotal / nTamanho))
+        oJson['pagina']       := nPagina
+        oJson['tamanho']      := nTamanho
+        oJson['items']        := aRetorno
+
+        Return oRest:setStatusResponse(200, oJson:ToJson())
+
+    Recover Using oErro
+        If oErro != Nil
+            Return oRest:setStatusResponse(500, '{"erro":"' + OS_ESCAPARJSON(oErro:Description) + '"}')
+        EndIf
+    End Sequence
+
+Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+//                                                                                              //
+//                       EXCLUIR - fica custom (mesma decisao do CNS001:                       //
+//                       incerteza sobre hook exato de delete do FwRestModel)                  //
+//                                                                                              //
+////////////////////////////////////////////////////////////////////////////////////////////////
+@Post(endpoint="/CNSAOSEXCLUIR")
+User Function OS_APIEXCLUIR() As Logical
+    Local jQuery     := oRest:getQueryRequest() As Json
+    Local cOs        := AllTrim(OS_LERJSONTXT(jQuery,"os")) As Character
+    Local oErro      := Nil
+    Local oModel     := Nil
+    Local lOk        := .F.
+    Local cErro      := ""
+    Local cErroModel := Nil
+
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
+
+    Begin Sequence
+
+        If Empty(cOs)
+            Return oRest:setStatusResponse(400, '{"erro":"Informe o numero da OS."}')
+        EndIf
+
+        DbSelectArea("SZ1")
+        SZ1->(DbSetOrder(1))
+        If !SZ1->(DbSeek(cFilAnt + cOs))
+            Return oRest:setStatusResponse(404, '{"erro":"OS nao encontrada."}')
+        EndIf
+
+        oModel := OS_MODELLEVE()
+        oModel:SetOperation(MODEL_OPERATION_DELETE)
+        oModel:Activate()
+
+        If oModel:VldData()
+            lOk := oModel:CommitData()
+        EndIf
+
+        If !lOk
+            cErroModel := oModel:GetErrorMessage()
+            Do Case
+                Case ValType(cErroModel) == "C"
+                    cErro := cErroModel
+                Case ValType(cErroModel) == "O"
+                    cErro := cErroModel:GetMessage()
+                Case ValType(cErroModel) == "A"
+                    cErro := FwJsonSerialize(cErroModel)
+                Otherwise
+                    cErro := "Falha ao excluir a OS."
+            EndCase
+        EndIf
+
+        oModel:DeActivate(lOk)
+
+        If !lOk
+            Return oRest:setStatusResponse(400, '{"erro":"' + OS_ESCAPARJSON(cErro) + '"}')
+        EndIf
+
+        Return oRest:setStatusResponse(200, OS_RESPOSTAOK(cOs, "OS excluida com sucesso."))
+
+    Recover Using oErro
+        Return oRest:setStatusResponse(500, '{"erro":"' + OS_ESCAPARJSON(oErro:Description) + '"}')
+    End Sequence
+
+Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+//                                                                                              //
+//                       COPIAR - fica custom (nao e CRUD simples)                             //
+//                                                                                              //
+////////////////////////////////////////////////////////////////////////////////////////////////
+@Post(endpoint="/CNSAOSCOPIAR")
+User Function OS_APICOPIAR() As Logical
+    Local jQuery    := oRest:getQueryRequest() As Json
+    Local cOsOrigem := AllTrim(OS_LERJSONTXT(jQuery,"os")) As Character
+    Local oJson     := JsonObject():New()
+    Local oErro     := Nil
+    Local aResultado := {}
+
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
+
+    Begin Sequence
+
+        aResultado := OS_NUCLEOCOPIAR(cOsOrigem)
+
+        If !aResultado[1]
+            If aResultado[2] == "OS nao encontrada."
+                Return oRest:setStatusResponse(404, '{"erro":"' + OS_ESCAPARJSON(aResultado[2]) + '"}')
+            EndIf
+            Return oRest:setStatusResponse(400, '{"erro":"' + OS_ESCAPARJSON(aResultado[2]) + '"}')
+        EndIf
+
+        oJson['sucesso']    := .T.
+        oJson['osOriginal'] := cOsOrigem
+        oJson['osNova']     := aResultado[3]
+        oJson['mensagem']   := "OS copiada com sucesso."
+
+        Return oRest:setStatusResponse(200, oJson:ToJson())
+
+    Recover Using oErro
+        Return oRest:setStatusResponse(500, '{"erro":"' + OS_ESCAPARJSON(oErro:Description) + '"}')
+    End Sequence
+
+Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
