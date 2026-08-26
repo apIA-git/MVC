@@ -7,6 +7,14 @@
 #include "tlpp-core.th"
 #include "tlpp-rest.th"
 
+////////////////////////////////////////////////////////////////////////////////
+// HISTORICO DE ALTERACOES
+// Henrique - 24/08/2026 14:28 - Adicionados endpoints "/CNSAOSINCLUIR" e
+//   "/CNSAOSALTERAR" (query string, igual ao front) - Class oRestOS:SaveData
+//   nao era chamada pelo front real (esperava JSON body). Testado e
+//   confirmado funcionando pelo usuario.
+
+////////////////////////////////////////////////////////////////////////////////
 Namespace apia.cns002
 
 PUBLISH MODEL REST NAME OS RESOURCE OBJECT oRestOS
@@ -324,9 +332,15 @@ Method SaveData(cPK, cData, cError)
 EndClass
 
 ////////////////////////////////////////////////////////////////////////////////
-// SaveData - NUNCA delega pro `_Super` (ver aviso no topo do arquivo sobre o
-// risco de cascata no SZ2DETAIL por-cliente). Incluir e Alterar sempre gravam
-// na mao via Model leve (OS_MODELLEVE), sem grid.
+// SaveData - CODIGO MORTO do ponto de vista do front real (apia-po-cnshub):
+// confirmado lendo os-serv.ts que Incluir/Alterar mandam tudo via QUERY
+// STRING com corpo POST sempre `null` (nunca JSON body) - exatamente o mesmo
+// problema achado e corrigido no CNS001.TLPP pro front de Chamados. Os
+// endpoints DE VERDADE usados pelo front sao OS_APIINCLUIR/OS_APIALTERAR
+// (abaixo, @Post custom lendo query string). Mantido aqui so porque o
+// `PUBLISH MODEL REST` exige a Class existir - nunca chamado por esse front.
+// NUNCA delega pro `_Super` (ver aviso no topo do arquivo sobre cascata no
+// SZ2DETAIL por-cliente), caso algum dia alguem chame o generico de verdade.
 ////////////////////////////////////////////////////////////////////////////////
 Method SaveData(cPK, cData, cError) Class oRestOS
 Local jBody      := Nil
@@ -455,6 +469,322 @@ Local lIncluir   := Empty(cPK)
         EndIf
     End Sequence
 
+////////////////////////////////////////////////////////////////////////////////////////////////
+//                                                                                              //
+//                    INCLUIR/ALTERAR - endpoints REAIS usados pelo front                     //
+//                    (query string, corpo POST sempre null - confirmado                       //
+//                    lendo os-serv.ts)                                                        //
+//                                                                                              //
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////
+// Nucleo de Incluir - usado por OS_APIINCLUIR. Retorna {lOk, cErro, cOs}.
+////////////////////////////////////////////////////////////////////////////////
+Static Function OS_NUCLEOINCLUIR(jQuery)
+    Local oModel     := Nil
+    Local oModelSZ1  := Nil
+    Local lOk        := .F.
+    Local cErro      := ""
+    Local cErroModel := Nil
+    Local oErroExcpt := Nil
+    Local cOs        := ""
+    Local cDtDigit   := AllTrim(OS_LERJSONTXT(jQuery, "dtDigitacao"))
+
+    If Empty(AllTrim(OS_LERJSONTXT(jQuery,"codCliente"))) .Or. Empty(AllTrim(OS_LERJSONTXT(jQuery,"lojaCliente")))
+        Return {.F., "Informe o cliente e o site do cliente.", ""}
+    EndIf
+    If Empty(AllTrim(OS_LERJSONTXT(jQuery,"usuario")))
+        Return {.F., "Informe o usuario.", ""}
+    EndIf
+    If Empty(AllTrim(OS_LERJSONTXT(jQuery,"modulo")))
+        Return {.F., "Informe o modulo.", ""}
+    EndIf
+    If Empty(AllTrim(OS_LERJSONTXT(jQuery,"motivo")))
+        Return {.F., "Informe o motivo.", ""}
+    EndIf
+    If Empty(AllTrim(OS_LERJSONTXT(jQuery,"descricao")))
+        Return {.F., "Informe a descricao.", ""}
+    EndIf
+    If Empty(AllTrim(OS_LERJSONTXT(jQuery,"codServico")))
+        Return {.F., "Informe o codigo do servico.", ""}
+    EndIf
+    If Empty(AllTrim(OS_LERJSONTXT(jQuery,"dataOs")))
+        Return {.F., "Informe a data da OS.", ""}
+    EndIf
+
+    Begin Sequence
+
+        oModel    := OS_MODELLEVE()
+        oModel:SetOperation(MODEL_OPERATION_INSERT)
+        oModel:Activate()
+        oModelSZ1 := oModel:GetModel("SZ1MASTER")
+
+        cOs := GetSxeNum("SZ1", "Z1_OS")
+
+        oModelSZ1:SetValue("Z1_FILIAL",  cFilAnt)
+        oModelSZ1:SetValue("Z1_OS",      cOs)
+        oModelSZ1:SetValue("Z1_DTDIGIT", If(Empty(cDtDigit), Date(), STOD(StrTran(cDtDigit,"-",""))))
+        oModelSZ1:SetValue("Z1_CLI",     AllTrim(OS_LERJSONTXT(jQuery,"codCliente")))
+        oModelSZ1:SetValue("Z1_LOJA",    AllTrim(OS_LERJSONTXT(jQuery,"lojaCliente")))
+        oModelSZ1:SetValue("Z1_USR",     AllTrim(OS_LERJSONTXT(jQuery,"usuario")))
+        oModelSZ1:SetValue("Z1_MODULO",  AllTrim(OS_LERJSONTXT(jQuery,"modulo")))
+        oModelSZ1:SetValue("Z1_MOTIV",   AllTrim(OS_LERJSONTXT(jQuery,"motivo")))
+        oModelSZ1:SetValue("Z1_SERV",    AllTrim(OS_LERJSONTXT(jQuery,"descricao")))
+        oModelSZ1:SetValue("Z1_TIPO",    AllTrim(OS_LERJSONTXT(jQuery,"codServico")))
+        oModelSZ1:SetValue("Z1_DTOS",    STOD(StrTran(AllTrim(OS_LERJSONTXT(jQuery,"dataOs")), "-", "")))
+        oModelSZ1:SetValue("Z1_INI",     OS_LERJSONNUM(jQuery,"horaInicialDec"))
+        oModelSZ1:SetValue("Z1_FIM",     OS_LERJSONNUM(jQuery,"horaFinalDec"))
+        oModelSZ1:SetValue("Z1_TOTAL",   OS_LERJSONNUM(jQuery,"horasTiDec"))
+        oModelSZ1:SetValue("Z1_TEC",     AllTrim(OS_LERJSONTXT(jQuery,"codAnalista")))
+        oModelSZ1:SetValue("Z1_APROVAD", "N")
+        oModelSZ1:SetValue("Z1_FATURAR", "N")
+
+        // Opcionais - so seta se vier preenchido (evita sobrescrever default
+        // do Model com vazio quando o front simplesmente nao manda o campo).
+        If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"osInterna")))
+            oModelSZ1:SetValue("Z1_INTERNO", AllTrim(OS_LERJSONTXT(jQuery,"osInterna")))
+        Else
+            oModelSZ1:SetValue("Z1_INTERNO", "N")
+        EndIf
+        If OS_LERJSONNUM(jQuery,"horasTranDec") <> 0
+            oModelSZ1:SetValue("Z1_TRANS", OS_LERJSONNUM(jQuery,"horasTranDec"))
+        EndIf
+        If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"prevPmt")))
+            oModelSZ1:SetValue("Z1_PREVIST", AllTrim(OS_LERJSONTXT(jQuery,"prevPmt")))
+        EndIf
+        If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"numProposta")))
+            oModelSZ1:SetValue("Z1_NUMPRO", AllTrim(OS_LERJSONTXT(jQuery,"numProposta")))
+        EndIf
+        If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"pedVenda")))
+            oModelSZ1:SetValue("Z1_PV", AllTrim(OS_LERJSONTXT(jQuery,"pedVenda")))
+        EndIf
+        If OS_LERJSONNUM(jQuery,"hrAlmoco") <> 0
+            oModelSZ1:SetValue("Z1_ALMOCO", OS_LERJSONNUM(jQuery,"hrAlmoco"))
+        EndIf
+        If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"projeto")))
+            oModelSZ1:SetValue("Z1_PROJET", AllTrim(OS_LERJSONTXT(jQuery,"projeto")))
+        EndIf
+        If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"revisao")))
+            oModelSZ1:SetValue("Z1_REVISA", AllTrim(OS_LERJSONTXT(jQuery,"revisao")))
+        EndIf
+        If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"tarefa")))
+            oModelSZ1:SetValue("Z1_TAREFA", AllTrim(OS_LERJSONTXT(jQuery,"tarefa")))
+        EndIf
+        If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"chamadoHpsd")))
+            oModelSZ1:SetValue("Z1_CHPSD", AllTrim(OS_LERJSONTXT(jQuery,"chamadoHpsd")))
+        EndIf
+        If OS_LERJSONNUM(jQuery,"chamado") <> 0
+            oModelSZ1:SetValue("Z1_CHHDK", OS_LERJSONNUM(jQuery,"chamado"))
+        EndIf
+        If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"osDesenv")))
+            oModelSZ1:SetValue("Z1_OSDESE", AllTrim(OS_LERJSONTXT(jQuery,"osDesenv")))
+        Else
+            oModelSZ1:SetValue("Z1_OSDESE", "N")
+        EndIf
+        If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"linhaPv")))
+            oModelSZ1:SetValue("Z1_LIN", AllTrim(OS_LERJSONTXT(jQuery,"linhaPv")))
+        EndIf
+        If OS_LERJSONNUM(jQuery,"valorHora") <> 0
+            oModelSZ1:SetValue("Z1_VLRHR", OS_LERJSONNUM(jQuery,"valorHora"))
+        EndIf
+
+        If oModel:VldData()
+            lOk := oModel:CommitData()
+        Else
+            lOk := .F.
+        EndIf
+
+        If !lOk
+            cErroModel := oModel:GetErrorMessage()
+            Do Case
+                Case ValType(cErroModel) == "C"
+                    cErro := cErroModel
+                Case ValType(cErroModel) == "O"
+                    cErro := cErroModel:GetMessage()
+                Case ValType(cErroModel) == "A"
+                    cErro := FwJsonSerialize(cErroModel)
+                Otherwise
+                    cErro := "Falha ao validar/gravar a OS."
+            EndCase
+        EndIf
+
+        oModel:DeActivate(lOk)
+
+        If lOk
+            ConfirmSX8()
+        Else
+            ConfirmSX8(.F.)
+        EndIf
+
+    Recover Using oErroExcpt
+        lOk   := .F.
+        cErro := "Erro interno: " + oErroExcpt:Description
+        ConfirmSX8(.F.)
+        If oModel <> Nil
+            oModel:DeActivate()
+        EndIf
+    End Sequence
+
+Return {lOk, cErro, cOs}
+
+@Post(endpoint="/CNSAOSINCLUIR")
+User Function OS_APIINCLUIR() As Logical
+    Local jQuery     := oRest:getQueryRequest() As Json
+    Local aResultado := {}
+
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
+
+    aResultado := OS_NUCLEOINCLUIR(jQuery)
+
+    If !aResultado[1]
+        Return oRest:setStatusResponse(400, '{"erro":"' + OS_ESCAPARJSON(aResultado[2]) + '"}')
+    EndIf
+
+Return oRest:setStatusResponse(200, OS_RESPOSTAOK(aResultado[3], "OS incluida com sucesso."))
+
+////////////////////////////////////////////////////////////////////////////////
+// Nucleo de Alterar - alteracao PARCIAL (so grava o campo que veio na
+// query string). Usado por OS_APIALTERAR. Retorna {lOk, cErro, cOs}.
+////////////////////////////////////////////////////////////////////////////////
+Static Function OS_NUCLEOALTERAR(jQuery)
+    Local oModel     := Nil
+    Local oModelSZ1  := Nil
+    Local lOk        := .F.
+    Local cErro      := ""
+    Local cErroModel := Nil
+    Local oErroExcpt := Nil
+    Local cOs        := AllTrim(OS_LERJSONTXT(jQuery,"os"))
+    Local cVal       := ""
+
+    If Empty(cOs)
+        Return {.F., "Informe o numero da OS (?os=000001).", ""}
+    EndIf
+
+    DbSelectArea("SZ1")
+    SZ1->(DbSetOrder(1))
+    If !SZ1->(DbSeek(cFilAnt + cOs))
+        Return {.F., "OS nao encontrada.", cOs}
+    EndIf
+
+    Begin Sequence
+
+        oModel    := OS_MODELLEVE()
+        oModel:SetOperation(MODEL_OPERATION_UPDATE)
+        oModel:Activate()
+        oModelSZ1 := oModel:GetModel("SZ1MASTER")
+
+        cVal := AllTrim(OS_LERJSONTXT(jQuery,"codCliente"))
+        If !Empty(cVal)
+            oModelSZ1:SetValue("Z1_CLI", cVal)
+            cVal := AllTrim(OS_LERJSONTXT(jQuery,"lojaCliente"))
+            oModelSZ1:SetValue("Z1_LOJA", If(Empty(cVal), "01", cVal))
+        EndIf
+        cVal := AllTrim(OS_LERJSONTXT(jQuery,"usuario"))
+        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_USR", cVal) ; EndIf
+        cVal := AllTrim(OS_LERJSONTXT(jQuery,"modulo"))
+        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_MODULO", cVal) ; EndIf
+        cVal := AllTrim(OS_LERJSONTXT(jQuery,"motivo"))
+        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_MOTIV", cVal) ; EndIf
+        cVal := AllTrim(OS_LERJSONTXT(jQuery,"descricao"))
+        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_SERV", cVal) ; EndIf
+        cVal := AllTrim(OS_LERJSONTXT(jQuery,"codServico"))
+        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_TIPO", cVal) ; EndIf
+        cVal := AllTrim(OS_LERJSONTXT(jQuery,"dataOs"))
+        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_DTOS", STOD(StrTran(cVal,"-",""))) ; EndIf
+        If OS_LERJSONNUM(jQuery,"horaInicialDec") <> 0
+            oModelSZ1:SetValue("Z1_INI", OS_LERJSONNUM(jQuery,"horaInicialDec"))
+        EndIf
+        If OS_LERJSONNUM(jQuery,"horaFinalDec") <> 0
+            oModelSZ1:SetValue("Z1_FIM", OS_LERJSONNUM(jQuery,"horaFinalDec"))
+        EndIf
+        If OS_LERJSONNUM(jQuery,"horasTranDec") <> 0
+            oModelSZ1:SetValue("Z1_TRANS", OS_LERJSONNUM(jQuery,"horasTranDec"))
+        EndIf
+        If OS_LERJSONNUM(jQuery,"horasTiDec") <> 0
+            oModelSZ1:SetValue("Z1_TOTAL", OS_LERJSONNUM(jQuery,"horasTiDec"))
+        EndIf
+        cVal := AllTrim(OS_LERJSONTXT(jQuery,"codAnalista"))
+        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_TEC", cVal) ; EndIf
+        cVal := AllTrim(OS_LERJSONTXT(jQuery,"osInterna"))
+        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_INTERNO", cVal) ; EndIf
+        cVal := AllTrim(OS_LERJSONTXT(jQuery,"prevPmt"))
+        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_PREVIST", cVal) ; EndIf
+        cVal := AllTrim(OS_LERJSONTXT(jQuery,"numProposta"))
+        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_NUMPRO", cVal) ; EndIf
+        cVal := AllTrim(OS_LERJSONTXT(jQuery,"pedVenda"))
+        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_PV", cVal) ; EndIf
+        If OS_LERJSONNUM(jQuery,"hrAlmoco") <> 0
+            oModelSZ1:SetValue("Z1_ALMOCO", OS_LERJSONNUM(jQuery,"hrAlmoco"))
+        EndIf
+        cVal := AllTrim(OS_LERJSONTXT(jQuery,"projeto"))
+        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_PROJET", cVal) ; EndIf
+        cVal := AllTrim(OS_LERJSONTXT(jQuery,"revisao"))
+        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_REVISA", cVal) ; EndIf
+        cVal := AllTrim(OS_LERJSONTXT(jQuery,"tarefa"))
+        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_TAREFA", cVal) ; EndIf
+        cVal := AllTrim(OS_LERJSONTXT(jQuery,"chamadoHpsd"))
+        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_CHPSD", cVal) ; EndIf
+        If OS_LERJSONNUM(jQuery,"chamado") <> 0
+            oModelSZ1:SetValue("Z1_CHHDK", OS_LERJSONNUM(jQuery,"chamado"))
+        EndIf
+        cVal := AllTrim(OS_LERJSONTXT(jQuery,"osDesenv"))
+        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_OSDESE", cVal) ; EndIf
+        cVal := AllTrim(OS_LERJSONTXT(jQuery,"linhaPv"))
+        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_LIN", cVal) ; EndIf
+        If OS_LERJSONNUM(jQuery,"valorHora") <> 0
+            oModelSZ1:SetValue("Z1_VLRHR", OS_LERJSONNUM(jQuery,"valorHora"))
+        EndIf
+
+        If oModel:VldData()
+            lOk := oModel:CommitData()
+        Else
+            lOk := .F.
+        EndIf
+
+        If !lOk
+            cErroModel := oModel:GetErrorMessage()
+            Do Case
+                Case ValType(cErroModel) == "C"
+                    cErro := cErroModel
+                Case ValType(cErroModel) == "O"
+                    cErro := cErroModel:GetMessage()
+                Case ValType(cErroModel) == "A"
+                    cErro := FwJsonSerialize(cErroModel)
+                Otherwise
+                    cErro := "Falha ao validar/gravar a alteracao."
+            EndCase
+        EndIf
+
+        oModel:DeActivate(lOk)
+
+    Recover Using oErroExcpt
+        lOk   := .F.
+        cErro := "Erro interno: " + oErroExcpt:Description
+        If oModel <> Nil
+            oModel:DeActivate()
+        EndIf
+    End Sequence
+
+Return {lOk, cErro, cOs}
+
+@Post(endpoint="/CNSAOSALTERAR")
+User Function OS_APIALTERAR() As Logical
+    Local jQuery     := oRest:getQueryRequest() As Json
+    Local aResultado := {}
+
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
+
+    aResultado := OS_NUCLEOALTERAR(jQuery)
+
+    If !aResultado[1]
+        If aResultado[2] == "OS nao encontrada."
+            Return oRest:setStatusResponse(404, '{"erro":"' + OS_ESCAPARJSON(aResultado[2]) + '"}')
+        EndIf
+        Return oRest:setStatusResponse(400, '{"erro":"' + OS_ESCAPARJSON(aResultado[2]) + '"}')
+    EndIf
+
+Return oRest:setStatusResponse(200, OS_RESPOSTAOK(aResultado[3], "OS alterada com sucesso."))
+
 Return lOk
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -470,8 +800,6 @@ Return
 
 Static Function OS_SETTEXTOUTF8(oModelSZ1, jBody, cCampo)
     Local xVal := jBody[cCampo]
-    // DecodeUTF8 removido a pedido do usuario (2026-08-22): causava erro de
-    // dupla conversao no log do appserver - o socket ja trata o encoding.
     If xVal != Nil
         oModelSZ1:SetValue(cCampo, AllTrim(cValToChar(xVal)))
     EndIf
