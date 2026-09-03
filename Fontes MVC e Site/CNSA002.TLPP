@@ -7,28 +7,28 @@
 #include "tlpp-core.th"
 #include "tlpp-rest.th"
 
-////////////////////////////////////////////////////////////////////////////////
-// HISTORICO DE ALTERACOES
-// Henrique - 24/08/2026 14:28 - Adicionados endpoints "/CNSAOSINCLUIR" e
-//   "/CNSAOSALTERAR" (query string, igual ao front) - Class oRestOS:SaveData
-//   nao era chamada pelo front real (esperava JSON body). Testado e
-//   confirmado funcionando pelo usuario.
 
-////////////////////////////////////////////////////////////////////////////////
-Namespace apia.cns002
+Namespace apia.cnsa
 
 PUBLISH MODEL REST NAME OS RESOURCE OBJECT oRestOS
 
 
-////////////////////////////////////////////////////////////////////////////////
-//FUNCAO PRINCIPAL - Browse (ponto de entrada da tela)
-////////////////////////////////////////////////////////////////////////////////
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CNS002
+Funcao principal - ponto de entrada da tela de Browse de Ordem de
+Servico (OS). Monta o menu (MenuDef002) e ativa o FWMBrowse na tabela
+SZ1, com as legendas de status (aprovada/faturada/negada/etc).
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 User Function CNS002()
 
     Local l_oBrowse := Nil
     // FIX: User Function precisa ser chamada com prefixo "u_" mesmo dentro do
     // mesmo arquivo/namespace (mesmo problema real confirmado no CNS001.TLPP).
-    Private aRotina := u_MenuDef()
+    Private aRotina := u_MenuDef002()
 
     l_oBrowse := FWMBrowse():New()
     If l_oBrowse <> Nil
@@ -48,34 +48,50 @@ User Function CNS002()
 
 Return
 
-///////////////////////////////////////////////////////////////////////////////////
-//ROTINA MENU
-User Function MenuDef()
+//-------------------------------------------------------------------
+/*/{Protheus.doc} MenuDef002
+Monta o array de opcoes de menu (aRotina) da tela CNS002 - Pesquisar,
+Visualizar, Incluir, Alterar, Excluir, Copiar e Legenda.
+@return aRotina   Array de opcoes de menu (ADD OPTION)
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+User Function MenuDef002()
 
 Local aRotina  := {}
 
     ADD OPTION aRotina TITLE "Pesquisar"    ACTION "AxPesqui"                       OPERATION 1 ACCESS 0
-    ADD OPTION aRotina TITLE "Visualizar"   ACTION "ViewDef.apia.cns002.CNS002"     OPERATION 2 ACCESS 0
-    ADD OPTION aRotina TITLE "Incluir"      ACTION "ViewDef.apia.cns002.CNS002"     OPERATION 3 ACCESS 0
-    ADD OPTION aRotina TITLE "Alterar"      ACTION "ViewDef.apia.cns002.CNS002"     OPERATION 4 ACCESS 0
-    ADD OPTION aRotina TITLE "Excluir"      ACTION "ViewDef.apia.cns002.CNS002"     OPERATION 5 ACCESS 0
-    ADD OPTION aRotina TITLE "Copiar"       ACTION "apia.cns002.U_OS_COPIARTELA"    OPERATION 0 ACCESS 0
-    ADD OPTION aRotina TITLE "Legenda"      ACTION "apia.cns002.U_OS_LEGENDA"       OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Visualizar"   ACTION "ViewDef002.apia.cnsa.CNS002"     OPERATION 2 ACCESS 0
+    ADD OPTION aRotina TITLE "Incluir"      ACTION "ViewDef002.apia.cnsa.CNS002"     OPERATION 3 ACCESS 0
+    ADD OPTION aRotina TITLE "Alterar"      ACTION "ViewDef002.apia.cnsa.CNS002"     OPERATION 4 ACCESS 0
+    ADD OPTION aRotina TITLE "Excluir"      ACTION "ViewDef002.apia.cnsa.CNS002"     OPERATION 5 ACCESS 0
+    ADD OPTION aRotina TITLE "Copiar"       ACTION "apia.cnsa.U_OS_COPIARTELA"    OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Legenda"      ACTION "apia.cnsa.U_OS_LEGENDA"       OPERATION 0 ACCESS 0
 
 Return aRotina
 
-//////////////////////////////////////////////////////////////////////////////////////////////
-// VIEW - identico ao CNSA002.PRW, so troca o modelo carregado por "CNS002"
-//////////////////////////////////////////////////////////////////////////////////////////////
-User Function ViewDef()
+//-------------------------------------------------------------------
+/*/{Protheus.doc} ViewDef002
+Monta a view (FWFormView) da tela CNS002 - cabecalho SZ1 (dados da
+OS) e grid SZ2 (horas contratadas). Identico ao ViewDef002 do CNSA002.PRW
+classico, so troca o modelo carregado por "CNS002".
+@return l_oView   Objeto FWFormView montado (ou Nil se o Model nao carregar)
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+User Function ViewDef002()
 
     Local l_oView    := Nil
-    Local l_oModel   := FWLoadModel("apia.cns002.CNS002")
+    Local l_oModel   := FWLoadModel("apia.cnsa.CNS002")
     Local l_oStruSZ1 := FWFormStruct(2, "SZ1")
     Local l_oStruSZ2 := FWFormStruct(2, "SZ2")
 
     If l_oModel == Nil
-        MsgStop("Erro: O Modelo (ModelDef) nao foi carregado.", "Erro")
+        MsgStop("Erro: O Modelo (ModelDef002) nao foi carregado.", "Erro")
         Return Nil
     EndIf
 
@@ -98,9 +114,19 @@ User Function ViewDef()
 
 Return l_oView
 
-///////////////////////////////////////////////////////////////////////////////////////////////////
-//MODELACAO - identica ao CNSA002.PRW (mesmas tabelas/relacoes)
-User Function ModelDef()
+//-------------------------------------------------------------------
+/*/{Protheus.doc} ModelDef002
+Monta o modelo de dados (MPFormModel) da tela CNS002 - tabela pai SZ1
+(OS) e tabela filha SZ2 (horas contratadas, relacionada por CLIENTE,
+nao por OS). Identico ao ModelDef002 do CNSA002.PRW classico (mesmas
+tabelas/relacoes).
+@return l_oModel   Objeto MPFormModel montado
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+User Function ModelDef002()
 
     Local l_oModel  := Nil
     Local l_oStrSZ1 := FWFormStruct(1, "SZ1")
@@ -131,8 +157,21 @@ User Function ModelDef()
 
 Return l_oModel
 
-//////////////////////////////////////////////////////////////////////////////////////////
-// Valida os campos do cabecalho (tabela SZ1) - identico ao FSZ1PosValid original
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_VALIDACAMPO
+Valida os campos do cabecalho (tabela SZ1) - identico ao FSZ1PosValid
+original. Reprova quando um campo obrigatorio (aObrigatorios) chega
+vazio.
+@param  p_oField   Objeto do campo (FormField) que disparou a validacao
+@param  p_sAcao    Acao/evento que disparou a validacao
+@param  p_sCampo   Nome do campo (SX3) sendo validado
+@param  p_vValor   Valor atual do campo
+@return l_bOk      .T. se valido, .F. se o campo obrigatorio estiver vazio
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function OS_VALIDACAMPO(p_oField, p_sAcao, p_sCampo, p_vValor)
     Local l_bOk := .T.
     Local aObrigatorios := {"Z1_CLI", "Z1_LOJA", "Z1_USR", "Z1_MODULO", "Z1_MOTIV", ;
@@ -144,10 +183,80 @@ Static Function OS_VALIDACAMPO(p_oField, p_sAcao, p_sCampo, p_vValor)
 
 Return l_bOk
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_PREVALIDA
+Pre-validacao do Model (PreValidacao) - na inclusao (operacao 3),
+confere se cliente/site, usuario, modulo, motivo, descricao e data da
+OS estao preenchidos, reportando via SetErrorMessage (canal correto do
+Model) em vez do antigo Return{.F.,"..."} ad-hoc no nucleo (mesmo
+padrao aplicado em CH_PREVALIDA no CNS001.TLPP).
+@param  p_oModel   Objeto do Model (FormModel) sendo validado
+@return l_bOk      .T. se valido, .F. se algum campo obrigatorio faltar
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function OS_PREVALIDA(p_oModel)
-    Local l_bOk := .T.
+    Local l_bOk     := .T.
+    Local nOper     := p_oModel:GetOperation()
+    Local oModelSZ1 := Nil
+
+    If nOper == 3
+        oModelSZ1 := p_oModel:GetModel("SZ1MASTER")
+        If oModelSZ1 <> Nil
+
+            If Empty(AllTrim(oModelSZ1:GetValue("Z1_CLI"))) .Or. Empty(AllTrim(oModelSZ1:GetValue("Z1_LOJA")))
+                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_CLI", "SZ1", "Z1_CLI", "Informe o cliente e o site do cliente.")
+                Return .F.
+            EndIf
+
+            If Empty(AllTrim(oModelSZ1:GetValue("Z1_USR")))
+                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_USR", "SZ1", "Z1_USR", "Informe o usuario.")
+                Return .F.
+            EndIf
+
+            If Empty(AllTrim(oModelSZ1:GetValue("Z1_MODULO")))
+                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_MODULO", "SZ1", "Z1_MODULO", "Informe o modulo.")
+                Return .F.
+            EndIf
+
+            If Empty(AllTrim(oModelSZ1:GetValue("Z1_MOTIV")))
+                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_MOTIV", "SZ1", "Z1_MOTIV", "Informe o motivo.")
+                Return .F.
+            EndIf
+
+            If Empty(AllTrim(oModelSZ1:GetValue("Z1_SERV")))
+                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_SERV", "SZ1", "Z1_SERV", "Informe a descricao.")
+                Return .F.
+            EndIf
+
+            If Empty(AllTrim(oModelSZ1:GetValue("Z1_TIPO")))
+                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_TIPO", "SZ1", "Z1_TIPO", "Informe o codigo do servico.")
+                Return .F.
+            EndIf
+
+            If Empty(oModelSZ1:GetValue("Z1_DTOS"))
+                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_DTOS", "SZ1", "Z1_DTOS", "Informe a data da OS.")
+                Return .F.
+            EndIf
+
+        EndIf
+    EndIf
+
 Return l_bOk
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_VALIDACANCELA
+Validacao de cancelamento do Model - sempre permite cancelar (nao ha
+regra de bloqueio de cancelamento na tela CNS002).
+@param  p_oModel   Objeto do Model (FormModel) sendo cancelado
+@return lOk        Sempre .T.
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function OS_VALIDACANCELA(p_oModel)
 Return .T.
 
@@ -157,11 +266,19 @@ Return .T.
 //                                                                                              //
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-////////////////////////////////////////////////////////////////////////////////
-// Model leve so com a SZ1 (sem grid SZ2DETAIL) - usado por Incluir/Alterar/
-// Copiar em vez de FWLoadModel("CNS002"). Ver aviso no topo do arquivo sobre
-// o motivo (SZ2DETAIL relacionado por CLIENTE, nao por OS).
-////////////////////////////////////////////////////////////////////////////////
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_MODELLEVE
+Monta um Model leve, so com a tabela SZ1 (sem o grid SZ2DETAIL) -
+usado por Incluir/Alterar/Copiar em vez de FWLoadModel("CNS002"), ja
+que SZ2DETAIL e relacionado por CLIENTE (nao por OS) e traria risco de
+cascata (ver aviso no topo do arquivo). Pluga OS_VALIDACAMPO como
+PosValidacao dos campos da SZ1.
+@return oModel   Objeto MPFormModel leve (so SZ1MASTER) montado
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function OS_MODELLEVE()
     Local oModel  := Nil
     Local oStrSZ1 := FWFormStruct(1, "SZ1")
@@ -170,16 +287,26 @@ Static Function OS_MODELLEVE()
     // FIX: faltava plugar OS_VALIDACAMPO como PosValidacao (4o parametro) -
     // sem isso, Incluir/Alterar via Class oRestOS aceitava OS sem cliente/
     // tecnico/nada, sem erro (a validacao dos 12 campos obrigatorios so
-    // existia no ModelDef completo da tela classica, nunca rodava aqui).
+    // existia no ModelDef002 completo da tela classica, nunca rodava aqui).
     oModel:AddFields("SZ1MASTER", NIL, oStrSZ1, {|_f,_a,_c,_v| OS_VALIDACAMPO(_f,_a,_c,_v)}, NIL)
     oModel:SetPrimaryKey({"Z1_FILIAL", "Z1_OS"})
 
 Return oModel
 
-////////////////////////////////////////////////////////////////////////////////
-// Nucleo de copia - usado pela tela (OS_COPIARTELA) e pelo REST (OS_APICOPIAR).
-// Retorna {lOk, cErro, cOsNova}.
-////////////////////////////////////////////////////////////////////////////////
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_NUCLEOCOPIAR
+Nucleo de copia de OS - usado pela tela (OS_COPIARTELA) e pelo REST
+(OS_APICOPIAR). Le a OS de origem, copia todos os campos (exceto os
+fixos: chave, digitacao, aprovacao/faturamento) para uma OS nova via
+Model leve (OS_MODELLEVE), dentro de Begin Sequence/Recover para nao
+deixar o model pendurado em caso de excecao.
+@param  cOsOrigem   Numero (Z1_OS) da OS a ser copiada
+@return aRet        Array {lOk, cErro, cOsNova}
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function OS_NUCLEOCOPIAR(cOsOrigem)
     Local aFields    := {}
     Local nI         := 0
@@ -275,10 +402,16 @@ Static Function OS_NUCLEOCOPIAR(cOsOrigem)
 
 Return {.T., "", cOsNova}
 
-////////////////////////////////////////////////////////////////////////////////
-// Copiar (item de menu, tela classica) - mesmo dialog do COPIAR_OS original,
-// agora chamando o nucleo (via Model leve) em vez de RecLock direto.
-////////////////////////////////////////////////////////////////////////////////
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_COPIARTELA
+Copiar OS a partir do item de menu da tela classica - mesmo dialogo do
+COPIAR_OS original, agora chamando o nucleo compartilhado
+(OS_NUCLEOCOPIAR, via Model leve) em vez de RecLock direto.
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 User Function OS_COPIARTELA()
     Local cOs       := ""
     Local aResultado := {}
@@ -304,9 +437,15 @@ User Function OS_COPIARTELA()
 
 Return
 
-////////////////////////////////////////////////////////////////////////////////
-//legenda dos STATUS de OS - identico ao LEGENDA original
-////////////////////////////////////////////////////////////////////////////////
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_LEGENDA
+Exibe a legenda de status da OS (BrwLegenda) - identico a funcao
+LEGENDA original.
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 User Function OS_LEGENDA()
 
     BrwLegenda("Legenda de Status", "Status da OS", ;
@@ -331,17 +470,28 @@ Method SaveData(cPK, cData, cError)
 
 EndClass
 
-////////////////////////////////////////////////////////////////////////////////
-// SaveData - CODIGO MORTO do ponto de vista do front real (apia-po-cnshub):
-// confirmado lendo os-serv.ts que Incluir/Alterar mandam tudo via QUERY
-// STRING com corpo POST sempre `null` (nunca JSON body) - exatamente o mesmo
-// problema achado e corrigido no CNS001.TLPP pro front de Chamados. Os
-// endpoints DE VERDADE usados pelo front sao OS_APIINCLUIR/OS_APIALTERAR
-// (abaixo, @Post custom lendo query string). Mantido aqui so porque o
-// `PUBLISH MODEL REST` exige a Class existir - nunca chamado por esse front.
-// NUNCA delega pro `_Super` (ver aviso no topo do arquivo sobre cascata no
-// SZ2DETAIL por-cliente), caso algum dia alguem chame o generico de verdade.
-////////////////////////////////////////////////////////////////////////////////
+//-------------------------------------------------------------------
+/*/{Protheus.doc} SaveData
+Implementacao generica de gravacao exigida pelo PUBLISH MODEL REST
+(Class oRestOS From FwRestModel). CODIGO MORTO do ponto de vista do
+front real (apia-po-cnshub): confirmado lendo os-serv.ts que
+Incluir/Alterar mandam tudo via QUERY STRING com corpo POST sempre
+`null` (nunca JSON body) - mesmo problema ja corrigido no CNS001.TLPP
+para o front de Chamados. Os endpoints DE VERDADE usados pelo front
+sao OS_APIINCLUIR/OS_APIALTERAR (@Post custom lendo query string).
+Mantido aqui so porque o PUBLISH MODEL REST exige a Class existir -
+nunca chamado por esse front. NUNCA delega pro `_Super` (ver aviso no
+topo do arquivo sobre risco de cascata no SZ2DETAIL relacionado por
+cliente), caso algum dia alguem chame o generico de verdade.
+@param  cPK      Chave primaria (vazia = Incluir, preenchida = Alterar)
+@param  cData    Corpo JSON da requisicao (nunca usado por este front)
+@param  cError   Variavel de saida com a mensagem de erro (por referencia)
+@return lOk      .T. se gravou com sucesso, .F. caso contrario
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Method SaveData(cPK, cData, cError) Class oRestOS
 Local jBody      := Nil
 Local oModel     := Nil
@@ -477,9 +627,21 @@ Local lIncluir   := Empty(cPK)
 //                                                                                              //
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-////////////////////////////////////////////////////////////////////////////////
-// Nucleo de Incluir - usado por OS_APIINCLUIR. Retorna {lOk, cErro, cOs}.
-////////////////////////////////////////////////////////////////////////////////
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_NUCLEOINCLUIR
+Nucleo de inclusao de OS - usado por OS_APIINCLUIR. Le os campos vindos
+na query string (cliente, usuario, modulo, motivo, descricao, servico,
+datas, horas, tecnico, etc), grava via Model leve (OS_MODELLEVE) dentro
+de Begin Sequence/Recover. Campo obrigatorio nao valida mais aqui -
+front-end valida antes de chamar, e OS_PREVALIDA (Model) cobre via
+SetErrorMessage.
+@param  jQuery   Objeto Json com os parametros da query string
+@return aRet     Array {lOk, cErro, cOs}
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function OS_NUCLEOINCLUIR(jQuery)
     Local oModel     := Nil
     Local oModelSZ1  := Nil
@@ -490,27 +652,8 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
     Local cOs        := ""
     Local cDtDigit   := AllTrim(OS_LERJSONTXT(jQuery, "dtDigitacao"))
 
-    If Empty(AllTrim(OS_LERJSONTXT(jQuery,"codCliente"))) .Or. Empty(AllTrim(OS_LERJSONTXT(jQuery,"lojaCliente")))
-        Return {.F., "Informe o cliente e o site do cliente.", ""}
-    EndIf
-    If Empty(AllTrim(OS_LERJSONTXT(jQuery,"usuario")))
-        Return {.F., "Informe o usuario.", ""}
-    EndIf
-    If Empty(AllTrim(OS_LERJSONTXT(jQuery,"modulo")))
-        Return {.F., "Informe o modulo.", ""}
-    EndIf
-    If Empty(AllTrim(OS_LERJSONTXT(jQuery,"motivo")))
-        Return {.F., "Informe o motivo.", ""}
-    EndIf
-    If Empty(AllTrim(OS_LERJSONTXT(jQuery,"descricao")))
-        Return {.F., "Informe a descricao.", ""}
-    EndIf
-    If Empty(AllTrim(OS_LERJSONTXT(jQuery,"codServico")))
-        Return {.F., "Informe o codigo do servico.", ""}
-    EndIf
-    If Empty(AllTrim(OS_LERJSONTXT(jQuery,"dataOs")))
-        Return {.F., "Informe a data da OS.", ""}
-    EndIf
+    // Campo obrigatorio nao valida mais aqui - front-end valida antes de
+    // chamar, e OS_PREVALIDA (Model) cobre via SetErrorMessage.
 
     Begin Sequence
 
@@ -627,6 +770,18 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
 
 Return {lOk, cErro, cOs}
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_APIINCLUIR
+Endpoint REST (POST /CNSAOSINCLUIR) de inclusao de OS - endpoint REAL
+usado pelo front (query string, corpo POST sempre null - confirmado
+lendo os-serv.ts). Chama o nucleo OS_NUCLEOINCLUIR e devolve o
+resultado em JSON.
+@return lOk   .T./.F. via oRest:setStatusResponse (200 com a OS gerada, ou 400 com o erro)
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 @Post(endpoint="/CNSAOSINCLUIR")
 User Function OS_APIINCLUIR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
@@ -642,10 +797,19 @@ User Function OS_APIINCLUIR() As Logical
 
 Return oRest:setStatusResponse(200, OS_RESPOSTAOK(aResultado[3], "OS incluida com sucesso."))
 
-////////////////////////////////////////////////////////////////////////////////
-// Nucleo de Alterar - alteracao PARCIAL (so grava o campo que veio na
-// query string). Usado por OS_APIALTERAR. Retorna {lOk, cErro, cOs}.
-////////////////////////////////////////////////////////////////////////////////
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_NUCLEOALTERAR
+Nucleo de alteracao de OS - alteracao PARCIAL (so grava o campo que
+veio na query string, os demais permanecem como estavam). Usado por
+OS_APIALTERAR. Localiza a OS pela chave (Z1_OS), grava via Model leve
+(OS_MODELLEVE) dentro de Begin Sequence/Recover.
+@param  jQuery   Objeto Json com os parametros da query string (inclui "os")
+@return aRet     Array {lOk, cErro, cOs}
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function OS_NUCLEOALTERAR(jQuery)
     Local oModel     := Nil
     Local oModelSZ1  := Nil
@@ -767,6 +931,18 @@ Static Function OS_NUCLEOALTERAR(jQuery)
 
 Return {lOk, cErro, cOs}
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_APIALTERAR
+Endpoint REST (POST /CNSAOSALTERAR) de alteracao parcial de OS -
+endpoint REAL usado pelo front (query string). Chama o nucleo
+OS_NUCLEOALTERAR e devolve o resultado em JSON (404 se a OS nao for
+encontrada, 400 para os demais erros).
+@return lOk   .T./.F. via oRest:setStatusResponse (200 com a OS alterada, ou 400/404 com o erro)
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 @Post(endpoint="/CNSAOSALTERAR")
 User Function OS_APIALTERAR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
@@ -787,10 +963,20 @@ Return oRest:setStatusResponse(200, OS_RESPOSTAOK(aResultado[3], "OS alterada co
 
 Return lOk
 
-////////////////////////////////////////////////////////////////////////////////
 // Helpers do SaveData - setam campo so se veio no JSON (Alterar parcial) ou
 // sempre (Incluir, jBody[cCampo]==Nil vira valor vazio, igual campo omitido).
-////////////////////////////////////////////////////////////////////////////////
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_SETSEFICOU
+Seta um campo texto generico do Model (SZ1MASTER) a partir do JSON, so
+se o campo veio no corpo (jBody[cCampo] != Nil).
+@param  oModelSZ1   Sub-model da SZ1MASTER (FormModel)
+@param  jBody       Objeto Json com o corpo da requisicao
+@param  cCampo      Nome do campo (SX3) a setar
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function OS_SETSEFICOU(oModelSZ1, jBody, cCampo)
     Local xVal := jBody[cCampo]
     If xVal != Nil
@@ -798,6 +984,18 @@ Static Function OS_SETSEFICOU(oModelSZ1, jBody, cCampo)
     EndIf
 Return
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_SETTEXTOUTF8
+Seta um campo texto do Model (SZ1MASTER) a partir do JSON, so se o
+campo veio no corpo (jBody[cCampo] != Nil).
+@param  oModelSZ1   Sub-model da SZ1MASTER (FormModel)
+@param  jBody       Objeto Json com o corpo da requisicao
+@param  cCampo      Nome do campo (SX3) a setar
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function OS_SETTEXTOUTF8(oModelSZ1, jBody, cCampo)
     Local xVal := jBody[cCampo]
     If xVal != Nil
@@ -805,6 +1003,18 @@ Static Function OS_SETTEXTOUTF8(oModelSZ1, jBody, cCampo)
     EndIf
 Return
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_SETNUM
+Seta um campo numerico do Model (SZ1MASTER) a partir do JSON, so se o
+campo veio no corpo (jBody[cCampo] != Nil).
+@param  oModelSZ1   Sub-model da SZ1MASTER (FormModel)
+@param  jBody       Objeto Json com o corpo da requisicao
+@param  cCampo      Nome do campo (SX3) a setar
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function OS_SETNUM(oModelSZ1, jBody, cCampo)
     Local xVal := jBody[cCampo]
     If xVal != Nil
@@ -812,6 +1022,18 @@ Static Function OS_SETNUM(oModelSZ1, jBody, cCampo)
     EndIf
 Return
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_SETDATAOS
+Seta um campo data do Model (SZ1MASTER) a partir do JSON (formato
+"AAAA-MM-DD"), so se o campo veio no corpo e nao estiver vazio.
+@param  oModelSZ1   Sub-model da SZ1MASTER (FormModel)
+@param  jBody       Objeto Json com o corpo da requisicao
+@param  cCampo      Nome do campo (SX3) a setar
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function OS_SETDATAOS(oModelSZ1, jBody, cCampo)
     Local xVal := jBody[cCampo]
     If xVal != Nil .And. !Empty(cValToChar(xVal))
@@ -825,63 +1047,140 @@ Return
 //                                                                                              //
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-////////////////////////////////////////////////////////////////////////////////
-// Descricao (Z1_SERV) - campo Memo, lido via Posicione (acesso nativo na
-// tabela, o cursor virtual do BeginSql nao expoe coluna Memo pelo nome).
-////////////////////////////////////////////////////////////////////////////////
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_DESC
+Le a descricao (Z1_SERV, campo Memo) da OS via Posicione - acesso
+nativo na tabela, ja que o cursor virtual do BeginSql nao expoe coluna
+Memo pelo nome.
+@param  cOs    Numero (Z1_OS) da OS
+@return cDesc  Texto da descricao (ou "" se cOs vazio)
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function OS_DESC(cOs)
     If Empty(cOs)
         Return ""
     EndIf
 Return AllTrim(Posicione("SZ1", 1, cFilAnt + cOs, "Z1_SERV"))
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_NOMECLI
+Le o nome do cliente (SA1) via Posicione, a partir do codigo e loja.
+@param  cCodCliente   Codigo do cliente (A1_COD)
+@param  cLoja         Loja do cliente (A1_LOJA)
+@return cNome         Nome do cliente (ou "" se cCodCliente vazio)
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function OS_NOMECLI(cCodCliente, cLoja)
     If Empty(cCodCliente)
         Return ""
     EndIf
 Return AllTrim(Posicione("SA1", 1, xFilial("SA1") + cCodCliente + cLoja, "A1_NOME"))
 
-////////////////////////////////////////////////////////////////////////////////
-// Descricao da tabela generica SX5 (Modulo=tipo "Z2", Motivo=tipo "Z1").
-////////////////////////////////////////////////////////////////////////////////
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_NOMEGEN
+Le a descricao de uma tabela generica (SX5) via Posicione - usado para
+Modulo (tipo "Z2") e Motivo (tipo "Z1").
+@param  cTabela   Tipo da tabela generica SX5 (ex: "Z1", "Z2")
+@param  cChave    Chave (codigo) dentro da tabela generica
+@return cDesc     Descricao (X5_DESCRI) ou "" se cChave vazio
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function OS_NOMEGEN(cTabela, cChave)
     If Empty(cChave)
         Return ""
     EndIf
 Return AllTrim(Posicione("SX5", 1, xFilial("SX5") + cTabela + cChave, "X5_DESCRI"))
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_NOMEPROJ
+Le a descricao do projeto (AF8) via Posicione.
+@param  cProjeto   Codigo do projeto (AF8_PROJET)
+@return cDesc      Descricao (AF8_DESCRI) ou "" se cProjeto vazio
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function OS_NOMEPROJ(cProjeto)
     If Empty(cProjeto)
         Return ""
     EndIf
 Return AllTrim(Posicione("AF8", 1, xFilial("AF8") + cProjeto, "AF8_DESCRI"))
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_NOMETAREFA
+Le a descricao da tarefa do projeto (AF9) via Posicione.
+@param  cProjeto   Codigo do projeto
+@param  cTarefa    Codigo da tarefa dentro do projeto
+@return cDesc      Descricao (AF9_DESCRI) ou "" se cTarefa vazio
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function OS_NOMETAREFA(cProjeto, cTarefa)
     If Empty(cTarefa)
         Return ""
     EndIf
 Return AllTrim(Posicione("AF9", 1, xFilial("AF9") + cProjeto + cTarefa, "AF9_DESCRI"))
 
-////////////////////////////////////////////////////////////////////////////////
 // Nome do servico (SB1) e do analista (AA1) - Z1_NMTEC/Z1_NMTIPO existem no
 // dicionario (SX3) mas NAO sao coluna fisica na SZ1 (gatilho so-tela, nunca
 // gravado) - nunca ler direto da tabela, sempre calcular ao vivo aqui.
-////////////////////////////////////////////////////////////////////////////////
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_NOMESERV
+Le a descricao do servico (SB1) via Posicione.
+@param  cCodServico   Codigo do servico (B1_COD)
+@return cDesc         Descricao (B1_DESC) ou "" se cCodServico vazio
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function OS_NOMESERV(cCodServico)
     If Empty(cCodServico)
         Return ""
     EndIf
 Return AllTrim(Posicione("SB1", 1, xFilial("SB1") + cCodServico, "B1_DESC"))
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_NOMETEC
+Le o nome do analista/tecnico (AA1) via Posicione.
+@param  cCodAnalista   Codigo do analista (AA1_COD)
+@return cNome          Nome do tecnico (AA1_NOMTEC) ou "" se cCodAnalista vazio
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function OS_NOMETEC(cCodAnalista)
     If Empty(cCodAnalista)
         Return ""
     EndIf
 Return AllTrim(Posicione("AA1", 1, xFilial("AA1") + cCodAnalista, "AA1_NOMTEC"))
 
-////////////////////////////////////////////////////////////////////////////////
-// Status derivado - mesma regra das 5 legendas (AddLegend) da tela classica.
-////////////////////////////////////////////////////////////////////////////////
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_STATUSCALC
+Calcula o status derivado da OS, com a mesma regra das 5 legendas
+(AddLegend) da tela classica (aprovada/faturada/negada/aguardando).
+@param  cAprovad   Valor de Z1_APROVAD ("S"/"A"/outro)
+@param  cFaturar   Valor de Z1_FATURAR ("S"/outro)
+@param  cTec       Codigo do tecnico (Z1_TEC) responsavel
+@return cStatus    "aprovada_faturada", "faturada_sem_aprovacao", "aprovada", "aguardando_aprovacao" ou "negada"
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function OS_STATUSCALC(cAprovad, cFaturar, cTec)
     Local lAprovada := cAprovad == "S" .Or. cAprovad == "A"
 
@@ -896,10 +1195,18 @@ Static Function OS_STATUSCALC(cAprovad, cFaturar, cTec)
     EndIf
 Return "negada"
 
-////////////////////////////////////////////////////////////////////////////////
-// Data no formato ISO "AAAA-MM-DD" - trata Date ou Character (cursor do
-// BeginSql pode devolver os dois, dependendo do banco/driver).
-////////////////////////////////////////////////////////////////////////////////
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_DATAISO
+Converte uma data para o formato ISO "AAAA-MM-DD" - trata tanto Date
+quanto Character, ja que o cursor do BeginSql pode devolver os dois
+dependendo do banco/driver.
+@param  dData    Data (tipo Date ou Character/AAAAMMDD)
+@return cData    Data no formato "AAAA-MM-DD", ou "" se invalida/vazia
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function OS_DATAISO(dData)
     Local cData := ""
 
@@ -919,7 +1226,17 @@ Static Function OS_DATAISO(dData)
     EndIf
 Return ""
 
-////////////////////////////////////////////////////////////////////////////////
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_ESCAPARJSON
+Escapa um texto para uso seguro dentro de uma string JSON (barra
+invertida, aspas, quebras de linha e tab).
+@param  cTexto   Texto a escapar
+@return cRet     Texto escapado, pronto para JSON
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function OS_ESCAPARJSON(cTexto)
     Local cRet := cTexto
     cRet := StrTran(cRet, '\',  '\\')
@@ -930,11 +1247,21 @@ Static Function OS_ESCAPARJSON(cTexto)
     cRet := StrTran(cRet, Chr(9),  '\t')
 Return cRet
 
-////////////////////////////////////////////////////////////////////////////////
-// Helpers compartilhados pelos endpoints @Get/@Post - FIX ja existente no
-// original (nao GetJsonText): indexacao direta jDados[cCampo] devolve Nil de
-// verdade pra campo ausente, GetJsonText devolvia a string literal "null".
-////////////////////////////////////////////////////////////////////////////////
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_LERJSONNUM
+Le um campo numerico de um objeto Json (helper compartilhado pelos
+endpoints @Get/@Post). FIX ja existente no original (nao usa
+GetJsonText): indexacao direta jDados[cCampo] devolve Nil de verdade
+pra campo ausente, enquanto GetJsonText devolvia a string literal
+"null".
+@param  jDados   Objeto Json (query string ou corpo)
+@param  cCampo   Nome do campo a ler
+@return nVal     Valor numerico do campo, ou 0 se ausente
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function OS_LERJSONNUM(jDados, cCampo)
     Local xVal := jDados[cCampo]
     If xVal == Nil
@@ -942,13 +1269,76 @@ Static Function OS_LERJSONNUM(jDados, cCampo)
     EndIf
 Return Val(cValToChar(xVal))
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_DECODESAFE
+FIX (caracteres acentuados bugados na descricao/texto/etc): o campo
+chega via querystring (nao corpo JSON - OsServ.ts manda tudo na URL,
+POST com body null). Faz reconstrucao manual byte a byte (mesmo
+algoritmo do CH_DECODESAFE em CNS001.TLPP) em vez de confiar no
+DecodeUTF8 nativo - remonta o par de bytes UTF-8 (0xC2/0xC3 +
+continuacao) que apareceu como 2 chars CP1252 separados. Nunca lanca
+erro (so usa Asc/Chr/SubStr).
+@param  cTexto   Texto possivelmente com bytes UTF-8 quebrados em CP1252
+@return cRet     Texto reconstruido/decodificado
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+Static Function OS_DECODESAFE(cTexto)
+    Local cRet  := ""
+    Local nLen  := Len(cTexto)
+    Local nI    := 1
+    Local nB1, nB2
+
+    While nI <= nLen
+        nB1 := Asc(SubStr(cTexto, nI, 1))
+        If (nB1 == 195 .Or. nB1 == 194) .And. nI < nLen
+            nB2 := Asc(SubStr(cTexto, nI + 1, 1))
+            If nB2 >= 128 .And. nB2 <= 191
+                cRet += Chr(((nB1 - 192) * 64) + (nB2 - 128))
+                nI   += 2
+                Loop
+            EndIf
+        EndIf
+        cRet += SubStr(cTexto, nI, 1)
+        nI++
+    EndDo
+
+Return cRet
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_LERJSONTXT
+Le um campo texto de um objeto Json (helper compartilhado pelos
+endpoints @Get/@Post), aplicando OS_DECODESAFE para corrigir
+acentuacao vinda da query string.
+@param  jDados   Objeto Json (query string ou corpo)
+@param  cCampo   Nome do campo a ler
+@return cVal     Valor texto decodificado, ou "" se ausente/nao-texto
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function OS_LERJSONTXT(jDados, cCampo)
     Local xVal := jDados[cCampo]
     If xVal == Nil .Or. ValType(xVal) != "C"
         Return ""
     EndIf
-Return xVal
+Return OS_DECODESAFE(xVal)
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_RESPOSTAOK
+Monta a resposta JSON padrao de sucesso ({sucesso, os, mensagem}) dos
+endpoints REST de OS.
+@param  cOs     Numero da OS
+@param  cMsg    Mensagem de sucesso
+@return cJson   JSON serializado da resposta
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function OS_RESPOSTAOK(cOs, cMsg)
     Local oJson := JsonObject():New()
     oJson["sucesso"]  := .T.
@@ -956,203 +1346,140 @@ Static Function OS_RESPOSTAOK(cOs, cMsg)
     oJson["mensagem"] := cMsg
 Return oJson:ToJson()
 
-////////////////////////////////////////////////////////////////////////////////////////////////
-//                                                                                              //
-//                       LISTAGEM / VISUALIZAR / PESQUISAR - fica custom                       //
-//                       (SQL direto por performance, nao cabe no generico)                    //
-//                                                                                              //
-////////////////////////////////////////////////////////////////////////////////////////////////
+// LISTAGEM / VISUALIZAR / PESQUISAR - fica custom (SQL direto por performance,
+// nao cabe no generico).
+//
+// FIX (travava "sending" pra sempre, mesmo compilado): a versao anterior desta
+// funcao trocou SQL por navegacao nativa (DbSeek/DbSkip), copiando cegamente o
+// padrao do CH_APICHAMADOS - mas SZ1 (OS) e historicamente MUITO maior que ZA1
+// (chamados), e ler a tabela INTEIRA pra memoria a cada request nao escala (ao
+// contrario de ZA1, que e pequena). O comentario original deste endpoint ja
+// avisava "SQL direto por performance" - volta a usar SQL com paginacao real
+// (ROWNUM), SEM filtro de negocio nenhum no WHERE (so filial+NotDel) -
+// paginacao tecnica nao e filtro. Z1_SERV (descricao) e Memo - cursor de
+// BeginSql nao expoe Memo por nome, por isso continua vindo via
+// OS_DESC()/Posicione, so que agora so pras poucas linhas da pagina pedida
+// (nao mais pra tabela inteira).
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_APILISTAR
+Endpoint REST (GET /CNSAOS) de listagem/pesquisa de OS, paginado via
+SQL (ROWNUM). Contrato consumido pelo os-serv.ts: sem filtro de
+negocio no backend de proposito - os/cliente/analista/data/texto sao
+responsabilidade do front (mesma regra aplicada em CH_APICHAMADOS no
+CNS001.TLPP).
+@return lOk   JSON via oRest:setStatusResponse (200 com {total,totalPaginas,pagina,tamanho,items}, ou 500 em erro)
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 @Get(endpoint="/CNSAOS")
 User Function OS_APILISTAR() As Logical
-    Local jQuery           := oRest:getQueryRequest() As Json
-    Local oJson            := JsonObject():New()
-    Local aRetorno         := {}
-    Local aTodos           := {}
-    Local aFiltrado        := {}
-    Local oLinha           := Nil
-    Local cAlias           := GetNextAlias()
-    Local nPagina          := 1
-    Local nTamanho         := 10
-    Local nStartIdx        := 1
-    Local nTotal           := 0
-    Local nI               := 0
-    Local cDataOsParam     := ""
-    Local cOsParam         := ""
-    Local cTextoParam      := ""
-    Local cTextoLike       := ""
-    Local cClienteParam    := ""
-    Local cAnalistaParam   := ""
-    Local dDataIni         := CToD("")
-    Local dDataFim         := CToD("")
-    Local nTemPeriodo      := 0
-    Local nMinRow          := 0
-    Local nMaxRow          := 0
-    Local nTotalSql        := 0
-    Local oErro            := Nil
+    Local jQuery     := oRest:getQueryRequest() As Json
+    Local oJson      := JsonObject():New()
+    Local aRetorno   := {}
+    Local oLinha     := Nil
+    Local nPagina    := 1
+    Local nTamanho   := 10
+    Local nStartIdx  := 1
+    Local nTotal     := 0
+    Local nMinRow    := 0
+    Local nMaxRow    := 0
+    Local oErro      := Nil
+    Local cAlias     := GetNextAlias()
+    Local cOsAtual   := ""
+    Local cCliAtual  := ""
+    Local cLojaAtual := ""
+    Local cProjAtual := ""
+    Local cTecAtual  := ""
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     Begin Sequence
 
-        nPagina      := OS_LERJSONNUM(jQuery, "pagina")
-        nPagina      := If(nPagina < 1, 1, nPagina)
-        nTamanho     := OS_LERJSONNUM(jQuery, "tamanho")
-        nTamanho     := If(nTamanho < 1 .Or. nTamanho > 100, 10, nTamanho)
-        nStartIdx    := (nPagina - 1) * nTamanho + 1
-        cOsParam     := AllTrim(OS_LERJSONTXT(jQuery,"os"))
-        cTextoParam  := AllTrim(OS_LERJSONTXT(jQuery,"texto"))
-        cTextoLike   := Upper(cTextoParam)
-        cClienteParam  := AllTrim(OS_LERJSONTXT(jQuery,"cliente"))
-        cAnalistaParam := AllTrim(OS_LERJSONTXT(jQuery,"analista"))
-        cDataOsParam   := AllTrim(OS_LERJSONTXT(jQuery,"dataOs"))
+        nPagina   := OS_LERJSONNUM(jQuery, "pagina")
+        nPagina   := If(nPagina < 1, 1, nPagina)
+        nTamanho  := OS_LERJSONNUM(jQuery, "tamanho")
+        nTamanho  := If(nTamanho < 1 .Or. nTamanho > 100, 10, nTamanho)
+        nStartIdx := (nPagina - 1) * nTamanho + 1
+        nMinRow   := nStartIdx - 1
+        nMaxRow   := nStartIdx + nTamanho - 1
 
-        If !Empty(cDataOsParam)
-            dDataIni    := StoD(StrTran(cDataOsParam, "-", ""))
-            dDataFim    := dDataIni
-            nTemPeriodo := 1
-        EndIf
-
-        If Empty(cTextoLike)
-            nMinRow := nStartIdx - 1
-            nMaxRow := nStartIdx + nTamanho - 1
-        Else
-            nMinRow := 0
-            nMaxRow := 999999999
-        EndIf
-
-        Do While .T.
-            BeginSql Alias cAlias
+        BeginSql Alias cAlias
             SELECT * FROM (
-                SELECT OSQ.*, ROWNUM AS OS_RNUM
+                SELECT SZ1Q.*, ROWNUM AS SZ1_RNUM
                 FROM (
-                    SELECT Z1_OS, Z1_DTDIGIT, Z1_CLI, Z1_LOJA, Z1_USR, Z1_MODULO, Z1_MOTIV, ;
-                        Z1_TIPO, Z1_DTOS, Z1_INTERNO, Z1_HRINI, Z1_INI, Z1_HRFIM, Z1_FIM, ;
-                        Z1_TRANS, Z1_PREVIST, Z1_HRTOT, Z1_TOTAL, Z1_TEC, Z1_NUMPRO, Z1_PV, ;
-                        Z1_ALMOCO, Z1_PROJET, Z1_REVISA, Z1_TAREFA, Z1_CHPSD, Z1_CHHDK, Z1_OSDESE, ;
-                        Z1_LIN, Z1_VLRHR, Z1_APROVAD, Z1_FATURAR, ;
-                        COUNT(*) OVER() AS OS_TOTAL
+                    SELECT Z1_OS, Z1_DTDIGIT, Z1_CLI, Z1_LOJA, Z1_USR, Z1_MODULO, Z1_MOTIV, Z1_TIPO, ;
+                        Z1_DTOS, Z1_INTERNO, Z1_HRINI, Z1_INI, Z1_HRFIM, Z1_FIM, Z1_TRANS, Z1_PREVIST, ;
+                        Z1_HRTOT, Z1_TOTAL, Z1_TEC, Z1_NUMPRO, Z1_PV, Z1_ALMOCO, Z1_PROJET, Z1_REVISA, ;
+                        Z1_TAREFA, Z1_CHPSD, Z1_CHHDK, Z1_OSDESE, Z1_LIN, Z1_VLRHR, Z1_APROVAD, Z1_FATURAR, ;
+                        COUNT(*) OVER() AS SZ1_TOTAL
                     FROM %Table:SZ1% SZ1
-                    WHERE Z1_FILIAL = %Exp:cFilAnt%
+                    WHERE Z1_FILIAL = %xFilial:SZ1%
                       AND %NotDel%
-                      AND (%Exp:cOsParam% IS NULL OR Z1_OS = %Exp:cOsParam%)
-                      AND (%Exp:cClienteParam% IS NULL OR Z1_CLI = %Exp:cClienteParam%)
-                      AND (%Exp:cAnalistaParam% IS NULL OR Z1_TEC = %Exp:cAnalistaParam%)
-                      AND (%Exp:cOsParam% IS NOT NULL OR %Exp:nTemPeriodo% <> 1 OR Z1_DTOS BETWEEN %Exp:dDataIni% AND %Exp:dDataFim%)
-                    ORDER BY Z1_DTOS DESC, Z1_OS DESC
-                ) OSQ
+                    ORDER BY Z1_OS DESC
+                ) SZ1Q
                 WHERE ROWNUM <= %Exp:nMaxRow%
             )
-            WHERE OS_RNUM > %Exp:nMinRow%
+            WHERE SZ1_RNUM > %Exp:nMinRow%
         EndSql
 
         If !(cAlias)->(Eof())
-            nTotalSql := (cAlias)->OS_TOTAL
+            nTotal := (cAlias)->SZ1_TOTAL
         EndIf
 
         While !(cAlias)->(Eof())
-            AAdd(aTodos, {;
-                AllTrim((cAlias)->Z1_OS), ;
-                (cAlias)->Z1_DTDIGIT, ;
-                AllTrim((cAlias)->Z1_CLI), ;
-                AllTrim((cAlias)->Z1_LOJA), ;
-                AllTrim((cAlias)->Z1_USR), ;
-                AllTrim((cAlias)->Z1_MODULO), ;
-                AllTrim((cAlias)->Z1_MOTIV), ;
-                OS_DESC(AllTrim((cAlias)->Z1_OS)), ;
-                AllTrim((cAlias)->Z1_TIPO), ;
-                (cAlias)->Z1_DTOS, ;
-                AllTrim((cAlias)->Z1_INTERNO), ;
-                AllTrim((cAlias)->Z1_HRINI), ;
-                (cAlias)->Z1_INI, ;
-                AllTrim((cAlias)->Z1_HRFIM), ;
-                (cAlias)->Z1_FIM, ;
-                (cAlias)->Z1_TRANS, ;
-                AllTrim((cAlias)->Z1_PREVIST), ;
-                AllTrim((cAlias)->Z1_HRTOT), ;
-                (cAlias)->Z1_TOTAL, ;
-                AllTrim((cAlias)->Z1_TEC), ;
-                AllTrim((cAlias)->Z1_NUMPRO), ;
-                AllTrim((cAlias)->Z1_PV), ;
-                (cAlias)->Z1_ALMOCO, ;
-                AllTrim((cAlias)->Z1_PROJET), ;
-                AllTrim((cAlias)->Z1_REVISA), ;
-                AllTrim((cAlias)->Z1_TAREFA), ;
-                AllTrim((cAlias)->Z1_CHPSD), ;
-                cValToChar((cAlias)->Z1_CHHDK), ;
-                AllTrim((cAlias)->Z1_OSDESE), ;
-                AllTrim((cAlias)->Z1_LIN), ;
-                (cAlias)->Z1_VLRHR, ;
-                AllTrim((cAlias)->Z1_APROVAD), ;
-                AllTrim((cAlias)->Z1_FATURAR) ;
-            })
+            cOsAtual   := AllTrim((cAlias)->Z1_OS)
+            cCliAtual  := AllTrim((cAlias)->Z1_CLI)
+            cLojaAtual := AllTrim((cAlias)->Z1_LOJA)
+            cProjAtual := AllTrim((cAlias)->Z1_PROJET)
+            cTecAtual  := AllTrim((cAlias)->Z1_TEC)
+
+            oLinha := JsonObject():New()
+            oLinha['os']             := cOsAtual
+            oLinha['dtDigitacao']    := OS_DATAISO((cAlias)->Z1_DTDIGIT)
+            oLinha['codCliente']     := cCliAtual
+            oLinha['lojaCliente']    := cLojaAtual
+            oLinha['nomeCliente']    := OS_NOMECLI(cCliAtual, cLojaAtual)
+            oLinha['usuario']        := AllTrim((cAlias)->Z1_USR)
+            oLinha['modulo']         := AllTrim((cAlias)->Z1_MODULO)
+            oLinha['nomeModulo']     := OS_NOMEGEN("Z2", AllTrim((cAlias)->Z1_MODULO))
+            oLinha['motivo']         := AllTrim((cAlias)->Z1_MOTIV)
+            oLinha['nomeMotivo']     := OS_NOMEGEN("Z1", AllTrim((cAlias)->Z1_MOTIV))
+            oLinha['descricao']      := OS_DESC(cOsAtual)
+            oLinha['codServico']     := AllTrim((cAlias)->Z1_TIPO)
+            oLinha['nomeServico']    := OS_NOMESERV(AllTrim((cAlias)->Z1_TIPO))
+            oLinha['dataOs']         := OS_DATAISO((cAlias)->Z1_DTOS)
+            oLinha['osInterna']      := AllTrim((cAlias)->Z1_INTERNO)
+            oLinha['horaInicial']    := AllTrim((cAlias)->Z1_HRINI)
+            oLinha['horaInicialDec'] := (cAlias)->Z1_INI
+            oLinha['horaFinal']      := AllTrim((cAlias)->Z1_HRFIM)
+            oLinha['horaFinalDec']   := (cAlias)->Z1_FIM
+            oLinha['horasTranDec']   := (cAlias)->Z1_TRANS
+            oLinha['prevPmt']        := AllTrim((cAlias)->Z1_PREVIST)
+            oLinha['totalHoras']     := AllTrim((cAlias)->Z1_HRTOT)
+            oLinha['horasTiDec']     := (cAlias)->Z1_TOTAL
+            oLinha['codAnalista']    := cTecAtual
+            oLinha['nomeAnalista']   := OS_NOMETEC(cTecAtual)
+            oLinha['numProposta']    := AllTrim((cAlias)->Z1_NUMPRO)
+            oLinha['pedVenda']       := AllTrim((cAlias)->Z1_PV)
+            oLinha['hrAlmoco']       := (cAlias)->Z1_ALMOCO
+            oLinha['projeto']        := cProjAtual
+            oLinha['nomeProjeto']    := OS_NOMEPROJ(cProjAtual)
+            oLinha['revisao']        := AllTrim((cAlias)->Z1_REVISA)
+            oLinha['tarefa']         := AllTrim((cAlias)->Z1_TAREFA)
+            oLinha['nomeTarefa']     := OS_NOMETAREFA(cProjAtual, AllTrim((cAlias)->Z1_TAREFA))
+            oLinha['chamadoHpsd']    := AllTrim((cAlias)->Z1_CHPSD)
+            oLinha['chamado']        := cValToChar((cAlias)->Z1_CHHDK)
+            oLinha['osDesenv']       := AllTrim((cAlias)->Z1_OSDESE)
+            oLinha['linhaPv']        := AllTrim((cAlias)->Z1_LIN)
+            oLinha['valorHora']      := (cAlias)->Z1_VLRHR
+            oLinha['status']         := OS_STATUSCALC(AllTrim((cAlias)->Z1_APROVAD), AllTrim((cAlias)->Z1_FATURAR), cTecAtual)
+            AAdd(aRetorno, oLinha)
+
             (cAlias)->(DbSkip())
         EndDo
         (cAlias)->(DbCloseArea())
-
-            If nTemPeriodo == 1 .And. nTotalSql == 0
-                nTemPeriodo := 0
-                aTodos      := {}
-                Loop
-            EndIf
-            Exit
-        EndDo
-
-        If !Empty(cTextoLike)
-            aFiltrado := {}
-            For nI := 1 To Len(aTodos)
-                If cTextoLike $ Upper(aTodos[nI][8])
-                    AAdd(aFiltrado, aTodos[nI])
-                EndIf
-            Next nI
-            aTodos := aFiltrado
-            nTotal := Len(aTodos)
-        Else
-            nTotal := nTotalSql
-        EndIf
-
-        For nI := If(Empty(cTextoLike), 1, nStartIdx) To If(Empty(cTextoLike), Len(aTodos), Min(nStartIdx + nTamanho - 1, nTotal))
-            oLinha := JsonObject():New()
-            oLinha['os']             := aTodos[nI][1]
-            oLinha['dtDigitacao']    := OS_DATAISO(aTodos[nI][2])
-            oLinha['codCliente']     := aTodos[nI][3]
-            oLinha['lojaCliente']    := aTodos[nI][4]
-            oLinha['nomeCliente']    := OS_NOMECLI(aTodos[nI][3], aTodos[nI][4])
-            oLinha['usuario']        := aTodos[nI][5]
-            oLinha['modulo']         := aTodos[nI][6]
-            oLinha['nomeModulo']     := OS_NOMEGEN("Z2", aTodos[nI][6])
-            oLinha['motivo']         := aTodos[nI][7]
-            oLinha['nomeMotivo']     := OS_NOMEGEN("Z1", aTodos[nI][7])
-            oLinha['descricao']      := aTodos[nI][8]
-            oLinha['codServico']     := aTodos[nI][9]
-            oLinha['nomeServico']    := OS_NOMESERV(aTodos[nI][9])
-            oLinha['dataOs']         := OS_DATAISO(aTodos[nI][10])
-            oLinha['osInterna']      := aTodos[nI][11]
-            oLinha['horaInicial']    := aTodos[nI][12]
-            oLinha['horaInicialDec'] := aTodos[nI][13]
-            oLinha['horaFinal']      := aTodos[nI][14]
-            oLinha['horaFinalDec']   := aTodos[nI][15]
-            oLinha['horasTranDec']   := aTodos[nI][16]
-            oLinha['prevPmt']        := aTodos[nI][17]
-            oLinha['totalHoras']     := aTodos[nI][18]
-            oLinha['horasTiDec']     := aTodos[nI][19]
-            oLinha['codAnalista']    := aTodos[nI][20]
-            oLinha['nomeAnalista']   := OS_NOMETEC(aTodos[nI][20])
-            oLinha['numProposta']    := aTodos[nI][21]
-            oLinha['pedVenda']       := aTodos[nI][22]
-            oLinha['hrAlmoco']       := aTodos[nI][23]
-            oLinha['projeto']        := aTodos[nI][24]
-            oLinha['nomeProjeto']    := OS_NOMEPROJ(aTodos[nI][24])
-            oLinha['revisao']        := aTodos[nI][25]
-            oLinha['tarefa']         := aTodos[nI][26]
-            oLinha['nomeTarefa']     := OS_NOMETAREFA(aTodos[nI][24], aTodos[nI][26])
-            oLinha['chamadoHpsd']    := aTodos[nI][27]
-            oLinha['chamado']        := aTodos[nI][28]
-            oLinha['osDesenv']       := aTodos[nI][29]
-            oLinha['linhaPv']        := aTodos[nI][30]
-            oLinha['valorHora']      := aTodos[nI][31]
-            oLinha['status']         := OS_STATUSCALC(aTodos[nI][32], aTodos[nI][33], aTodos[nI][20])
-            AAdd(aRetorno, oLinha)
-        Next nI
 
         oJson['total']        := nTotal
         oJson['totalPaginas'] := If(nTotal == 0, 0, Ceiling(nTotal / nTamanho))
@@ -1170,12 +1497,18 @@ User Function OS_APILISTAR() As Logical
 
 Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
 
-////////////////////////////////////////////////////////////////////////////////////////////////
-//                                                                                              //
-//                       EXCLUIR - fica custom (mesma decisao do CNS001:                       //
-//                       incerteza sobre hook exato de delete do FwRestModel)                  //
-//                                                                                              //
-////////////////////////////////////////////////////////////////////////////////////////////////
+// EXCLUIR - fica custom (mesma decisao do CNS001: incerteza sobre hook exato
+// de delete do FwRestModel).
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_APIEXCLUIR
+Endpoint REST (POST /CNSAOSEXCLUIR) de exclusao de OS. Localiza a OS
+pela chave e exclui via Model leve (OS_MODELLEVE, MODEL_OPERATION_DELETE).
+@return lOk   JSON via oRest:setStatusResponse (200 se excluiu, 404 se a OS nao existir, 400/500 em erro)
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 @Post(endpoint="/CNSAOSEXCLUIR")
 User Function OS_APIEXCLUIR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
@@ -1236,11 +1569,17 @@ User Function OS_APIEXCLUIR() As Logical
 
 Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
 
-////////////////////////////////////////////////////////////////////////////////////////////////
-//                                                                                              //
-//                       COPIAR - fica custom (nao e CRUD simples)                             //
-//                                                                                              //
-////////////////////////////////////////////////////////////////////////////////////////////////
+// COPIAR - fica custom (nao e CRUD simples).
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_APICOPIAR
+Endpoint REST (POST /CNSAOSCOPIAR) de copia de OS. Chama o nucleo
+OS_NUCLEOCOPIAR e devolve o resultado em JSON.
+@return lOk   JSON via oRest:setStatusResponse (200 com {osOriginal,osNova}, 404 se a OS nao existir, 400/500 em erro)
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 @Post(endpoint="/CNSAOSCOPIAR")
 User Function OS_APICOPIAR() As Logical
     Local jQuery    := oRest:getQueryRequest() As Json

@@ -5,6 +5,13 @@
 #INCLUDE 'tlpp-rest.th'
 
 ////////////////////////////////////////////////////////////////////////////////
+// HISTORICO DE ALTERACOES
+// Henrique - 01/09/2026 09:00 - CNS001_TECLUPA: join com SYS_USR
+//   (AA1_CODUSR = USR_ID) pra trazer AA1_RSPMNT e USR_CODIGO junto na lupa
+//   de tecnico (campos rspmnt/usrCodigo no JSON).
+////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////
 // cnslib.tlpp
 // Henrique - 26/08/2026 - CNS001.TLPP (fonte correta/ativa do pouichamados)
 //   nao tinha as lupas de Tecnico/Cliente/Projeto/Tarefa - a tela dependia do
@@ -38,7 +45,7 @@
 // resposta 200 normal) pro front distinguir "lista vazia" de "erro real".
 ////////////////////////////////////////////////////////////////////////////////
 
-@Get(endpoint="/CNS001COMPONENTES")
+@Get(endpoint="/CNSLIBCOMPONENTES")
 User Function CNS001_COMPONENTES_LISTAR() As Logical
     Local jQuery        := oRest:getQueryRequest() As Json
     Local cTipoParam    := ""
@@ -59,7 +66,7 @@ User Function CNS001_COMPONENTES_LISTAR() As Logical
         // Busca por nome acentuado (ex "Joao") - DecodeUTF8 no filtro digitado
         // antes de montar o LIKE - mesmo tratamento ANSI/UTF-8 do restante do app.
         cTipoParam    := Lower(AllTrim(CNS001_LUPA_JSONSTR(jQuery,"tipo")))
-        cFiltroParam  := DecodeUTF8(AllTrim(CNS001_LUPA_JSONSTR(jQuery,"filtro")))
+        cFiltroParam  := CNS001_LUPA_DECODESAFE(AllTrim(CNS001_LUPA_JSONSTR(jQuery,"filtro")))
         cProjetoParam := AllTrim(CNS001_LUPA_JSONSTR(jQuery,"projeto"))
         cClienteParam := AllTrim(CNS001_LUPA_JSONSTR(jQuery,"cliente"))
         cLojaParam    := AllTrim(CNS001_LUPA_JSONSTR(jQuery,"lojaCliente"))
@@ -144,19 +151,29 @@ Static Function CNS001_TECLUPA(cFiltro)
     Local cFiltroUp2 := cFiltroUp
 
     BeginSql Alias cAlias
-        SELECT AA1_CODTEC, AA1_NOMTEC
+        SELECT AA1_CODTEC,
+            AA1_NOMTEC,
+            AA1_RSPMNT,
+            USR_CODIGO
         FROM %Table:AA1% AA1
+        LEFT JOIN SYS_USR USR
+            ON AA1_CODUSR = USR_ID
+            AND USR.%NotDel%
         WHERE AA1_FILIAL = %xFilial:AA1%
-          AND %NotDel%
-          AND (UPPER(AA1_CODTEC) LIKE '%' || %Exp:cFiltroUp% || '%' OR UPPER(AA1_NOMTEC) LIKE '%' || %Exp:cFiltroUp2% || '%')
+        AND AA1.%NotDel%
+        AND (UPPER(AA1_CODTEC) LIKE '%' || %Exp:cFiltroUp% || '%'
+        OR UPPER(AA1_NOMTEC) LIKE '%' || %Exp:cFiltroUp2% || '%')
         ORDER BY AA1_NOMTEC
     EndSql
 
     While !(cAlias)->(Eof())
         oLinha := JsonObject():New()
-        oLinha['codigo']      := CNS001_LUPA_COMPSTR((cAlias)->AA1_CODTEC)
+        oLinha['codigo']     := CNS001_LUPA_COMPSTR((cAlias)->AA1_CODTEC)
         oLinha['complemento'] := ""
-        oLinha['descricao']   := CNS001_LUPA_COMPSTR((cAlias)->AA1_NOMTEC)
+        oLinha['descricao']  := CNS001_LUPA_COMPSTR((cAlias)->AA1_NOMTEC)
+        oLinha['rspmnt']     := CNS001_LUPA_COMPSTR((cAlias)->AA1_RSPMNT)
+        oLinha['usrCodigo']  := CNS001_LUPA_COMPSTR((cAlias)->USR_CODIGO)
+
         AAdd(aRet, oLinha)
         (cAlias)->(DbSkip())
     EndDo
@@ -444,6 +461,32 @@ Static Function CNS001_LUPA_JSONSTR(jDados, cCampo)
         Return ""
     EndIf
 Return xVal
+
+// Reconstrucao manual byte a byte do bug "UTF-8 lido como CP1252" (mesmo
+// algoritmo do CH_DECODESAFE em CNS001.TLPP) - remonta o par de bytes UTF-8
+// (0xC2/0xC3 + continuacao) que apareceu como 2 chars CP1252 separados.
+// Nunca lanca erro (so Asc/Chr/SubStr).
+Static Function CNS001_LUPA_DECODESAFE(cTexto)
+    Local cRet  := ""
+    Local nLen  := Len(cTexto)
+    Local nI    := 1
+    Local nB1, nB2
+
+    While nI <= nLen
+        nB1 := Asc(SubStr(cTexto, nI, 1))
+        If (nB1 == 195 .Or. nB1 == 194) .And. nI < nLen
+            nB2 := Asc(SubStr(cTexto, nI + 1, 1))
+            If nB2 >= 128 .And. nB2 <= 191
+                cRet += Chr(((nB1 - 192) * 64) + (nB2 - 128))
+                nI   += 2
+                Loop
+            EndIf
+        EndIf
+        cRet += SubStr(cTexto, nI, 1)
+        nI++
+    EndDo
+
+Return cRet
 
 Static Function CNS001_LUPA_JSONESC(cTexto)
     Local cRet := cTexto

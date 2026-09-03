@@ -7,27 +7,26 @@
 #include "tlpp-core.th"
 #include "tlpp-rest.th"
 
+Namespace apia.cnsa
 
-////////////////////////////////////////////////////////////////////////////////
-// Henrique - 24/08/2026 17:10 - CH_JOBEMAIL nao abria ambiente (RpcSetType/
-//   RpcSetEnv) antes de chamar CH_CRIARCHAMADOEMAIL, diferente do padrao
-//   usado em CH_JOBFECHA30 - rodando como job Scheduler standalone (sem
-//   sessao), ZA1/xFilial/GetSXENum ficavam sem contexto de empresa/filial.
-//   Corrigido para seguir o mesmo padrao (RpcSetType(3)+RpcSetEnv+Begin
-//   Sequence+RpcClearEnv) e adicionado log em arquivo (schedule_email.log)
-//   para permitir verificar externamente que o Scheduler esta executando.
-////////////////////////////////////////////////////////////////////////////////
-
-Namespace apia.cns001
-
-PUBLISH MODEL REST NAME chamado RESOURCE OBJECT oRestChamado
+PUBLISH MODEL REST NAME chamado RESOURCE OBJECT oRestChamados
 
 // Browse principal - ponto de entrada da tela
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CNS001
+Ponto de entrada da tela de Chamados (Browse). Processa a caixa de e-mail
+apia@apia.com.br em busca de chamados novos (CH_CRIARCHAMADOEMAIL) e
+ativa o Browse de Registro de Chamados (ZA1).
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 User Function CNS001()
 
     Local l_oBrowse := Nil
     Local nCriados  := 0
-    Private aRotina := u_MenuDef()
+    Private aRotina := u_MenuDef001()
     Private cConsultor := " "
 
     cConsultor := Posicione("AA1",4,xFilial("AA1")+__cUserId,"AA1_CODTEC")
@@ -52,9 +51,9 @@ User Function CNS001()
         l_oBrowse:AddLegend( "ZA1->ZA1_STATUS == '3'", "ORANGE", "Pendente Cli." )
         l_oBrowse:AddLegend( "ZA1->ZA1_STATUS == '4'", "RED",    "Fechado" )
 
-        l_oBrowse:AddFilter("Meus","ZA1_CONSUL == cConsultor")
-        l_oBrowse:AddFilter("Nao Assumidos", "ZA1_CONSUL == ' '")
-
+        // Filtros de negocio (Meus/Nao Assumidos) removidos daqui de proposito
+        // - regra do usuario: filtro e responsabilidade do front-end, backend
+        // so disponibiliza os dados (ver mesma regra em CH_APICHAMADOS).
         l_oBrowse:Activate()
 
     EndIf
@@ -62,34 +61,53 @@ User Function CNS001()
 Return
 
 // Reusa direto as rotinas antigas que nao mudam de mecanismo
-User Function MenuDef()
+//-------------------------------------------------------------------
+/*/{Protheus.doc} MenuDef001
+Monta o menu de opcoes (aRotina) da tela de Chamados.
+@return aRotina   Array de opcoes do menu
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+User Function MenuDef001()
 
 Local aRotina := {}
 
     ADD OPTION aRotina TITLE "Pesquisar"        ACTION "AxPesqui"                           OPERATION 1 ACCESS 0
-    ADD OPTION aRotina TITLE "Visualizar"       ACTION "ViewDef.apia.cns001.CNS001"         OPERATION 2 ACCESS 0
-    ADD OPTION aRotina TITLE "Incluir"          ACTION "ViewDef.apia.cns001.CNS001"         OPERATION 3 ACCESS 0
-    ADD OPTION aRotina TITLE "Alterar"          ACTION "apia.cns001.U_CH_ALTERARTELA"       OPERATION 4 ACCESS 0
-    ADD OPTION aRotina TITLE "Excluir"          ACTION "apia.cns001.U_CH_EXCLUIRTELA"       OPERATION 0 ACCESS 0
-    ADD OPTION aRotina TITLE "Agendar"          ACTION "apia.cns001.U_CNSA_CRIAAGENDA"      OPERATION 0 ACCESS 0
-    ADD OPTION aRotina TITLE "Assumir"          ACTION "apia.cns001.U_CH_ASSUMIRTELA"       OPERATION 0 ACCESS 0
-    ADD OPTION aRotina TITLE "Anotacoes"        ACTION "apia.cns001.U_CNSA_INTERAGIR"       OPERATION 0 ACCESS 0
-    ADD OPTION aRotina TITLE "Ver Agendas"      ACTION "apia.cns001.U_ABREAGENDA"           OPERATION 0 ACCESS 0
-    ADD OPTION aRotina TITLE "Legenda"          ACTION "apia.cns001.U_CNSA_LEG"             OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Visualizar"       ACTION "ViewDef001.apia.cnsa.cns001.CNS001"         OPERATION 2 ACCESS 0
+    ADD OPTION aRotina TITLE "Incluir"          ACTION "ViewDef001.apia.cnsa.cns001.CNS001"         OPERATION 3 ACCESS 0
+    ADD OPTION aRotina TITLE "Alterar"          ACTION "apia.cnsa.cns001.U_CH_ALTERARTELA"       OPERATION 4 ACCESS 0
+    ADD OPTION aRotina TITLE "Excluir"          ACTION "apia.cnsa.cns001.U_CH_EXCLUIRTELA"       OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Agendar"          ACTION "apia.cnsa.cns001.U_CNSA_CRIAAGENDA"      OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Assumir"          ACTION "apia.cnsa.cns001.U_CH_ASSUMIRTELA"       OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Anotacoes"        ACTION "apia.cnsa.cns001.U_CNSA_INTERAGIR"       OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Ver Agendas"      ACTION "apia.cnsa.cns001.U_ABREAGENDA"           OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Legenda"          ACTION "apia.cnsa.cns001.U_CNSA_LEG"             OPERATION 0 ACCESS 0
 
 Return aRotina
 
 // Identico ao CNSA001.PRW, so troca o modelo carregado por "CNS001"
-User Function ViewDef()
+//-------------------------------------------------------------------
+/*/{Protheus.doc} ViewDef001
+Monta a View (FWFormView) da tela de Chamados, com o campo mestre ZA1 e
+os grids de Anotacoes (ZA2) e Agendamento (SZ6).
+@return l_oView   Objeto FWFormView montado, ou Nil se o Model nao carregou
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+User Function ViewDef001()
 
     Local l_oView    := Nil
-    Local l_oModel   := FWLoadModel("apia.cns001.CNS001")
+    Local l_oModel   := FWLoadModel("apia.cnsa.cns001.CNS001")
     Local l_oStruZA1 := FWFormStruct(2, "ZA1")
     Local l_oStruZA2 := FWFormStruct(2, "ZA2")
     Local l_oStruSZ6 := FWFormStruct(2, "SZ6")
 
     If l_oModel == Nil
-        MsgStop("Erro: O Modelo (ModelDef) nao foi carregado.", "Erro")
+        MsgStop("Erro: O Modelo (ModelDef001) nao foi carregado.", "Erro")
         Return Nil
     EndIf
 
@@ -119,7 +137,17 @@ User Function ViewDef()
 Return l_oView
 
 // Identica ao CNSA001.PRW (mesmas tabelas/relacoes)
-User Function ModelDef()
+//-------------------------------------------------------------------
+/*/{Protheus.doc} ModelDef001
+Monta o Model (MPFormModel) da tela de Chamados, com o mestre ZA1MASTER e
+os grids ZA2DETAIL (anotacoes) e SZ6DETAIL (agendamento).
+@return l_oModel   Objeto MPFormModel montado
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+User Function ModelDef001()
 
     Local l_oModel  := Nil
     Local l_oStrZA1 := FWFormStruct(1, "ZA1")
@@ -162,6 +190,20 @@ User Function ModelDef()
 
 Return l_oModel
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_VALIDACAMPO
+Validacao de campo do Model (stub) - sempre retorna .T., sem regra de
+campo implementada.
+@param  p_oModel   Model da tela de Chamados
+@param  p_sAcao    Acao disparada (Get/Set/etc)
+@param  p_sCampo   Nome do campo validado
+@param  p_vValor   Valor do campo
+@return l_bOk      Sempre .T.
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_VALIDACAMPO(p_oModel, p_sAcao, p_sCampo, p_vValor)
     Local l_bOk := .T.
 Return l_bOk
@@ -169,13 +211,61 @@ Return l_bOk
 // Bloqueia alteracao de chamado fechado (ZA1_STATUS=="4") - regra que so
 // existia no REST, movida pra ca pra valer tambem na tela classica sem
 // duplicar codigo. Efeito colateral: tela classica passa a bloquear isso.
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_PREVALIDA
+Pre-validacao do Model (Incluir/Alterar): exige assunto/tipo/projeto/
+tarefa na Inclusao, bloqueia Alterar sem grupo de acesso ou em chamado
+fechado, e valida a elegibilidade especifica do fluxo Assumir (gatilho
+lCnsaAssumindo) via SetErrorMessage.
+@param  p_oModel   Model da tela de Chamados
+@return l_bOk      .T. se pode prosseguir, .F. se bloqueado (erro setado via SetErrorMessage)
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_PREVALIDA(p_oModel)
     Local l_bOk  := .T.
     Local nOper  := p_oModel:GetOperation()
     Local oModelZA1 := Nil
 
+    // Campo obrigatorio no Incluir (assunto/tipo/projeto/tarefa) - via
+    // SetErrorMessage, canal correto do Model (nao mais Return ad-hoc no
+    // nucleo). lCnsaIncluirIncompleto (setado por CH_NUCLEOINCLUIR) libera
+    // tipo/projeto/tarefa quando o chamado nasce de e-mail (incompleto de
+    // proposito, alguem completa depois).
+    If nOper == 3
+        oModelZA1 := p_oModel:GetModel("ZA1MASTER")
+        If oModelZA1 <> Nil
+
+            If Empty(AllTrim(oModelZA1:GetValue("ZA1_ASSUNT")))
+                p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_ASSUNT", "ZA1", "ZA1_ASSUNT", "Informe o assunto do chamado.")
+                Return .F.
+            EndIf
+
+            If !(Type("lCnsaIncluirIncompleto") == "L" .And. lCnsaIncluirIncompleto)
+
+                If Empty(AllTrim(oModelZA1:GetValue("ZA1_TIPO")))
+                    p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_TIPO", "ZA1", "ZA1_TIPO", "Informe o tipo do chamado.")
+                    Return .F.
+                EndIf
+
+                If Empty(AllTrim(oModelZA1:GetValue("ZA1_PROJ")))
+                    p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_PROJ", "ZA1", "ZA1_PROJ", "Informe o projeto.")
+                    Return .F.
+                EndIf
+
+                If Empty(AllTrim(oModelZA1:GetValue("ZA1_TAREFA")))
+                    p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_TAREFA", "ZA1", "ZA1_TAREFA", "Informe a tarefa.")
+                    Return .F.
+                EndIf
+
+            EndIf
+        EndIf
+    EndIf
+
     If nOper == 4 .And. !CH_TEMACESSOGRUPO()
-        MsgAlert("Voce nao tem permissao para alterar chamados. Utilize a opcao Interagir.", "Acesso")
+        p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_STATUS", "ZA1", "ZA1_STATUS", "Voce nao tem permissao para alterar chamados. Utilize a opcao Interagir.")
         Return .F.
     EndIf
 
@@ -184,6 +274,50 @@ Static Function CH_PREVALIDA(p_oModel)
         If oModelZA1 <> Nil .And. AllTrim(oModelZA1:GetValue("ZA1_STATUS")) == "4"
             p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_STATUS", "ZA1", "ZA1_STATUS", "Chamado fechado nao pode ser alterado.")
             Return .F.
+        EndIf
+
+        // Elegibilidade especifica de Assumir (CH_NUCLEOASSUMIR) - so vale
+        // quando o gatilho lCnsaAssumindo esta ligado, senao vazaria pra
+        // Alterar comum. cAssumirConsulAnt/cAssumirStatusAnt sao o valor DE
+        // ANTES (capturados da workarea, ja que este proprio Update vai
+        // sobrescrever ZA1_CONSUL/ZA1_STATUS). Cliente/projeto/tarefa nao sao
+        // tocados pelo Assumir, entao GetValue aqui reflete o valor real.
+        If Type("lCnsaAssumindo") == "L" .And. lCnsaAssumindo .And. oModelZA1 <> Nil
+
+            If !Empty(cAssumirConsulAnt)
+                p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_CONSUL", "ZA1", "ZA1_CONSUL", "Este chamado ja esta atribuido. Para redesignar use a opcao Alterar.")
+                Return .F.
+            EndIf
+
+            If cAssumirStatusAnt == "4"
+                p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_STATUS", "ZA1", "ZA1_STATUS", "Chamado fechado nao pode ser assumido.")
+                Return .F.
+            EndIf
+
+            If cAssumirStatusAnt == "2" .Or. cAssumirStatusAnt == "3"
+                p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_STATUS", "ZA1", "ZA1_STATUS", "Chamado pendente nao pode ser assumido.")
+                Return .F.
+            EndIf
+
+            // Cliente NAO e exigido aqui de proposito (pedido do usuario) -
+            // pode ser preenchido depois, na hora de assumir/editar. Esse
+            // bloqueio fica so no Agendar (CH_GRAVARAGENDA ja exige cliente).
+
+            If Empty(AllTrim(oModelZA1:GetValue("ZA1_PROJ")))
+                p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_PROJ", "ZA1", "ZA1_PROJ", "O chamado precisa ter um projeto definido antes de ser assumido.")
+                Return .F.
+            EndIf
+
+            If AllTrim(Posicione("AF8", 1, xFilial("AF8") + AllTrim(oModelZA1:GetValue("ZA1_PROJ")), "AF8_FASE")) <> "03"
+                p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_PROJ", "ZA1", "ZA1_PROJ", "O chamado so pode ser assumido com projeto em execucao (fase 03).")
+                Return .F.
+            EndIf
+
+            If Empty(AllTrim(oModelZA1:GetValue("ZA1_TAREFA")))
+                p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_TAREFA", "ZA1", "ZA1_TAREFA", "O chamado precisa ter uma tarefa definida antes de ser assumido.")
+                Return .F.
+            EndIf
+
         EndIf
     EndIf
 
@@ -220,11 +354,35 @@ Return l_bOk
 // MODEL_OPERATION_DELETE foi avaliada e descartada (cascata automatica do
 // Model sobre os grids filhos nao e confirmada). Exclusao real fica em
 // CH_NUCLEOEXCLUIR (chamada por tela e REST), fora do ciclo do Model.
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_VALIDACANCELA
+Validacao de cancelamento do Model (stub) - sempre retorna .T., exclusao
+real e feita fora do Model, em CH_NUCLEOEXCLUIR.
+@param  p_oModel   Model da tela de Chamados
+@return .T. sempre
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_VALIDACANCELA(p_oModel)
 Return .T.
 
 // Pos-commit portado de CNSA_APOSCOMMIT - flag lCnsaViaRest pula o
 // MsgYesNo quando a chamada vem do REST (responde "sim" automatico).
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_POSGRAVACAO
+Pos-gravacao do Model: em Alterar (nOper==4), notifica por e-mail o
+tecnico removido (quando substituido) e o novo tecnico designado. Em
+Incluir/Alterar com tecnico definido, oferece (ou cria automaticamente via
+REST) uma agenda para o chamado.
+@param  p_oModel   Model da tela de Chamados
+@return .T. sempre
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_POSGRAVACAO(p_oModel)
     Local nOper       := p_oModel:GetOperation()
     Local lViaRest    := (Type("lCnsaViaRest") == "L" .And. lCnsaViaRest)
@@ -356,6 +514,16 @@ Static Function CH_POSGRAVACAO(p_oModel)
 Return .T.
 
 // Copia local de CNSA_NOGRUPO (Static em CNSA001.PRW, nao atravessa arquivo)
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_TEMACESSOGRUPO
+Verifica se o usuario logado pertence ao grupo com permissao de alteracao
+livre de chamados (parametro MV_CNSAGRP).
+@return .T. se o usuario pertence ao grupo, .F. caso contrario
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_TEMACESSOGRUPO()
     Local aGrupos   := FWSFUsrGrps(__cUserId)
     Local cGrpPerm  := GetMV("MV_CNSAGRP")
@@ -377,11 +545,21 @@ Static Function CH_TEMACESSOGRUPO()
 
 Return .F.
 
-// Alterar - gate de grupo (identico a CNSA_ALT, so aponta pra VIEWDEF.CNS001)
+// Alterar - gate de grupo (identico a CNSA_ALT, so aponta pra VIEWDEF001.CNS001)
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_ALTERARTELA
+Opcao de menu "Alterar" da tela classica: abre a View de edicao completa
+se o usuario tem acesso de grupo, senao redireciona para Interagir
+(CNSA_INTERAGIR).
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 User Function CH_ALTERARTELA()
 
     If CH_TEMACESSOGRUPO()
-        FWExecView("Registro de Chamados", "apia.cns001.CNS001", 4)
+        FWExecView("Registro de Chamados", "apia.cnsa.cns001.CNS001", 4)
         Return
     EndIf
 
@@ -392,6 +570,16 @@ Return
 // Funcoes movidas de CNSA001.PRW (unico fonte compilado agora).
 // GETIDGRID/CNSA_CLIENTE/CNSA_TECNICO mantem nome exato de proposito - sao
 // chamadas pelo dicionario (SX7/SX3), que guarda o nome como texto.
+//-------------------------------------------------------------------
+/*/{Protheus.doc} GETIDGRID
+Calcula a proxima sequencia de linha (nao deletada) do grid ZA2DETAIL do
+Model ativo, para numerar uma nova anotacao.
+@return Sequencia formatada em 3 digitos (StrZero)
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 User Function GETIDGRID()
     Local oModel  := FWModelActive()
     Local l_oZA2  := Nil
@@ -423,6 +611,14 @@ User Function GETIDGRID()
     l_oZA2:GoLine(nLinAtu)
 Return StrZero(nSeq, 3)
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CNSA_LEG
+Exibe a legenda de cores/status do chamado (BrwLegenda).
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 User Function CNSA_LEG()
     BrwLegenda("Legenda de Status", "Status do Chamado", ;
         { ;
@@ -435,6 +631,16 @@ Return
 
 // Agendar (item de menu classico) - chama o mesmo nucleo CH_MONTAAGENDA que
 // o caminho REST usa (evita duplicar a montagem do Model CNSA003).
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CNSA_CRIAAGENDA
+Opcao de menu "Agendar" da tela classica: valida o chamado selecionado
+(precisa ter tecnico designado) e cria uma agenda padrao (08:00-09:00,
+hoje) via CH_MONTAAGENDA.
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 User Function CNSA_CRIAAGENDA()
     Local cIdCh    := AllTrim(ZA1->ZA1_IDCH)
     Local cTecnico := AllTrim(ZA1->ZA1_CONSUL)
@@ -460,6 +666,16 @@ Return
 
 // Anotar (item de menu classico) - abre CNSAZA2VIEW (model separado, nao
 // consolidado aqui). CNSA_NOGRUPO trocado pelo equivalente local CH_TEMACESSOGRUPO.
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CNSA_INTERAGIR
+Opcao de menu "Anotar" da tela classica: valida o chamado selecionado
+(nao fechado, com tecnico e cliente definidos, usuario com permissao) e
+abre a View de inclusao de anotacao (CNSAZA2VIEW).
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 User Function CNSA_INTERAGIR()
     Local cConsul  := AllTrim(ZA1->ZA1_CONSUL)
     Local cStatus  := AllTrim(ZA1->ZA1_STATUS)
@@ -529,6 +745,16 @@ User Function CNSA_INTERAGIR()
 Return
 
 // Gatilho SX7 pra ZA1_CLIENT - NOME EXATO mantido (ver aviso acima).
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CNSA_CLIENTE
+Gatilho SX7 do campo ZA1_CLIENT: busca o nome do cliente (SA1) e grava em
+ZA1_NOME no Model ativo.
+@return cNome   Nome do cliente encontrado (ou vazio)
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 User Function CNSA_CLIENTE()
     Local oModel := FWModelActive()
     Local cCod   := ""
@@ -544,6 +770,16 @@ User Function CNSA_CLIENTE()
 Return cNome
 
 // Gatilho SX7 pra ZA1_CONSUL - NOME EXATO mantido (ver aviso acima).
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CNSA_TECNICO
+Gatilho SX7 do campo ZA1_CONSUL: busca o nome do tecnico (AA1) e grava em
+ZA1_NOMTEC no Model ativo.
+@return cNome   Nome do tecnico encontrado (ou vazio)
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 User Function CNSA_TECNICO()
     Local oModel := FWModelActive()
     Local cCod   := ""
@@ -556,13 +792,42 @@ User Function CNSA_TECNICO()
 
 Return cNome
 
-// Ver Agendas (item de menu classico) - abre outro app (nao e CRUD de
-// Chamado, nao ha nada mais a consolidar aqui).
+// Ver Agendas (item de menu classico) - troca app externo "cnsaagenda"
+// pela rotina real do model de Agenda (CNSA003, ja usada aqui em
+// CH_MONTAAGENDA via FWLoadModel), evitando app separado.
+//-------------------------------------------------------------------
+/*/{Protheus.doc} ABREAGENDA
+Opcao de menu "Ver Agendas" da tela classica: abre a rotina do model de
+Agenda (CNSA003).
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 User Function ABREAGENDA()
-    FwCallApp("cnsaagenda")
+    CNSA003()
 Return
 
 // Monta e grava uma agenda (CNSA003) - usada pela tela classica e pelo REST headless
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_MONTAAGENDA
+Monta e grava um agendamento (SZ6) via Model CNSA003, usado tanto pela
+tela classica quanto pelo caminho REST headless.
+@param  cTecnico   Codigo do tecnico (AA1)
+@param  dData      Data do agendamento
+@param  cHmini     Hora inicial (HH:MM)
+@param  cHmfim     Hora final (HH:MM)
+@param  cCliente   Codigo do cliente (SA1)
+@param  cLoja      Loja do cliente
+@param  cDescri    Descricao/servico do agendamento
+@param  cProjeto   Codigo do projeto
+@param  cTarefa    Codigo da tarefa
+@param  cChamado   Id do chamado (ZA1_IDCH)
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_MONTAAGENDA(cTecnico, dData, cHmini, cHmfim, ;
                                  cCliente, cLoja, cDescri, cProjeto, ;
                                  cTarefa, cChamado)
@@ -609,6 +874,26 @@ Return
 // Ponte headless chamada por CH_POSGRAVACAO quando o chamado e salvo via
 // REST com tecnico definido (sem tela/MsgYesNo). Usa o mesmo nucleo
 // CH_MONTAAGENDA da tela classica.
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_CRIARAGENDATELA
+Ponte headless chamada por CH_POSGRAVACAO quando o chamado e salvo via
+REST com tecnico definido - cria o agendamento sem interacao de tela,
+repassando os parametros para CH_MONTAAGENDA.
+@param  cTecnico   Codigo do tecnico (AA1)
+@param  dData      Data do agendamento
+@param  cHmini     Hora inicial (HH:MM)
+@param  cHmfim     Hora final (HH:MM)
+@param  cCliente   Codigo do cliente (SA1)
+@param  cLoja      Loja do cliente
+@param  cDescri    Descricao/servico do agendamento
+@param  cProjeto   Codigo do projeto
+@param  cTarefa    Codigo da tarefa
+@param  cChamado   Id do chamado (ZA1_IDCH)
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 User Function CH_CRIARAGENDATELA(cTecnico, dData, cHmini, cHmfim, ;
     cCliente, cLoja, cDescri, cProjeto, cTarefa, cChamado)
 Return CH_MONTAAGENDA(cTecnico, dData, cHmini, cHmfim, cCliente, cLoja, cDescri, cProjeto, cTarefa, cChamado)
@@ -616,10 +901,27 @@ Return CH_MONTAAGENDA(cTecnico, dData, cHmini, cHmfim, cCliente, cLoja, cDescri,
 
 // ASSUMIR - nucleo compartilhado (tela + REST), via FWLoadModel/CommitData
 // em vez de RecLock direto.
+// Elegibilidade pra Assumir (ja designado/fechado/pendente/sem cliente-
+// projeto-tarefa/fase do projeto) NAO fica mais aqui como Return ad-hoc -
+// migrou pra CH_PREVALIDA via SetErrorMessage (gatilho lCnsaAssumindo),
+// canal correto do Model MVC. So o que o backend realmente so pode saber
+// (usuario sem consultor vinculado, chamado nao encontrado) fica aqui.
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_NUCLEOASSUMIR
+Nucleo compartilhado (tela + REST) de "Assumir chamado": atribui o
+consultor da sessao logada ao chamado e muda o status para "2" (Pendente
+Apia), via FWLoadModel/CommitData. Elegibilidade de negocio e validada em
+CH_PREVALIDA (gatilho lCnsaAssumindo); aqui so ficam as checagens que so o
+backend pode saber (usuario sem consultor vinculado, chamado inexistente).
+@param  cIdCh   Id do chamado (ZA1_IDCH)
+@return Array {nStatusHTTP, cMensagemErro, cNomeTecnico}
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_NUCLEOASSUMIR(cIdCh)
     Local cConsultorSessao := ""
-    Local cNomeConsultor   := ""
-    Local cFase            := ""
     Local cNomeTec         := ""
     Local oModel           := Nil
     Local lOk              := .F.
@@ -628,10 +930,6 @@ Static Function CH_NUCLEOASSUMIR(cIdCh)
     Local cErro            := ""
 
     Begin Sequence
-
-        If Empty(cIdCh)
-            Return {400, "Informe o idCh do chamado.", ""}
-        EndIf
 
         cConsultorSessao := Posicione("AA1",4,xFilial("AA1")+__cUserId,"AA1_CODTEC")
         If Empty(cConsultorSessao)
@@ -644,39 +942,15 @@ Static Function CH_NUCLEOASSUMIR(cIdCh)
             Return {404, "Chamado nao encontrado.", ""}
         EndIf
 
-        If !Empty(AllTrim(ZA1->ZA1_CONSUL))
-            cNomeConsultor := Posicione("AA1",1,xFilial("AA1")+AllTrim(ZA1->ZA1_CONSUL),"AA1_NOMTEC")
-            Return {400, "Este chamado ja esta com: " + cNomeConsultor + ". Para redesignar use a opcao Alterar.", ""}
-        EndIf
+        // Capturado da workarea (pre-Model) porque ZA1_CONSUL/ZA1_STATUS sao
+        // justamente os campos que este nucleo vai sobrescrever a seguir -
+        // CH_PREVALIDA (via Model) so enxergaria o valor NOVO, nao o atual.
+        Public cAssumirConsulAnt := AllTrim(ZA1->ZA1_CONSUL)
+        Public cAssumirStatusAnt := AllTrim(ZA1->ZA1_STATUS)
+        Public lCnsaAssumindo    := .T.
+        Public lCnsaViaRest      := .T.
 
-        If ZA1->ZA1_STATUS == "4"
-            Return {400, "Chamado fechado nao pode ser assumido.", ""}
-        EndIf
-
-        If ZA1->ZA1_STATUS == "2" .Or. ZA1->ZA1_STATUS == "3"
-            Return {400, "Chamado pendente nao pode ser assumido.", ""}
-        EndIf
-
-        If Empty(AllTrim(ZA1->ZA1_CLIENT))
-            Return {400, "O chamado precisa ter um cliente definido antes de ser assumido.", ""}
-        EndIf
-
-        If Empty(AllTrim(ZA1->ZA1_PROJ))
-            Return {400, "O chamado precisa ter um projeto definido antes de ser assumido.", ""}
-        EndIf
-
-        cFase := Posicione("AF8", 1, xFilial("AF8") + AllTrim(ZA1->ZA1_PROJ), "AF8_FASE")
-        If AllTrim(cFase) <> "03"
-            Return {400, "O chamado so pode ser assumido com projeto em execucao (fase 03).", ""}
-        EndIf
-
-        If Empty(AllTrim(ZA1->ZA1_TAREFA))
-            Return {400, "O chamado precisa ter uma tarefa definida antes de ser assumido.", ""}
-        EndIf
-
-        Public lCnsaViaRest := .T.
-
-        oModel := FWLoadModel("apia.cns001.CNS001")
+        oModel := FWLoadModel("apia.cnsa.cns001.CNS001")
         oModel:SetOperation(MODEL_OPERATION_UPDATE)
         oModel:Activate()
 
@@ -695,7 +969,8 @@ Static Function CH_NUCLEOASSUMIR(cIdCh)
         EndIf
 
         oModel:DeActivate(lOk)
-        lCnsaViaRest := .F.
+        lCnsaViaRest   := .F.
+        lCnsaAssumindo := .F.
 
         If !lOk
             Return {400, "Falha ao assumir o chamado: " + cErro, ""}
@@ -709,7 +984,8 @@ Static Function CH_NUCLEOASSUMIR(cIdCh)
         Return {200, "", cNomeTec}
 
     Recover Using oErroExcpt
-        lCnsaViaRest := .F.
+        lCnsaViaRest   := .F.
+        lCnsaAssumindo := .F.
         If oModel <> Nil
             oModel:DeActivate()
         EndIf
@@ -719,6 +995,15 @@ Static Function CH_NUCLEOASSUMIR(cIdCh)
 Return {500, "Erro desconhecido.", ""}
 
 // Assumir - item de menu da tela classica
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_ASSUMIRTELA
+Opcao de menu "Assumir" da tela classica: confirma com o usuario e chama
+o nucleo compartilhado CH_NUCLEOASSUMIR para o chamado selecionado.
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 User Function CH_ASSUMIRTELA()
     Local aResultado := {}
 
@@ -742,6 +1027,16 @@ User Function CH_ASSUMIRTELA()
 Return
 
 // Assumir - endpoint REST (mesmo path que CNS001Rest.tlpp - ver aviso de colisao)
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_APIASSUMIR
+Endpoint REST POST /CNSACHAMADOSASSUMIR: assume o chamado (idCh via query)
+para o consultor da sessao, chamando CH_NUCLEOASSUMIR.
+@return Logical - resposta HTTP (200 com idCh/status/tecnico, ou erro)
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 @Post(endpoint="/CNSACHAMADOSASSUMIR")
 User Function CH_APIASSUMIR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
@@ -766,6 +1061,19 @@ Return oRest:setStatusResponse(aResultado[1], '{"erro":"' + CH_ESCAPARJSON(aResu
 
 
 // EXCLUIR - nucleo compartilhado (tela + REST)
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_NUCLEOEXCLUIR
+Nucleo compartilhado (tela + REST) de exclusao de chamado: apaga o
+registro ZA1 e os agendamentos (SZ6) relacionados via RecLock direto (sem
+Model, ver CH_VALIDACANCELA), e notifica por e-mail o tecnico designado.
+@param  cIdCh     Id do chamado (ZA1_IDCH)
+@param  cMotivo   Motivo do cancelamento (usado no e-mail de notificacao)
+@return Array {nStatusHTTP, cMensagem}
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_NUCLEOEXCLUIR(cIdCh, cMotivo)
     Local cConsulAnt  := ""
     Local cClienteAnt := ""
@@ -784,10 +1092,10 @@ Static Function CH_NUCLEOEXCLUIR(cIdCh, cMotivo)
 
     Begin Sequence
 
-        If Empty(cIdCh)
-            Return {400, "Informe o idCh do chamado."}
-        EndIf
-
+        // Sem Model neste nucleo (RecLock direto, de proposito - ver
+        // CH_VALIDACANCELA) - SetErrorMessage nao se aplica aqui. Campo
+        // obrigatorio (idCh/motivo) vira help no front, sem checagem no
+        // backend.
         dbSelectArea("ZA1")
         ZA1->(DbSetOrder(1))
         If !ZA1->(DbSeek(xFilial("ZA1") + cIdCh))
@@ -797,10 +1105,6 @@ Static Function CH_NUCLEOEXCLUIR(cIdCh, cMotivo)
         cConsulAnt  := AllTrim(ZA1->ZA1_CONSUL)
         cClienteAnt := AllTrim(ZA1->ZA1_CLIENT)
         cLojaAnt    := AllTrim(ZA1->ZA1_LOJA)
-
-        If !Empty(cConsulAnt) .And. Empty(cMotivo)
-            Return {400, "Informe o motivo do cancelamento - obrigatorio quando o chamado tem tecnico designado."}
-        EndIf
 
         cExclPor := AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_NOMTEC"))
         cNomeCli := AllTrim(Posicione("SA1", 1, xFilial("SA1") + cClienteAnt + cLojaAnt, "A1_NOME"))
@@ -873,6 +1177,16 @@ Static Function CH_NUCLEOEXCLUIR(cIdCh, cMotivo)
 Return {500, "Erro desconhecido."}
 
 // Excluir - item de menu da tela classica (mantem o MSDIALOG de motivo)
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_EXCLUIRTELA
+Opcao de menu "Excluir" da tela classica: pede o motivo do cancelamento
+(via dialogo, quando o chamado ja tem tecnico) e chama o nucleo
+compartilhado CH_NUCLEOEXCLUIR.
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 User Function CH_EXCLUIRTELA()
     Local oDialog        := Nil
     Local oBtnOk         := Nil
@@ -940,6 +1254,16 @@ User Function CH_EXCLUIRTELA()
 Return
 
 // Excluir - endpoint REST (mesmo path que CNS001Rest.tlpp)
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_APIEXCLUIR
+Endpoint REST POST /CNSACHAMADOSEXCLUIR: exclui o chamado (idCh/motivo via
+query), chamando CH_NUCLEOEXCLUIR.
+@return Logical - resposta HTTP (200 com idCh/mensagem, ou erro)
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 @Post(endpoint="/CNSACHAMADOSEXCLUIR")
 User Function CH_APIEXCLUIR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
@@ -963,6 +1287,17 @@ Return oRest:setStatusResponse(aResultado[1], '{"erro":"' + CH_ESCAPARJSON(aResu
 
 
 // Data ISO (AAAA-MM-DD) a partir de AAAAMMDD - ZA1_DATA pode vir Character (cursor paginado)
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_DATAISOZA1
+Converte uma data no formato AAAAMMDD (Character) para o formato ISO
+AAAA-MM-DD, usado na resposta JSON dos endpoints REST.
+@param  cData   Data no formato AAAAMMDD
+@return Data no formato ISO (AAAA-MM-DD), ou "" se invalida
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_DATAISOZA1(cData)
     Local cAno := ""
     Local cMes := ""
@@ -984,195 +1319,95 @@ Return ""
 
 // LISTAGEM/VISUALIZAR/PESQUISAR - endpoint REST que faltava por completo.
 // Contrato confirmado no front (apia-po-cnshub/chamado-serv.ts): path
-// "/rest/CNSACHAMADOS". Logica portada fielmente de CNS001Rest.tlpp
-// (battle-tested em producao), sem simplificar.
+// "/rest/CNSACHAMADOS". Sem filtro de negocio no backend de proposito -
+// status/meus chamados/sem responsavel/periodo/texto sao responsabilidade
+// do front (regra do usuario: filtro fica so na tela). Navegacao nativa
+// (DbSeek/DbSkip na ZA1, ordem 1 = FILIAL+IDCH), sem SQL - igual o Browse
+// do CNSA003 (FWMBrowse:SetAlias, sem query propria). So mantem paginacao
+// tecnica (pagina/tamanho), que nao e filtro, e mecanismo do MVC.
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_APICHAMADOS
+Endpoint REST GET /CNSACHAMADOS: lista os chamados (ZA1) paginados, com
+tecnico/cliente/projeto/tarefa resolvidos por nome, ordenados do mais
+recente para o mais antigo. Sem filtro de negocio no backend (regra: filtro
+e responsabilidade do front-end).
+@return Logical - resposta HTTP 200 com JSON paginado (total/items), ou erro
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 @Get(endpoint="/CNSACHAMADOS")
 User Function CH_APICHAMADOS() As Logical
-    Local jQuery           := oRest:getQueryRequest() As Json
-    Local oJson            := JsonObject():New()
-    Local aRetorno         := {}
-    Local aTodos           := {}
-    Local aFiltrado        := {}
-    Local oLinha           := Nil
-    Local cAlias           := GetNextAlias()
-    Local nPagina          := 1
-    Local nTamanho         := 10
-    Local nStartIdx        := 1
-    Local nTotal           := 0
-    Local nI               := 0
-    Local nMeuParam        := 0
-    Local nSemRespParam    := 0
-    Local cStatusParam     := ""
-    Local cIdChParam       := ""
-    Local cTextoParam      := ""
-    Local cConsultorSessao := ""
-    Local aCacheTec        := {}
-    Local aCacheCli        := {}
-    Local nPosCache        := 0
-    Local cCodConsul       := ""
-    Local cCodCli          := ""
-    Local cLoja            := ""
-    Local cNomeTec         := ""
-    Local cNomeCli         := ""
-    Local cTipo            := ""
-    Local cProjeto         := ""
-    Local cTarefa          := ""
-    Local cEmailCli        := ""
-    Local cNomeProj        := ""
-    Local cNomeTaf         := ""
-    Local aCacheProj       := {}
-    Local aCacheTaf        := {}
-    Local oErro            := Nil
-    Local aStatusLista     := {}
-    Local nAnoParam        := 0
-    Local nMesParam        := 0
-    Local dIni             := CToD("")
-    Local dFimExclusivo    := CToD("")
-    Local nMesFimCalc      := 0
-    Local nAnoFimCalc      := 0
-    Local lTemIdCh         := .F.
-    Local lTemTexto        := .F.
-    Local lOutros          := .F.
-    Local nIdChAtivo       := 0
-    Local nTextoAtivo      := 0
-    Local nConsulAtivo     := 0
-    Local cIdChFiltro      := ""
-    Local cTextoFiltro     := ""
-    Local cConsulFiltro    := ""
-    Local nSemRespFiltro   := 0
-    Local nTemPeriodo      := 0
-    Local dIniFiltro       := CToD("01/01/2000")
-    Local dFimFiltro       := CToD("01/01/2000")
-    Local cStatusCsv       := ""
-    Local nMinRow          := 0
-    Local nMaxRow          := 0
-    Local nTotalSql        := 0
+    Local jQuery     := oRest:getQueryRequest() As Json
+    Local oJson      := JsonObject():New()
+    Local aTodos     := {}
+    Local aRetorno   := {}
+    Local oLinha     := Nil
+    Local nPagina    := 1
+    Local nTamanho   := 10
+    Local nStartIdx  := 1
+    Local nTotal     := 0
+    Local nI         := 0
+    Local nFim       := 0
+    Local aCacheTec  := {}
+    Local aCacheCli  := {}
+    Local aCacheProj := {}
+    Local aCacheTaf  := {}
+    Local nPosCache  := 0
+    Local cCodConsul := ""
+    Local cCodCli    := ""
+    Local cLoja      := ""
+    Local cNomeTec   := ""
+    Local cNomeCli   := ""
+    Local cTipo      := ""
+    Local cProjeto   := ""
+    Local cTarefa    := ""
+    Local cEmailCli  := ""
+    Local cNomeProj  := ""
+    Local cNomeTaf   := ""
+    Local oErro      := Nil
+    Local cFilAtu    := xFilial("ZA1")
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     Begin Sequence
 
-        nPagina       := CH_LERJSONNUM(jQuery, "pagina")
-        nPagina       := If(nPagina < 1, 1, nPagina)
-        nTamanho      := CH_LERJSONNUM(jQuery, "tamanho")
-        nTamanho      := If(nTamanho < 1 .Or. nTamanho > 100, 10, nTamanho)
-        nStartIdx     := (nPagina - 1) * nTamanho + 1
-        nMeuParam     := CH_LERJSONNUM(jQuery, "meus")
-        nSemRespParam := CH_LERJSONNUM(jQuery, "semResponsavel")
-        cStatusParam  := AllTrim(CH_LERJSONTXT(jQuery,"status"))
-        cIdChParam    := AllTrim(CH_LERJSONTXT(jQuery,"idCh"))
-        nAnoParam     := CH_LERJSONNUM(jQuery, "ano")
-        nMesParam     := CH_LERJSONNUM(jQuery, "mes")
-        cTextoParam   := AllTrim(CH_LERJSONTXT(jQuery,"texto"))
+        nPagina   := CH_LERJSONNUM(jQuery, "pagina")
+        nPagina   := If(nPagina < 1, 1, nPagina)
+        nTamanho  := CH_LERJSONNUM(jQuery, "tamanho")
+        nTamanho  := If(nTamanho < 1 .Or. nTamanho > 100, 10, nTamanho)
+        nStartIdx := (nPagina - 1) * nTamanho + 1
 
-        If nMeuParam == 1
-            cConsultorSessao := Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC")
+        dbSelectArea("ZA1")
+        ZA1->(DbSetOrder(1))
+        If ZA1->(DbSeek(cFilAtu))
+            While !ZA1->(Eof()) .And. ZA1->ZA1_FILIAL == cFilAtu
+                AAdd(aTodos, {;
+                    AllTrim(ZA1->ZA1_IDCH), ;
+                    CH_DECODESAFE(AllTrim(ZA1->ZA1_ASSUNT)), ;
+                    AllTrim(ZA1->ZA1_STATUS), ;
+                    AllTrim(ZA1->ZA1_CONSUL), ;
+                    AllTrim(ZA1->ZA1_CLIENT), ;
+                    AllTrim(ZA1->ZA1_LOJA), ;
+                    AllTrim(ZA1->ZA1_TIPO), ;
+                    AllTrim(ZA1->ZA1_PROJ), ;
+                    AllTrim(ZA1->ZA1_TAREFA), ;
+                    AllTrim(ZA1->ZA1_EMAIL), ;
+                    ZA1->ZA1_DATA ;
+                })
+                ZA1->(DbSkip())
+            EndDo
         EndIf
 
-        lTemIdCh  := !Empty(cIdChParam)
-        lTemTexto := !lTemIdCh .And. !Empty(cTextoParam)
-        lOutros   := !lTemIdCh .And. !lTemTexto
+        nTotal := Len(aTodos)
 
-        nIdChAtivo    := If(lTemIdCh, 1, 0)
-        cIdChFiltro   := If(lTemIdCh, cIdChParam, "")
-        nTextoAtivo   := If(lTemTexto, 1, 0)
-        cTextoFiltro  := If(lTemTexto, "%" + Upper(cTextoParam) + "%", "")
-        nConsulAtivo  := If(lOutros .And. nMeuParam == 1 .And. !Empty(cConsultorSessao), 1, 0)
-        cConsulFiltro := If(nConsulAtivo == 1, cConsultorSessao, "")
-        nSemRespFiltro := If(lOutros .And. nSemRespParam == 1, 1, 0)
-        cStatusCsv := If(lOutros, cStatusParam, "")
+        // Ordem 1 (FILIAL+IDCH) e ascendente - percorre o array de tras pra
+        // frente na pagina pedida pra manter "mais recente primeiro".
+        nI   := nTotal - nStartIdx + 1
+        nFim := Max(nTotal - (nStartIdx + nTamanho - 1) + 1, 1)
 
-        If lOutros .And. nAnoParam > 0 .And. nMesParam >= 1 .And. nMesParam <= 12
-            dIni        := StoD(StrZero(nAnoParam,4) + StrZero(nMesParam,2) + "01")
-            nMesFimCalc := nMesParam + 1
-            nAnoFimCalc := nAnoParam
-            If nMesFimCalc > 12
-                nMesFimCalc := 1
-                nAnoFimCalc++
-            EndIf
-            dFimExclusivo := StoD(StrZero(nAnoFimCalc,4) + StrZero(nMesFimCalc,2) + "01")
-            nTemPeriodo   := 1
-            dIniFiltro    := dIni
-            dFimFiltro    := dFimExclusivo - 1
-        EndIf
-
-        If Empty(cStatusCsv)
-            nMinRow := nStartIdx - 1
-            nMaxRow := nStartIdx + nTamanho - 1
-        Else
-            nMinRow := 0
-            nMaxRow := 999999999
-        EndIf
-
-        Do While .T.
-            BeginSql Alias cAlias
-            SELECT * FROM (
-                SELECT ZA1Q.*, ROWNUM AS ZA1_RNUM
-                FROM (
-                    SELECT ZA1_IDCH, ZA1_ASSUNT, ZA1_STATUS, ZA1_CONSUL, ZA1_CLIENT, ;
-                        ZA1_LOJA, ZA1_TIPO, ZA1_PROJ, ZA1_TAREFA, ZA1_EMAIL, ZA1_DATA, ;
-                        COUNT(*) OVER() AS ZA1_TOTAL
-                    FROM %Table:ZA1% ZA1
-                    WHERE ZA1_FILIAL = %xFilial:ZA1%
-                      AND %NotDel%
-                      AND (%Exp:nIdChAtivo% <> 1 OR ZA1_IDCH = %Exp:cIdChFiltro%)
-                      AND (%Exp:nTextoAtivo% <> 1 OR UPPER(ZA1_ASSUNT) LIKE %Exp:cTextoFiltro%)
-                      AND (%Exp:nConsulAtivo% <> 1 OR ZA1_CONSUL = %Exp:cConsulFiltro%)
-                      AND (%Exp:nSemRespFiltro% <> 1 OR ZA1_CONSUL = ' ')
-                      AND (%Exp:nTemPeriodo% <> 1 OR ZA1_DATA BETWEEN %Exp:dIniFiltro% AND %Exp:dFimFiltro%)
-                    ORDER BY ZA1_IDCH DESC
-                ) ZA1Q
-                WHERE ROWNUM <= %Exp:nMaxRow%
-            )
-            WHERE ZA1_RNUM > %Exp:nMinRow%
-        EndSql
-
-        If !(cAlias)->(Eof())
-            nTotalSql := (cAlias)->ZA1_TOTAL
-        EndIf
-
-        aTodos := {}
-        While !(cAlias)->(Eof())
-            AAdd(aTodos, {;
-                AllTrim((cAlias)->ZA1_IDCH), ;
-                AllTrim((cAlias)->ZA1_ASSUNT), ;
-                AllTrim((cAlias)->ZA1_STATUS), ;
-                AllTrim((cAlias)->ZA1_CONSUL), ;
-                AllTrim((cAlias)->ZA1_CLIENT), ;
-                AllTrim((cAlias)->ZA1_LOJA), ;
-                AllTrim((cAlias)->ZA1_TIPO), ;
-                AllTrim((cAlias)->ZA1_PROJ), ;
-                AllTrim((cAlias)->ZA1_TAREFA), ;
-                AllTrim((cAlias)->ZA1_EMAIL), ;
-                (cAlias)->ZA1_DATA ;
-            })
-            (cAlias)->(DbSkip())
-        EndDo
-        (cAlias)->(DbCloseArea())
-
-            If nTemPeriodo == 1 .And. nTotalSql == 0
-                nTemPeriodo := 0
-                aTodos      := {}
-                Loop
-            EndIf
-            Exit
-        EndDo
-
-        If !Empty(cStatusCsv)
-            aStatusLista := StrTokArr(cStatusCsv, ",")
-            aFiltrado    := {}
-            For nI := 1 To Len(aTodos)
-                If AScan(aStatusLista, {|x| AllTrim(x) == aTodos[nI][3]}) > 0
-                    AAdd(aFiltrado, aTodos[nI])
-                EndIf
-            Next nI
-            aTodos := aFiltrado
-            nTotal := Len(aTodos)
-        Else
-            nTotal := nTotalSql
-        EndIf
-
-        For nI := If(Empty(cStatusCsv), 1, nStartIdx) To If(Empty(cStatusCsv), Len(aTodos), Min(nStartIdx + nTamanho - 1, nTotal))
+        While nI >= nFim .And. nI >= 1
             cCodConsul := aTodos[nI][4]
             cCodCli    := aTodos[nI][5]
             cLoja      := aTodos[nI][6]
@@ -1239,7 +1474,9 @@ User Function CH_APICHAMADOS() As Logical
             oLinha['emailCliente'] := cEmailCli
             oLinha['data']         := CH_DATAISOZA1(If(ValType(aTodos[nI][11]) == "D", DToS(aTodos[nI][11]), cValToChar(aTodos[nI][11])))
             AAdd(aRetorno, oLinha)
-        Next nI
+
+            nI--
+        EndDo
 
         oJson['total']        := nTotal
         oJson['totalPaginas'] := If(nTotal == 0, 0, Ceiling(nTotal / nTamanho))
@@ -1258,33 +1495,57 @@ User Function CH_APICHAMADOS() As Logical
 Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
 
 // INCLUIR/ALTERAR - endpoints REST customizados. Front manda tudo via
-// query string (body sempre null); a Class oRestChamado abaixo so existe
+// query string (body sempre null); a Class oRestChamados abaixo so existe
 // porque o PUBLISH MODEL REST exige, fica como caminho generico
 // /rest/FwModel/chamado sem uso real hoje. Gravacao real e 100% aqui,
 // via RecLock direto (portada de CNS001Rest.tlpp).
-Static Function CH_NUCLEOINCLUIR(cAssunto, cDtAbertura, cTipo, cCodCliente, cLojaCliente, cEmailCliente, cCodConsultor, cProjeto, cTarefa)
-    Local cIdCh := ""
-    Local oJson := JsonObject():New()
-    Local oErro := Nil
+// Nucleo de Incluir unificado com o Model MVC (apia.cnsa.cns001.CNS001) - era a
+// 3a copia da mesma acao (RecLock direto), junto com o ModelDef001/ViewDef001 da
+// tela classica e o SaveData manual do oRestChamados (que agora so chama
+// este nucleo). Chamado nasce SEMPRE sem tecnico (regra de negocio: tecnico
+// so e preenchido quando alguem Assume ou um chefe atribui via Alterar) -
+// por isso cCodConsultor NAO leva mais default pro usuario da sessao.
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_NUCLEOINCLUIR
+Nucleo unico de inclusao de chamado (tela + REST + importacao por e-mail),
+via Model MVC (apia.cnsa.cns001.CNS001). Dispara os gatilhos de
+cliente/tecnico manualmente e, quando sucesso, notifica por e-mail se ja
+nasce com tecnico atribuido.
+@param  cAssunto           Assunto do chamado
+@param  cDtAbertura        Data de abertura (AAAAMMDD ou AAAA-MM-DD)
+@param  cTipo              Tipo do chamado
+@param  cCodCliente        Codigo do cliente (SA1)
+@param  cLojaCliente       Loja do cliente (default "01")
+@param  cEmailCliente      E-mail do cliente
+@param  cCodConsultor      Codigo do tecnico (AA1), se ja nascer atribuido
+@param  cProjeto           Codigo do projeto
+@param  cTarefa            Codigo da tarefa
+@param  cMailId             Id do e-mail de origem (importacao Graph), dedup
+@param  lExigirCompletos   Exige tipo/projeto/tarefa preenchidos (.F. no caminho de e-mail)
+@return Array {nStatusHTTP, cCorpoJsonOuMensagem, cIdCh}
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+Static Function CH_NUCLEOINCLUIR(cAssunto, cDtAbertura, cTipo, cCodCliente, cLojaCliente, cEmailCliente, cCodConsultor, cProjeto, cTarefa, cMailId, lExigirCompletos)
+    Local cIdCh       := ""
+    Local oJson       := JsonObject():New()
+    Local oErro       := Nil
+    Local oModel      := Nil
+    Local oModelZA1   := Nil
+    Local oErroModel  := Nil
+    Local lOk         := .F.
+
+    Default cMailId          := ""
+    Default lExigirCompletos := .T.
 
     Begin Sequence
 
-        If Empty(cAssunto)
-            Return {400, '{"erro":"Informe o assunto do chamado."}'}
-        EndIf
-
-        If Empty(cTipo)
-            Return {400, '{"erro":"Informe o tipo do chamado."}'}
-        EndIf
-
-        If Empty(cProjeto)
-            Return {400, '{"erro":"Informe o projeto."}'}
-        EndIf
-
-        If Empty(cTarefa)
-            Return {400, '{"erro":"Informe a tarefa."}'}
-        EndIf
-
+        // Campo obrigatorio (assunto/tipo/projeto/tarefa) nao valida mais
+        // aqui - front-end valida antes de chamar. CH_PREVALIDA (Model)
+        // cobre via SetErrorMessage, com lCnsaIncluirIncompleto liberando
+        // tipo/projeto/tarefa pro caminho de e-mail.
         Default cLojaCliente := "01"
 
         If Empty(cDtAbertura)
@@ -1293,46 +1554,95 @@ Static Function CH_NUCLEOINCLUIR(cAssunto, cDtAbertura, cTipo, cCodCliente, cLoj
             cDtAbertura := StrTran(cDtAbertura, "-", "")
         EndIf
 
-        If Empty(cCodConsultor)
-            cCodConsultor := Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC")
-        EndIf
-
         cIdCh := GetSxeNum("ZA1", "ZA1_IDCH")
 
-        RecLock("ZA1", .T.)
-            ZA1->ZA1_FILIAL := xFilial("ZA1")
-            ZA1->ZA1_IDCH   := cIdCh
-            ZA1->ZA1_ASSUNT := cAssunto
-            ZA1->ZA1_DATA   := STOD(cDtAbertura)
-            ZA1->ZA1_STATUS := "1"
-            ZA1->ZA1_TIPO   := cTipo
-            ZA1->ZA1_CLIENT := cCodCliente
-            ZA1->ZA1_LOJA   := cLojaCliente
-            ZA1->ZA1_EMAIL  := cEmailCliente
-            ZA1->ZA1_CONSUL := cCodConsultor
-            ZA1->ZA1_PROJ   := cProjeto
-            ZA1->ZA1_TAREFA := cTarefa
-            ZA1->ZA1_MOD    := Date()
-        ZA1->(MsUnlock())
+        Public lCnsaViaRest          := .T.
+        Public lCnsaIncluirIncompleto := !lExigirCompletos
+
+        oModel := FWLoadModel("apia.cnsa.cns001.CNS001")
+        oModel:SetOperation(MODEL_OPERATION_INSERT)
+        oModel:Activate()
+        oModelZA1 := oModel:GetModel("ZA1MASTER")
+
+        oModelZA1:SetValue("ZA1_FILIAL", xFilial("ZA1"))
+        oModelZA1:SetValue("ZA1_IDCH",   cIdCh)
+        oModelZA1:SetValue("ZA1_ASSUNT", cAssunto)
+        oModelZA1:SetValue("ZA1_DATA",   STOD(cDtAbertura))
+        oModelZA1:SetValue("ZA1_STATUS", "1")
+        oModelZA1:SetValue("ZA1_TIPO",   cTipo)
+
+        // Ordem importa (mesmo padrao do oRestChamados original): cliente
+        // precisa estar no model ANTES de disparar o gatilho CNSA_CLIENTE -
+        // motor API/REST nao dispara gatilho SX7 sozinho, chamamos explicito.
+        oModelZA1:SetValue("ZA1_CLIENT", cCodCliente)
+        oModelZA1:SetValue("ZA1_LOJA",   cLojaCliente)
+        U_CNSA_CLIENTE()
+
+        oModelZA1:SetValue("ZA1_EMAIL",  cEmailCliente)
+        If !Empty(cCodConsultor)
+            oModelZA1:SetValue("ZA1_CONSUL", cCodConsultor)
+            U_CNSA_TECNICO()
+        EndIf
+
+        oModelZA1:SetValue("ZA1_PROJ",   cProjeto)
+        oModelZA1:SetValue("ZA1_TAREFA", cTarefa)
+        oModelZA1:SetValue("ZA1_MOD",    Date())
+        If !Empty(cMailId)
+            oModelZA1:SetValue("ZA1_MAILID", cMailId)
+        EndIf
+
+        If oModel:VldData()
+            lOk := oModel:CommitData()
+        Else
+            lOk := .F.
+        EndIf
+
+        oModel:DeActivate(lOk)
+        lCnsaViaRest          := .F.
+        lCnsaIncluirIncompleto := .F.
+
+        If !lOk
+            oErroModel := oModel:GetErrorMessage()
+            RollBackSX8()
+            Return {400, '{"erro":"' + CH_ESCAPARJSON(FwJsonSerialize(oErroModel)) + '"}'}
+        EndIf
 
         ConfirmSX8()
 
-        // E-mail de designacao - so dispara se o chamado ja nasce com tecnico.
-        CH_NOTIFICARDESIGNA(cIdCh, cCodConsultor)
+        // E-mail de designacao - so dispara se o chamado ja nasce com tecnico
+        // (atribuicao manual no Incluir, caso raro; fluxo normal e vazio).
+        If !Empty(cCodConsultor)
+            CH_NOTIFICARDESIGNA(cIdCh, cCodConsultor)
+        EndIf
 
         oJson['sucesso']  := .T.
         oJson['idCh']     := cIdCh
         oJson['mensagem'] := "Chamado incluido com sucesso."
 
-        Return {200, oJson:ToJson()}
+        Return {200, oJson:ToJson(), cIdCh}
 
     Recover Using oErro
+        lCnsaViaRest          := .F.
+        lCnsaIncluirIncompleto := .F.
         RollBackSX8()
+        If oModel <> Nil
+            oModel:DeActivate()
+        EndIf
         Return {500, '{"erro":"' + CH_ESCAPARJSON(oErro:Description) + '"}'}
     End Sequence
 
 Return {500, '{"erro":"Erro desconhecido."}'}
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_APIINCLUIR
+Endpoint REST POST /CNSACHAMADOSINCLUIR: inclui um chamado a partir dos
+parametros da query string, chamando CH_NUCLEOINCLUIR.
+@return Logical - resposta HTTP com o resultado da inclusao
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 @Post(endpoint="/CNSACHAMADOSINCLUIR")
 User Function CH_APIINCLUIR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
@@ -1346,24 +1656,50 @@ User Function CH_APIINCLUIR() As Logical
 
 Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
+// Nucleo de Alterar unificado com o Model MVC (apia.cnsa.cns001.CNS001) - mesmo
+// caminho da tela classica (CH_ALTERARTELA -> FWExecView operacao 4), evita
+// reimplementar a alteracao via RecLock direto (bypassava CH_PREVALIDA/
+// CH_POSGRAVACAO). Efeito ja esperado (nao e bug novo, e a acao de verdade):
+// designar tecnico aqui dispara e-mail de redesignacao/oferta de agenda,
+// igual a tela classica sempre fez.
+// Campo obrigatorio/estado (idCh vazio, nenhum campo informado, chamado
+// fechado) nao valida mais aqui - front-end valida antes de chamar. "Chamado
+// fechado" fica coberto automaticamente por CH_PREVALIDA (SetErrorMessage,
+// dispara pra qualquer Update via este Model, Alterar incluso).
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_NUCLEOALTERAR
+Nucleo unico de alteracao de chamado (tela + REST), via Model MVC
+(apia.cnsa.cns001.CNS001) - mesmo caminho da tela classica, garantindo que
+CH_PREVALIDA/CH_POSGRAVACAO sempre disparem (inclusive e-mail de
+redesignacao e oferta de agenda quando o tecnico muda).
+@param  cIdCh               Id do chamado a alterar
+@param  cAssunto            Novo assunto (vazio = nao altera)
+@param  cDtAbertura         Nova data de abertura (vazio = nao altera)
+@param  cTipo               Novo tipo (vazio = nao altera)
+@param  cCodCliente         Novo codigo do cliente (vazio = nao altera)
+@param  cLojaCliente        Nova loja do cliente
+@param  cEmailCliente       Novo e-mail do cliente (vazio = nao altera)
+@param  cCodConsultor       Novo codigo do tecnico (vazio = nao altera)
+@param  cProjeto            Novo projeto (vazio = nao altera)
+@param  cTarefa             Nova tarefa (vazio = nao altera)
+@param  lLimparCliente      Limpa o cliente do chamado
+@param  lLimparConsultor    Limpa o tecnico do chamado
+@return Array {nStatusHTTP, cCorpoJsonOuMensagem}
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_NUCLEOALTERAR(cIdCh, cAssunto, cDtAbertura, cTipo, cCodCliente, cLojaCliente, ;
     cEmailCliente, cCodConsultor, cProjeto, cTarefa, lLimparCliente, lLimparConsultor)
     Local oJson              := JsonObject():New()
     Local oErro              := Nil
-    Local cConsultorAnterior := ""
-    Local lTemAlgumCampo     := !Empty(cAssunto) .Or. !Empty(cDtAbertura) .Or. !Empty(cTipo) .Or. ;
-        !Empty(cCodCliente) .Or. !Empty(cEmailCliente) .Or. !Empty(cCodConsultor) .Or. ;
-        !Empty(cProjeto) .Or. !Empty(cTarefa) .Or. lLimparCliente .Or. lLimparConsultor
+    Local oErroModel         := Nil
+    Local oModel             := Nil
+    Local oModelZA1          := Nil
+    Local lOk                := .F.
 
     Begin Sequence
-
-        If Empty(cIdCh)
-            Return {400, '{"erro":"Informe o idCh do chamado (?idCh=000031)."}'}
-        EndIf
-
-        If !lTemAlgumCampo
-            Return {400, '{"erro":"Informe ao menos um campo para alterar."}'}
-        EndIf
 
         dbSelectArea("ZA1")
         ZA1->(DbSetOrder(1))
@@ -1371,50 +1707,68 @@ Static Function CH_NUCLEOALTERAR(cIdCh, cAssunto, cDtAbertura, cTipo, cCodClient
             Return {404, '{"erro":"Chamado nao encontrado."}'}
         EndIf
 
-        If ZA1->ZA1_STATUS == "4"
-            Return {400, '{"erro":"Chamado fechado nao pode ser alterado."}'}
+        Public lCnsaViaRest := .T.
+
+        oModel := FWLoadModel("apia.cnsa.cns001.CNS001")
+        oModel:SetOperation(MODEL_OPERATION_UPDATE)
+        oModel:Activate()
+        oModelZA1 := oModel:GetModel("ZA1MASTER")
+
+        If !Empty(cAssunto)
+            oModelZA1:SetValue("ZA1_ASSUNT", cAssunto)
+        EndIf
+        If !Empty(cDtAbertura)
+            oModelZA1:SetValue("ZA1_DATA", STOD(StrTran(cDtAbertura, "-", "")))
+        EndIf
+        If !Empty(cTipo)
+            oModelZA1:SetValue("ZA1_TIPO", cTipo)
         EndIf
 
-        cConsultorAnterior := AllTrim(ZA1->ZA1_CONSUL)
-
-        RecLock("ZA1", .F.)
-            If !Empty(cAssunto)
-                ZA1->ZA1_ASSUNT := cAssunto
-            EndIf
-            If !Empty(cDtAbertura)
-                ZA1->ZA1_DATA := STOD(StrTran(cDtAbertura, "-", ""))
-            EndIf
-            If !Empty(cTipo)
-                ZA1->ZA1_TIPO := cTipo
-            EndIf
-            If lLimparCliente
-                ZA1->ZA1_CLIENT := ""
-                ZA1->ZA1_LOJA   := ""
-            ElseIf !Empty(cCodCliente)
-                ZA1->ZA1_CLIENT := cCodCliente
-                ZA1->ZA1_LOJA   := If(Empty(cLojaCliente), "01", cLojaCliente)
-            EndIf
-            If !Empty(cEmailCliente)
-                ZA1->ZA1_EMAIL := cEmailCliente
-            EndIf
-            If lLimparConsultor
-                ZA1->ZA1_CONSUL := ""
-            ElseIf !Empty(cCodConsultor)
-                ZA1->ZA1_CONSUL := cCodConsultor
-            EndIf
-            If !Empty(cProjeto)
-                ZA1->ZA1_PROJ := cProjeto
-            EndIf
-            If !Empty(cTarefa)
-                ZA1->ZA1_TAREFA := cTarefa
-            EndIf
-            ZA1->ZA1_MOD := Date()
-        ZA1->(MsUnlock())
-
-        // Redesignacao: so dispara e-mail se o consultor mudou de verdade.
-        If !Empty(cCodConsultor) .And. cCodConsultor <> cConsultorAnterior
-            CH_NOTIFICARDESIGNA(cIdCh, cCodConsultor)
+        If lLimparCliente
+            oModelZA1:SetValue("ZA1_CLIENT", "")
+            oModelZA1:SetValue("ZA1_LOJA",   "")
+        ElseIf !Empty(cCodCliente)
+            oModelZA1:SetValue("ZA1_CLIENT", cCodCliente)
+            oModelZA1:SetValue("ZA1_LOJA",   If(Empty(cLojaCliente), "01", cLojaCliente))
+            U_CNSA_CLIENTE()
         EndIf
+
+        If !Empty(cEmailCliente)
+            oModelZA1:SetValue("ZA1_EMAIL", cEmailCliente)
+        EndIf
+
+        If lLimparConsultor
+            oModelZA1:SetValue("ZA1_CONSUL", "")
+        ElseIf !Empty(cCodConsultor)
+            oModelZA1:SetValue("ZA1_CONSUL", cCodConsultor)
+            U_CNSA_TECNICO()
+        EndIf
+
+        If !Empty(cProjeto)
+            oModelZA1:SetValue("ZA1_PROJ", cProjeto)
+        EndIf
+        If !Empty(cTarefa)
+            oModelZA1:SetValue("ZA1_TAREFA", cTarefa)
+        EndIf
+        oModelZA1:SetValue("ZA1_MOD", Date())
+
+        If oModel:VldData()
+            lOk := oModel:CommitData()
+        Else
+            lOk := .F.
+        EndIf
+
+        oModel:DeActivate(lOk)
+        lCnsaViaRest := .F.
+
+        If !lOk
+            oErroModel := oModel:GetErrorMessage()
+            Return {400, '{"erro":"' + CH_ESCAPARJSON(FwJsonSerialize(oErroModel)) + '"}'}
+        EndIf
+
+        // CH_POSGRAVACAO ja cuida do e-mail de redesignacao (quando o
+        // consultor muda de verdade) - nao chamar CH_NOTIFICARDESIGNA aqui
+        // de novo (evita duplicar o envio).
 
         oJson['sucesso']  := .T.
         oJson['idCh']     := cIdCh
@@ -1423,11 +1777,25 @@ Static Function CH_NUCLEOALTERAR(cIdCh, cAssunto, cDtAbertura, cTipo, cCodClient
         Return {200, oJson:ToJson()}
 
     Recover Using oErro
+        lCnsaViaRest := .F.
+        If oModel <> Nil
+            oModel:DeActivate()
+        EndIf
         Return {500, '{"erro":"' + CH_ESCAPARJSON(oErro:Description) + '"}'}
     End Sequence
 
 Return {500, '{"erro":"Erro desconhecido."}'}
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_APIALTERAR
+Endpoint REST POST /CNSACHAMADOSALTERAR: altera um chamado a partir dos
+parametros da query string, chamando CH_NUCLEOALTERAR.
+@return Logical - resposta HTTP com o resultado da alteracao
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 @Post(endpoint="/CNSACHAMADOSALTERAR")
 User Function CH_APIALTERAR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
@@ -1441,166 +1809,25 @@ User Function CH_APIALTERAR() As Logical
 
 Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
-// Class REST generica - so exigida pelo PUBLISH MODEL REST, NAO usada
-// pelo front real (ver aviso acima). Mantida por compatibilidade/padrao
-// CNSA003, caminho /rest/FwModel/chamado sem uso conhecido hoje.
-Class oRestChamado From FwRestModel
-
-Method GetData(lFieldDetail, lFieldVirtual, lFieldEmpty, lFirstLevel, lInternalID)
-Method SaveData(cPK, cData, cError)
-
-EndClass
-
-// GetData - injeta ZA1_NOME/ZA1_NOMTEC (gatilho nao executa em leitura REST), igual oRestAgenda
-Method GetData(lFieldDetail, lFieldVirtual, lFieldEmpty, lFirstLevel, lInternalID) Class oRestChamado
-Local cRet
-Local oErroExcpt := Nil
-Local cCodCli    := ""
-Local cLoja      := ""
-Local cCodTec    := ""
-Local cNomeCli   := ""
-Local cNomeTec   := ""
-Local jRegistro  := Nil
-Local aModels    := Nil
-Local aFields    := Nil
-Local nX
-Local nY
-    self:oModel:SetOperation(MODEL_OPERATION_VIEW)
-    self:oModel:Activate()
-    cCodCli := self:oModel:GetValue('ZA1MASTER', 'ZA1_CLIENT')
-    cLoja   := self:oModel:GetValue('ZA1MASTER', 'ZA1_LOJA')
-    cCodTec := self:oModel:GetValue('ZA1MASTER', 'ZA1_CONSUL')
-
-    cRet := self:oModel:GetJsonData(lFieldDetail,,lFieldVirtual,,lFieldEmpty,.T./*lPK*/,.T./*lPKEncoded*/,self:aFields,lFirstLevel,lInternalID)
-    self:oModel:DeActivate()
-
-    Begin Sequence
-        cNomeCli := Posicione("SA1", 1, xFilial("SA1") + cCodCli + cLoja, "A1_NOME")
-        cNomeTec := Posicione("AA1", 1, xFilial("AA1") + cCodTec, "AA1_NOMTEC")
-        jRegistro := JsonObject():New()
-        jRegistro:fromJson(cRet)
-        If jRegistro != Nil
-            aModels := jRegistro:GetJsonObject("models")
-
-            For nX := 1 To Len(aModels)
-            If aModels[nX]:GetJsonText("id") == "ZA1MASTER"
-                aFields := aModels[nX]:GetJsonObject("fields")
-                For nY := 1 To Len(aFields)
-                    If aFields[nY]:GetJsonText("id") == "ZA1_NOME"
-                        aFields[nY]['value'] := cNomeCli
-                    ElseIf aFields[nY]:GetJsonText("id") == "ZA1_NOMTEC"
-                        aFields[nY]['value'] := cNomeTec
-                    EndIf
-                Next nY
-                Exit
-            EndIf
-        Next nX
-
-            cRet := jRegistro:toJson()
-        EndIf
-    Recover Using oErroExcpt
-        ConOut("[oRestChamado:GetData] Falha ao injetar nome cliente/tecnico: " + oErroExcpt:Description)
-    End Sequence
-Return cRet
-
-// SaveData - Update delega pro generico (_Super), igual oRestAgenda. Insert
-// e feito na mao por causa da numeracao manual de ZA1_IDCH (GetSxeNum/
-// ConfirmSX8) - NAO CONFIRMADO contra o dicionario se e de fato nao-automatica.
-//
-// IMPACTO NO FRONT: corpo JSON passa a ser o formato generico do FwModel
-// (models/fields) - campo vazio limpa, campo omitido nao altera.
-Method SaveData(cPK, cData, cError) Class oRestChamado
-Local lRet        := .T.
-Local jBody       := Nil
-Local oModelZA1   := Nil
-Local oErroModel  := Nil
-Local oErroExcpt  := Nil
-Local cIdChNovo   := ""
-Local cCodConsul  := ""
-
-    // Alterar delega 100% pro generico (_Super), igual oRestAgenda real do
-    // CNSA003. ASSUNCAO HERDADA: motor generico dispara CNSA_CLIENTE/
-    // CNSA_TECNICO (SX7) tambem no Update - se falso em teste real, mover
-    // a mesma chamada explicita usada no Insert pra depois do _Super:SaveData.
-    If !Empty(cPK)
-        Return _Super:SaveData(cPK, cData, cError)
-    EndIf
-
-    Begin Sequence
-        jBody := JsonObject():New()
-        jBody:fromJson(cData)
-        If jBody == Nil
-            cError := "Corpo da requisicao invalido (JSON malformado)."
-            lRet   := .F.
-        Else
-            Public lCnsaViaRest := .T.
-
-            self:oModel:SetOperation(MODEL_OPERATION_INSERT)
-            self:oModel:Activate()
-            oModelZA1 := self:oModel:GetModel("ZA1MASTER")
-
-            cIdChNovo  := GetSxeNum("ZA1", "ZA1_IDCH")
-            cCodConsul := AllTrim(jBody:GetJsonText("ZA1_CONSUL"))
-            If Empty(cCodConsul)
-                cCodConsul := Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC")
-            EndIf
-
-            oModelZA1:SetValue("ZA1_FILIAL", xFilial("ZA1"))
-            oModelZA1:SetValue("ZA1_IDCH",   cIdChNovo)
-            oModelZA1:SetValue("ZA1_ASSUNT", AllTrim(jBody:GetJsonText("ZA1_ASSUNT")))
-            oModelZA1:SetValue("ZA1_DATA",   If(Empty(jBody:GetJsonText("ZA1_DATA")), Date(), STOD(StrTran(jBody:GetJsonText("ZA1_DATA"), "-", ""))))
-            oModelZA1:SetValue("ZA1_STATUS", "1")
-            oModelZA1:SetValue("ZA1_TIPO",   AllTrim(jBody:GetJsonText("ZA1_TIPO")))
-
-            // Ordem importa (mesmo padrao do U_CNS003Seq/CNSA003): ZA1_CLIENT/
-            // ZA1_LOJA/ZA1_CONSUL precisam estar no model ANTES de disparar os
-            // gatilhos CNSA_CLIENTE/CNSA_TECNICO, chamados aqui explicitamente
-            // em vez de confiar no motor generico. Redundante mas inofensivo.
-            oModelZA1:SetValue("ZA1_CLIENT", AllTrim(jBody:GetJsonText("ZA1_CLIENT")))
-            oModelZA1:SetValue("ZA1_LOJA",   If(Empty(jBody:GetJsonText("ZA1_LOJA")), "01", AllTrim(jBody:GetJsonText("ZA1_LOJA"))))
-            U_CNSA_CLIENTE()
-
-            oModelZA1:SetValue("ZA1_EMAIL",  AllTrim(jBody:GetJsonText("ZA1_EMAIL")))
-            oModelZA1:SetValue("ZA1_CONSUL", cCodConsul)
-            U_CNSA_TECNICO()
-
-            oModelZA1:SetValue("ZA1_PROJ",   AllTrim(jBody:GetJsonText("ZA1_PROJ")))
-            oModelZA1:SetValue("ZA1_TAREFA", AllTrim(jBody:GetJsonText("ZA1_TAREFA")))
-            oModelZA1:SetValue("ZA1_MOD",    Date())
-
-            If self:oModel:VldData()
-                lRet := self:oModel:CommitData()
-            Else
-                lRet := .F.
-            EndIf
-
-            If !lRet
-                oErroModel := self:oModel:GetErrorMessage()
-                cError := FwJsonSerialize(oErroModel)
-                RollBackSX8()
-            Else
-                ConfirmSX8()
-                CH_NOTIFICARDESIGNA(cIdChNovo, cCodConsul)
-            EndIf
-
-            self:oModel:DeActivate(lRet)
-            lCnsaViaRest := .F.
-        EndIf
-    Recover Using oErroExcpt
-        lRet   := .F.
-        cError := "Erro interno: " + oErroExcpt:Description
-        lCnsaViaRest := .F.
-        RollBackSX8()
-        ConOut("[oRestChamado:SaveData] " + cError)
-        If self:oModel <> Nil
-            self:oModel:DeActivate()
-        EndIf
-    End Sequence
-Return lRet
+// Class oRestChamados movida pra fora do Namespace (topo do arquivo) -
+// GETOBJECT(FWRESTMODEL.PRX) nao resolve classe declarada dentro de
+// Namespace ("Classe oRestChamados nao existe!"). Ver definicao no topo.
 
 
 // AGENDAR - orquestracao do REST (nao existe na tela classica: intervalo
 // de dias, lock, sobreposicao, retry). Valor agregado, mantido como esta.
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_PROXIMASEQ
+Calcula a proxima sequencia (Z6_SEQ) de agendamento de um tecnico numa
+data especifica.
+@param  cTecnico   Codigo do tecnico (AA1)
+@param  dData      Data do agendamento
+@return Sequencia formatada em 3 digitos
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_PROXIMASEQ(cTecnico, dData)
     Local cAlias := GetNextAlias()
     Local nSeq   := 1
@@ -1621,6 +1848,20 @@ Static Function CH_PROXIMASEQ(cTecnico, dData)
 
 Return PadL(AllTrim(Str(nSeq)), 3, "0")
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_TEMSOBREPOSICAO
+Verifica se ha conflito de horario para um tecnico numa data/faixa de
+horario (agendamentos SZ6 que se sobrepoem ao intervalo informado).
+@param  cTecnico   Codigo do tecnico (AA1)
+@param  dData      Data do agendamento
+@param  cHoraIni   Hora inicial (HH:MM)
+@param  cHoraFim   Hora final (HH:MM)
+@return aConflitos   Array de conflitos encontrados (vazio se nao houver sobreposicao)
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_TEMSOBREPOSICAO(cTecnico, dData, cHoraIni, cHoraFim)
     Local aConflitos := {}
     Local oConflito  := Nil
@@ -1650,6 +1891,36 @@ Return aConflitos
 
 // Grava um dia de agenda via Model (CNSA003) em vez de RecLock direto na SZ6.
 // LockByName/UnLockByName: assinatura pode variar por build do TOTVS.
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_GRAVARAGENDA
+Orquestra a criacao de agendamentos (SZ6) para um chamado num intervalo de
+dias, com lock por tecnico (LockByName), checagem de sobreposicao
+(CH_TEMSOBREPOSICAO) e retry (ate 3 tentativas) por dia via Model CNSA003.
+@param  cIdCh              Id do chamado (ZA1_IDCH)
+@param  cDataIni           Data inicial do intervalo (AAAA-MM-DD)
+@param  cDataFim           Data final do intervalo (AAAA-MM-DD, default = cDataIni)
+@param  cCodTecnico        Codigo do tecnico (AA1)
+@param  cHoraIni           Hora inicial (HH:MM)
+@param  cHoraFim           Hora final (HH:MM)
+@param  cCodCliente        Codigo do cliente (SA1)
+@param  cLojaCliente       Loja do cliente (default "01")
+@param  cDescricao         Descricao/servico do agendamento
+@param  cConfirmacao       Confirmacao do agendamento
+@param  cTurno             Turno do agendamento
+@param  cAgInterna         Agenda interna (SIM/NAO)
+@param  cAgCobravel        Agenda cobravel (SIM/NAO)
+@param  cTipoAgenda        Tipo de agenda
+@param  cProjeto           Codigo do projeto
+@param  cRevisao           Revisao do projeto
+@param  cTarefa            Codigo da tarefa
+@param  cTipoHora          Tipo de hora
+@param  cCodAgendador      Codigo de quem esta agendando (default: usuario da sessao)
+@return Array {nStatusHTTP, cCorpoJson}
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_GRAVARAGENDA(cIdCh, cDataIni, cDataFim, cCodTecnico, cHoraIni, cHoraFim, cCodCliente, ;
     cLojaCliente, cDescricao, cConfirmacao, cTurno, cAgInterna, cAgCobravel, cTipoAgenda, cProjeto, ;
     cRevisao, cTarefa, cTipoHora, cCodAgendador)
@@ -1678,28 +1949,14 @@ Static Function CH_GRAVARAGENDA(cIdCh, cDataIni, cDataFim, cCodTecnico, cHoraIni
 
     Begin Sequence
 
-        If Empty(cIdCh)
-            Return {400, '{"erro":"Informe o idCh do chamado."}'}
-        EndIf
-
-        If Empty(cDataIni)
-            Return {400, '{"erro":"Informe a data do agendamento."}'}
-        EndIf
-
+        // Campo obrigatorio (idCh/data/tecnico/horario/cliente) e "data final
+        // antes da inicial" nao validam mais aqui - front-end valida antes de
+        // chamar (sem Model do lado da ZA1 neste nucleo, SetErrorMessage nao
+        // se aplica). Ficam so protecoes tecnicas: "chamado nao encontrado"
+        // (so o backend sabe), "data invalida" (parse de STOD, evita
+        // downstream com data vazia) e o teto de 730 dias (protege o
+        // servidor de uma chamada que gere agenda pra um intervalo absurdo).
         Default cDataFim := cDataIni
-
-        If Empty(cCodTecnico)
-            Return {400, '{"erro":"Informe o tecnico."}'}
-        EndIf
-
-        If Empty(cHoraIni) .Or. Empty(cHoraFim)
-            Return {400, '{"erro":"Informe o horario de inicio e termino."}'}
-        EndIf
-
-        If Empty(cCodCliente)
-            Return {400, '{"erro":"Informe o cliente."}'}
-        EndIf
-
         Default cLojaCliente := "01"
 
         dbSelectArea("ZA1")
@@ -1715,10 +1972,6 @@ Static Function CH_GRAVARAGENDA(cIdCh, cDataIni, cDataFim, cCodTecnico, cHoraIni
 
         If Empty(dDataIni) .Or. Empty(dDataFim)
             Return {400, '{"erro":"Data invalida."}'}
-        EndIf
-
-        If dDataFim < dDataIni
-            Return {400, '{"erro":"A data final nao pode ser anterior a data inicial."}'}
         EndIf
 
         If (dDataFim - dDataIni) > 730
@@ -1849,6 +2102,16 @@ Static Function CH_GRAVARAGENDA(cIdCh, cDataIni, cDataFim, cCodTecnico, cHoraIni
 Return {500, '{"erro":"Erro desconhecido."}'}
 
 // Agendar - endpoint REST (mesmo path que CNS001Rest.tlpp)
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_APIAGENDAR
+Endpoint REST POST /CNSACHAMADOSAGENDAR: cria agendamento(s) para um
+chamado a partir dos parametros da query string, chamando CH_GRAVARAGENDA.
+@return Logical - resposta HTTP com o resultado do agendamento
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 @Post(endpoint="/CNSACHAMADOSAGENDAR")
 User Function CH_APIAGENDAR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
@@ -1865,6 +2128,17 @@ User Function CH_APIAGENDAR() As Logical
 Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
 // Ver Agenda - endpoint REST (mesmo path que CNS001Rest.tlpp)
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_AGENDAJSON
+Monta o JSON com os agendamentos (SZ6) de um chamado, ordenados por
+data/hora, com tecnico/cliente resolvidos por nome.
+@param  cIdCh   Id do chamado (ZA1_IDCH)
+@return Array {nStatusHTTP, cCorpoJson}
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_AGENDAJSON(cIdCh)
     Local cAlias   := ""
     Local oJson    := JsonObject():New()
@@ -1880,10 +2154,6 @@ Static Function CH_AGENDAJSON(cIdCh)
     Local nCham    := Val(cIdCh)
 
     Begin Sequence
-
-        If Empty(cIdCh)
-            Return {400, '{"erro":"Informe o idCh do chamado."}'}
-        EndIf
 
         dbSelectArea("ZA1")
         ZA1->(DbSetOrder(1))
@@ -1920,7 +2190,7 @@ Static Function CH_AGENDAJSON(cIdCh)
             oLinha['horaFim']    := AllTrim((cAlias)->Z6_HMFIM)
             oLinha['tecnico']    := AllTrim(Posicione("AA1", 1, xFilial("AA1") + AllTrim((cAlias)->Z6_TECNICO), "AA1_NOMTEC"))
             oLinha['cliente']    := AllTrim(Posicione("SA1", 1, xFilial("SA1") + cCodCli + cLoja, "A1_NOME"))
-            oLinha['descricao']  := AllTrim((cAlias)->Z6_SERVICO)
+            oLinha['descricao']  := CH_DECODESAFE(AllTrim((cAlias)->Z6_SERVICO))
             AAdd(aItens, oLinha)
 
             (cAlias)->(DbSkip())
@@ -1938,6 +2208,47 @@ Static Function CH_AGENDAJSON(cIdCh)
 
 Return {500, '{"erro":"Erro desconhecido."}'}
 
+// Consultor da sessao logada (AA1_CODTEC) - o filtro "Meus chamados" e
+// 100% front-end (regra do usuario/chefe), mas o front precisa saber quem
+// e o usuario pra comparar contra ZA1_CONSUL. Nao existia nenhum endpoint
+// que devolvesse isso.
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_APIMEUCONSULTOR
+Endpoint REST GET /CNSACHAMADOSMEU: devolve o codigo e nome do consultor
+(AA1) vinculado ao usuario da sessao logada.
+@return Logical - resposta HTTP 200 com codConsultor/nomeTecnico
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+@Get(endpoint="/CNSACHAMADOSMEU")
+User Function CH_APIMEUCONSULTOR() As Logical
+    Local oJson      := JsonObject():New()
+    Local cConsultor := Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC")
+    Local cNomeTec   := ""
+
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
+
+    If !Empty(cConsultor)
+        cNomeTec := AllTrim(Posicione("AA1", 1, xFilial("AA1") + cConsultor, "AA1_NOMTEC"))
+    EndIf
+
+    oJson['codConsultor'] := AllTrim(cConsultor)
+    oJson['nomeTecnico']  := cNomeTec
+
+Return oRest:setStatusResponse(200, oJson:ToJson())
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_APIVERAGENDA
+Endpoint REST GET /CNSACHAMADOSVERAGENDA: lista os agendamentos de um
+chamado (idCh via query), chamando CH_AGENDAJSON.
+@return Logical - resposta HTTP com o JSON de agendamentos
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 @Get(endpoint="/CNSACHAMADOSVERAGENDA")
 User Function CH_APIVERAGENDA() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
@@ -1951,14 +2262,34 @@ Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
 
 // ANOTACOES (ZA2) - historico, endpoints REST (mesmos paths). Substitui ZA1_ANOT.
+// Unificado com o Model ja usado pela tela classica (CNSA_INTERAGIR ->
+// FWLoadModel("CNSAZA2VIEW")) - evita reimplementar a inclusao via RecLock
+// direto (2a copia da mesma acao).
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_GRAVARNOTA
+Grava uma anotacao (ZA2) para um chamado, via Model CNSAZA2VIEW - mesmo
+caminho usado pela tela classica (CNSA_INTERAGIR).
+@param  cIdCh        Id do chamado (ZA1_IDCH)
+@param  cConsultor   Codigo do consultor autor da anotacao
+@param  cTexto       Texto da anotacao
+@return cSeq   Sequencia (3 digitos) da anotacao gravada
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_GRAVARNOTA(cIdCh, cConsultor, cTexto)
-    Local cAlias := GetNextAlias()
-    Local nSeq   := 1
-    // FIX: ZA2_IDCH e Character. RecLock direto precisa da STRING (nao do
-    // numero). E o filtro SQL abaixo TAMBEM precisa comparar Character com
-    // Character - usar numero aqui (%Exp:nChamN%) da ORA-01722 "invalid
-    // number" (confirmado em producao: Oracle tenta converter a coluna
-    // Character pra number pra comparar, e quebra). NAO usar Val() aqui.
+    Local cAlias      := GetNextAlias()
+    Local nSeq        := 1
+    Local oModel      := Nil
+    Local oModelZA2   := Nil
+    Local lOk         := .F.
+    Local oErroModel  := Nil
+    // FIX: ZA2_IDCH e Character. O filtro SQL abaixo precisa comparar
+    // Character com Character - usar numero aqui (%Exp:nChamN%) da
+    // ORA-01722 "invalid number" (confirmado em producao: Oracle tenta
+    // converter a coluna Character pra number pra comparar, e quebra).
+    // NAO usar Val() aqui.
 
     BeginSql Alias cAlias
         SELECT MAX(ZA2_IDGRID) MAXGRID
@@ -1972,18 +2303,44 @@ Static Function CH_GRAVARNOTA(cIdCh, cConsultor, cTexto)
     EndIf
     (cAlias)->(DbCloseArea())
 
-    RecLock("ZA2", .T.)
-        ZA2->ZA2_FILIAL := xFilial("ZA2")
-        ZA2->ZA2_IDCH   := cIdCh
-        ZA2->ZA2_IDGRID := StrZero(nSeq, 3)
-        ZA2->ZA2_CONSUL := cConsultor
-        ZA2->ZA2_DATA   := Date()
-        ZA2->ZA2_HORA   := Left(Time(), 5)
-        ZA2->ZA2_DESCRI := cTexto
-    ZA2->(MsUnlock())
+    oModel := FWLoadModel("CNSAZA2VIEW")
+    oModel:SetOperation(MODEL_OPERATION_INSERT)
+    oModel:Activate()
+    oModelZA2 := oModel:GetModel("ZA2MASTER")
+
+    oModelZA2:SetValue("ZA2_IDCH",   cIdCh)
+    oModelZA2:SetValue("ZA2_CONSUL", cConsultor)
+    oModelZA2:SetValue("ZA2_DATA",   Date())
+    oModelZA2:SetValue("ZA2_IDGRID", StrZero(nSeq, 3))
+    oModelZA2:SetValue("ZA2_HORA",   Left(Time(), 5))
+    oModelZA2:SetValue("ZA2_DESCRI", cTexto)
+
+    If oModel:VldData()
+        lOk := oModel:CommitData()
+    Else
+        lOk := .F.
+    EndIf
+
+    If !lOk
+        oErroModel := oModel:GetErrorMessage()
+        ConOut("CH_GRAVARNOTA: falha ao gravar via Model CNSAZA2VIEW: " + FwJsonSerialize(oErroModel))
+    EndIf
+
+    oModel:DeActivate(lOk)
 
 Return StrZero(nSeq, 3)
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_LISTARNOTAS
+Monta o JSON com as anotacoes (ZA2) de um chamado, ordenadas por
+sequencia, com consultor resolvido por nome.
+@param  cIdCh   Id do chamado (ZA1_IDCH)
+@return Array {nStatusHTTP, cCorpoJson}
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_LISTARNOTAS(cIdCh)
     Local oJson     := JsonObject():New()
     Local aItens    := {}
@@ -1994,10 +2351,6 @@ Static Function CH_LISTARNOTAS(cIdCh)
     Local oErro     := Nil
 
     Begin Sequence
-
-        If Empty(cIdCh)
-            Return {400, '{"erro":"Informe o idCh do chamado."}'}
-        EndIf
 
         dbSelectArea("ZA1")
         ZA1->(DbSetOrder(1))
@@ -2033,7 +2386,7 @@ Static Function CH_LISTARNOTAS(cIdCh)
             oLinha['consultor'] := cNomeCons
             oLinha['data']      := cDataIso
             oLinha['hora']      := AllTrim((cAlias)->ZA2_HORA)
-            oLinha['texto']     := AllTrim((cAlias)->ZA2_DESCRI)
+            oLinha['texto']     := CH_DECODESAFE(AllTrim((cAlias)->ZA2_DESCRI))
             AAdd(aItens, oLinha)
 
             (cAlias)->(DbSkip())
@@ -2051,6 +2404,16 @@ Static Function CH_LISTARNOTAS(cIdCh)
 
 Return {500, '{"erro":"Erro desconhecido."}'}
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_APILISTANOTAS
+Endpoint REST GET /CNSACHAMADOSANOTACOES: lista as anotacoes de um
+chamado (idCh via query), chamando CH_LISTARNOTAS.
+@return Logical - resposta HTTP com o JSON de anotacoes
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 @Get(endpoint="/CNSACHAMADOSANOTACOES")
 User Function CH_APILISTANOTAS() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
@@ -2062,6 +2425,18 @@ User Function CH_APILISTANOTAS() As Logical
 
 Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_INCLUIRNOTA
+Inclui uma anotacao para um chamado (usado pelo endpoint REST), validando
+tamanho maximo do campo e chamando CH_GRAVARNOTA com o consultor da sessao.
+@param  cIdCh    Id do chamado (ZA1_IDCH)
+@param  cTexto   Texto da anotacao
+@return Array {nStatusHTTP, cCorpoJson}
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_INCLUIRNOTA(cIdCh, cTexto)
     Local oJson      := JsonObject():New()
     Local oErro      := Nil
@@ -2072,14 +2447,6 @@ Static Function CH_INCLUIRNOTA(cIdCh, cTexto)
     cTexto := AllTrim(cTexto)
 
     Begin Sequence
-
-        If Empty(cIdCh)
-            Return {400, '{"erro":"Informe o idCh do chamado."}'}
-        EndIf
-
-        If Empty(cTexto)
-            Return {400, '{"erro":"Informe o texto da anotacao."}'}
-        EndIf
 
         dbSelectArea("ZA1")
         ZA1->(DbSetOrder(1))
@@ -2107,6 +2474,16 @@ Static Function CH_INCLUIRNOTA(cIdCh, cTexto)
 
 Return {500, '{"erro":"Erro desconhecido."}'}
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_APINOVANOTA
+Endpoint REST POST /CNSACHAMADOSANOTACOESINCLUIR: inclui uma anotacao
+para um chamado (idCh/texto via query), chamando CH_INCLUIRNOTA.
+@return Logical - resposta HTTP com o resultado da inclusao
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 @Post(endpoint="/CNSACHAMADOSANOTACOESINCLUIR")
 User Function CH_APINOVANOTA() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
@@ -2121,6 +2498,16 @@ Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
 // GERACHAM - importacao de chamado por e-mail (Graph). Nao e CRUD nativo
 // do Protheus - portado da versao mais completa/corrigida (CNS001Rest.tlpp).
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_TOKENGRAPH
+Obtem um access_token do Azure AD (Microsoft Graph) via OAuth2 client
+credentials, usando os parametros MV_CNSATEN/MV_CNSACLI/MV_CNSASEC.
+@return cToken   Access token do Graph, ou "" em falha/configuracao ausente
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_TOKENGRAPH()
     Local cTenant := AllTrim(GETMV("MV_CNSATEN"))
     Local cClient := AllTrim(GETMV("MV_CNSACLI"))
@@ -2156,6 +2543,17 @@ Static Function CH_TOKENGRAPH()
     FreeObj(oRest)
 Return cToken
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_CODIFICARURL
+Codifica um texto em percent-encoding (application/x-www-form-urlencoded),
+usado para montar o corpo da requisicao de token do Azure AD.
+@param  cTexto   Texto a codificar
+@return cRet   Texto codificado em URL
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_CODIFICARURL(cTexto)
     Local cRet := ""
     Local nI   := 0
@@ -2174,10 +2572,32 @@ Static Function CH_CODIFICARURL(cTexto)
     Next nI
 Return cRet
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_HEXDOISDIG
+Converte um valor numerico (0-255) para 2 digitos hexadecimais, usado
+pela codificacao percent-encoding (CH_CODIFICARURL).
+@param  nVal   Valor numerico a converter
+@return String hexadecimal de 2 digitos
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_HEXDOISDIG(nVal)
     Local cHex := "0123456789ABCDEF"
 Return SubStr(cHex, Int(nVal/16)+1, 1) + SubStr(cHex, (nVal % 16)+1, 1)
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_ESCAPARJSON
+Escapa caracteres especiais (barra invertida, aspas, quebras de linha,
+tabulacao) de um texto para uso seguro dentro de uma string JSON.
+@param  cTexto   Texto a escapar
+@return cRet   Texto com os caracteres especiais escapados
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_ESCAPARJSON(cTexto)
     Local cRet := cTexto
     cRet := StrTran(cRet, '\',  '\\')
@@ -2188,6 +2608,18 @@ Static Function CH_ESCAPARJSON(cTexto)
     cRet := StrTran(cRet, Chr(9),  '\t')
 Return cRet
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_LERJSONNUM
+Le um campo numerico de um JsonObject, com fallback seguro para 0 quando
+o campo esta ausente.
+@param  jDados   JsonObject de origem (ex: query string da requisicao)
+@param  cCampo   Nome do campo a ler
+@return Valor numerico do campo, ou 0 se ausente
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_LERJSONNUM(jDados, cCampo)
     Local xVal := jDados[cCampo]
     If xVal == Nil
@@ -2195,13 +2627,91 @@ Static Function CH_LERJSONNUM(jDados, cCampo)
     EndIf
 Return Val(cValToChar(xVal))
 
+// FIX (caracteres acentuados bugados no assunto/anotacao/etc): campo de
+// texto chega via querystring (nao corpo JSON - ver ChamadoServ.ts, todo
+// POST manda body null), mesmo caminho da lupa (CNS001_LUPA_JSONSTR em
+// cnslib.tlpp), que ja precisava de DecodeUTF8 pra bater certo. Centralizado
+// aqui pra garantir exatamente 1 decodificacao por campo (decode duplicado
+// em call sites separados foi o que bugou da ultima vez que isso foi tentado).
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_LERJSONTXT
+Le um campo texto de um JsonObject (query string) ja decodificado de
+UTF-8 (via CH_DECODESAFE), com fallback seguro para "" quando o campo
+esta ausente ou nao e texto.
+@param  jDados   JsonObject de origem (ex: query string da requisicao)
+@param  cCampo   Nome do campo a ler
+@return cTexto   Valor do campo, decodificado, ou "" se ausente/invalido
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_LERJSONTXT(jDados, cCampo)
     Local xVal := jDados[cCampo]
     If xVal == Nil .Or. ValType(xVal) != "C"
         Return ""
     EndIf
-Return xVal
+Return CH_DECODESAFE(xVal)
 
+// FIX (Error -100 "Fail to write response" derrubando CNSACHAMADOS inteiro,
+// e comportamento incerto do DecodeUTF8 nativo/2o parametro nesse ambiente):
+// reconstrucao manual byte a byte em vez de confiar no DecodeUTF8 nativo.
+// O bug classico "UTF-8 lido como CP1252": um char UTF-8 de 2 bytes (ex "ç" =
+// bytes 0xC3 0xA7) acaba armazenado/lido como 2 CHARS CP1252 separados ("Ã"=
+// byte 195 + "§"=byte 167). Aqui remonta o par de bytes na formula padrao
+// UTF-8 2-bytes (110xxxxx 10yyyyyy -> codepoint) e devolve o char original
+// via Chr() - cobre toda a faixa Latin-1 acentuada (byte lider 0xC2/0xC3,
+// que e exatamente U+0080-U+00FF, onde CP1252 e Unicode coincidem). Char que
+// nao bate o padrao passa direto, sem alterar - nunca lanca erro (so
+// Asc/Chr/SubStr), seguro mesmo com lixo/emoji misturado no texto.
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_DECODESAFE
+Reconstroi manualmente (byte a byte) sequencias UTF-8 de 2 bytes lidas
+como 2 chars CP1252 separados, devolvendo o caractere acentuado original.
+Nunca lanca erro - texto fora do padrao passa inalterado.
+@param  cTexto   Texto potencialmente com UTF-8 mal interpretado como CP1252
+@return cRet   Texto com os pares de bytes UTF-8 decodificados
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+Static Function CH_DECODESAFE(cTexto)
+    Local cRet  := ""
+    Local nLen  := Len(cTexto)
+    Local nI    := 1
+    Local nB1, nB2
+
+    While nI <= nLen
+        nB1 := Asc(SubStr(cTexto, nI, 1))
+        If (nB1 == 195 .Or. nB1 == 194) .And. nI < nLen
+            nB2 := Asc(SubStr(cTexto, nI + 1, 1))
+            If nB2 >= 128 .And. nB2 <= 191
+                cRet += Chr(((nB1 - 192) * 64) + (nB2 - 128))
+                nI   += 2
+                Loop
+            EndIf
+        EndIf
+        cRet += SubStr(cTexto, nI, 1)
+        nI++
+    EndDo
+
+Return cRet
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_ENVIAREMAIL
+Envia um e-mail HTML via Microsoft Graph (sendMail), obtendo o token de
+acesso via CH_TOKENGRAPH.
+@param  cPara       E-mail do destinatario
+@param  cAssunto    Assunto do e-mail
+@param  cCorpo      Corpo HTML do e-mail
+@param  cDe         Caixa remetente (mailbox do Graph)
+@return lOk   .T. se o envio teve sucesso, .F. caso contrario
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_ENVIAREMAIL(cPara, cAssunto, cCorpo, cDe)
     Local cToken  := CH_TOKENGRAPH()
     Local oRest   := Nil
@@ -2248,6 +2758,24 @@ Static Function CH_ENVIAREMAIL(cPara, cAssunto, cCorpo, cDe)
 
 Return lOk
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_HTMLDESIGNA
+Monta o corpo HTML do e-mail de designacao de tecnico para um chamado.
+@param  cNomeTec   Nome do tecnico designado
+@param  cIdCh      Id do chamado
+@param  cCliente   Nome do cliente
+@param  cAssunto   Assunto/servico do chamado
+@param  cDataAge   Data do agendamento (formatada)
+@param  cHmini     Hora inicial do agendamento
+@param  cHmfim     Hora final do agendamento
+@param  cNomeDe    Nome de quem designou
+@param  cTipo      Rotulo do tipo de notificacao (default "DESIGNACAO")
+@return cHtml   Corpo HTML do e-mail
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_HTMLDESIGNA(cNomeTec, cIdCh, cCliente, cAssunto, cDataAge, cHmini, cHmfim, cNomeDe, cTipo)
     Local cHtml := ""
     Local cTipoTexto := IIf(Empty(cTipo), "DESIGNACAO", cTipo)
@@ -2272,6 +2800,23 @@ Static Function CH_HTMLDESIGNA(cNomeTec, cIdCh, cCliente, cAssunto, cDataAge, cH
     cHtml += '</div>'
 Return cHtml
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_HTMLCANCELA
+Monta o corpo HTML do e-mail de cancelamento/exclusao de um agendamento
+ou chamado.
+@param  cCliente        Nome do cliente
+@param  cDataAge        Data do agendamento (formatada)
+@param  cHmini          Hora inicial do agendamento
+@param  cHmfim          Hora final do agendamento
+@param  cChamado        Id do chamado
+@param  cMotivo         Motivo do cancelamento
+@param  cExcluidoPor    Nome de quem cancelou/excluiu
+@return cHtml   Corpo HTML do e-mail
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_HTMLCANCELA(cCliente, cDataAge, cHmini, cHmfim, cChamado, cMotivo, cExcluidoPor)
     Local cHtml := ""
 
@@ -2295,6 +2840,18 @@ Static Function CH_HTMLCANCELA(cCliente, cDataAge, cHmini, cHmfim, cChamado, cMo
 Return cHtml
 
 // E-mail de designacao - unico (Incluir/Alterar/Assumir chamam esta quando resultam num tecnico definido/alterado)
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_NOTIFICARDESIGNA
+Notifica por e-mail o tecnico designado a um chamado, buscando os dados
+do chamado (ZA1) e do agendamento (SZ6) mais recente para montar o corpo.
+@param  cIdCh                 Id do chamado (ZA1_IDCH)
+@param  cCodConsultorNovo     Codigo do tecnico designado (AA1)
+@return .T./.F. indicando sucesso no envio (via CH_ENVIAREMAIL)
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_NOTIFICARDESIGNA(cIdCh, cCodConsultorNovo)
     Local cNomeTec   := ""
     Local cEmailTec  := ""
@@ -2368,6 +2925,17 @@ Static Function CH_NOTIFICARDESIGNA(cIdCh, cCodConsultorNovo)
 
 Return CH_ENVIAREMAIL(cEmailTec, "Chamado Designado " + cIdCh, cCorpo, "apia@apia.com.br")
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_EMAILJAPROCESSADO
+Verifica se um e-mail (pelo Id do Graph) ja gerou um chamado, usado como
+dedup contra reprocesso no import (CH_CRIARCHAMADOEMAIL).
+@param  cMailId   Id do e-mail (Graph)
+@return .T. se o e-mail ja gerou chamado (ZA1_MAILID), .F. caso contrario
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_EMAILJAPROCESSADO(cMailId)
     Local lExiste := .F.
     Local cAlias  := GetNextAlias()
@@ -2384,6 +2952,18 @@ Static Function CH_EMAILJAPROCESSADO(cMailId)
     (cAlias)->(DbCloseArea())
 Return lExiste
 
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_BUSCARCLIENTE
+Tenta identificar o cliente (SA1) a partir de um e-mail, na ordem:
+contato cadastrado (SU5/AC8), e-mail direto do cliente (SA1), e por fim
+dominio do e-mail (SA1 LIKE @dominio).
+@param  cEmail   E-mail do remetente
+@return Array {cCod, cLoja} do cliente encontrado (vazio se nao encontrado)
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_BUSCARCLIENTE(cEmail)
     Local cAlias   := GetNextAlias()
     Local cCod     := ""
@@ -2469,16 +3049,28 @@ Return {cCod, cLoja}
 // Le a caixa apia@apia.com.br (Graph) e cria um chamado (ZA1) por e-mail
 // novo. NAO marca como lido de proposito (deve continuar nao lido na
 // caixa) - dedup contra reprocesso via CH_EMAILJAPROCESSADO (ZA1_MAILID).
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_CRIARCHAMADOEMAIL
+Le as mensagens nao lidas da caixa apia@apia.com.br (Microsoft Graph) e
+cria um chamado (via CH_NUCLEOINCLUIR) para cada e-mail ainda nao
+processado, incluindo o corpo como primeira anotacao (CH_GRAVARNOTA).
+@return nCriados   Quantidade de chamados criados (-1 em falha de token/Graph)
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 Static Function CH_CRIARCHAMADOEMAIL()
     Local cToken := CH_TOKENGRAPH()
     Local oRest, oJson, oArr, oMsg, oFrom, oEnd
     Local cPath, cId, cAssunto, cNome, cEmail, cNewId
     Local nI, nCriados := 0
-    Local aCliente := {}
-    Local cCodCli  := ""
-    Local cLojaCli := ""
-    Local cCorpo   := ""
-    Local oBody    := Nil
+    Local aCliente   := {}
+    Local cCodCli    := ""
+    Local cLojaCli   := ""
+    Local cCorpo     := ""
+    Local oBody      := Nil
+    Local aResultado := {}
 
     If Empty(cToken)
         Return -1   
@@ -2526,7 +3118,7 @@ Static Function CH_CRIARCHAMADOEMAIL()
         EndIf
 
         If ValType(oMsg:GetJsonObject("subject")) == "C"
-            cAssunto := oMsg:GetJsonObject("subject")
+            cAssunto := CH_DECODESAFE(oMsg:GetJsonObject("subject"))
             cAssunto := AllTrim(cAssunto)
             While .T.
                 If Upper(Left(cAssunto, 4)) == "RES:" .Or. Upper(Left(cAssunto, 4)) == "ENC:" .Or. Upper(Left(cAssunto, 4)) == "FWD:"
@@ -2541,7 +3133,7 @@ Static Function CH_CRIARCHAMADOEMAIL()
 
         oBody := oMsg:GetJsonObject("body")
         If ValType(oBody) $ "O|J" .And. ValType(oBody:GetJsonObject("content")) == "C"
-            cCorpo := oBody:GetJsonObject("content")
+            cCorpo := CH_DECODESAFE(oBody:GetJsonObject("content"))
             cCorpo := AllTrim(cCorpo)
         EndIf
 
@@ -2571,23 +3163,20 @@ Static Function CH_CRIARCHAMADOEMAIL()
             Loop
         EndIf
 
-        cNewId := GetSXENum("ZA1", "ZA1_IDCH")
+        // Mesmo nucleo do Incluir manual (CH_NUCLEOINCLUIR), via Model MVC -
+        // lExigirCompletos=.F. porque chamado por e-mail nasce sem tipo/
+        // projeto/tarefa (alguem completa depois) e sem tecnico (regra:
+        // tecnico so e preenchido em Assumir/atribuicao por chefe).
+        aResultado := CH_NUCLEOINCLUIR(cAssunto, DTOS(Date()), "", ;
+            If(!Empty(cCodCli), cCodCli, ""), If(!Empty(cCodCli), cLojaCli, ""), ;
+            cEmail, "", "", "", cId, .F.)
 
-        RecLock("ZA1", .T.)
-            ZA1->ZA1_FILIAL := xFilial("ZA1")
-            ZA1->ZA1_IDCH   := cNewId
-            ZA1->ZA1_STATUS := "1"
-            ZA1->ZA1_CONSUL := ""
-            ZA1->ZA1_CLIENT := If(!Empty(cCodCli), cCodCli, "")
-            ZA1->ZA1_LOJA   := If(!Empty(cCodCli), cLojaCli, "")
-            ZA1->ZA1_EMAIL  := cEmail
-            ZA1->ZA1_ASSUNT := cAssunto
-            ZA1->ZA1_DATA   := Date()
-            ZA1->ZA1_MAILID := cId
-            ZA1->ZA1_MOD    := Date()
-        ZA1->(MsUnlock())
+        If aResultado[1] != 200
+            ConOut("CH_CRIARCHAMADOEMAIL: falha ao criar chamado do e-mail " + cId + ": " + aResultado[2])
+            Loop
+        EndIf
 
-        ConfirmSX8()
+        cNewId := aResultado[3]
 
         If !Empty(cCorpo)
             CH_GRAVARNOTA(cNewId, "", SubStr(cCorpo, 1, TamSX3("ZA2_DESCRI")[1]))
@@ -2600,12 +3189,52 @@ Static Function CH_CRIARCHAMADOEMAIL()
 Return nCriados
 
 
+// Job agendado (Schedule) - verifica caixa apia@apia.com.br e cria chamados
+// a partir de e-mail(s) novo(s), rodando standalone 24/7 sem ninguem logado.
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_JOBEMAIL
+Job agendado (Schedule): abre ambiente RPC proprio e chama
+CH_CRIARCHAMADOEMAIL para importar chamados a partir de e-mails novos na
+caixa apia@apia.com.br, rodando standalone sem usuario logado.
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 User Function CH_JOBEMAIL()
-    Local nCriados := CH_CRIARCHAMADOEMAIL()
+    Local cEmpAnt   := "01"
+    Local cFilAnt   := "01"
+    Local nCriados  := 0
+
+    RpcSetType(3)
+    If !RpcSetEnv(cEmpAnt, cFilAnt, , , "SIGAFAT", , {"ZA1"})
+        ConOut("CH_JOBEMAIL: falha no RpcSetEnv - job abortado.")
+        Return
+    EndIf
+
+    Begin Sequence
+        nCriados := CH_CRIARCHAMADOEMAIL()
+    Recover
+        ConOut("CH_JOBEMAIL: erro durante execucao - ver log acima.")
+    End Sequence
+
     ConOut("CH_JOBEMAIL: " + AllTrim(Str(nCriados)) + " chamado(s) criado(s) a partir de e-mail(s) novo(s) em apia@apia.com.br.")
+
+    RpcClearEnv()
+
 Return
 
 // Job agendado (Schedule) - fecha chamado status "1" sem modificacao (ZA1_MOD) ha 30+ dias.
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_JOBFECHA30
+Job agendado (Schedule): abre ambiente RPC proprio e fecha automaticamente
+(ZA1_STATUS="4") os chamados em status "1" (Aberto) sem modificacao
+(ZA1_MOD) ha 30 dias ou mais.
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
 User Function CH_JOBFECHA30()
     Local cEmpAnt      := "01"
     Local cFilAnt      := "01"
@@ -2655,6 +3284,172 @@ User Function CH_JOBFECHA30()
     RpcClearEnv()
 
 Return
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+//                                                                                              //
+//                       CLASS REST GENERICA - Incluir/Alterar/Visualizar                      //
+//                                                                                              //
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+// Henrique - 27/08/2026 - Class oRestChamados: revertido overrides de
+//   SetAlias()/Activate()/DeActivate() - tentativa de corrigir listagem
+//   "total":0 (Model master-detail nao resolve alias sozinho) sempre deu
+//   "Invalid call to a PRIVATE method" em algum metodo da classe (ACTIVATE
+//   ou GETDATA, mudando a cada tentativa, persistente mesmo apos restart
+//   do appserver) - esse engine OOP antigo (build 7.00.240223P) nao aceita
+//   overrides alem de GetData()/SaveData() nessa classe, apesar do exemplo
+//   oficial TDN (oRestBranch) sugerir que da. Volta ao padrao comprovado
+//   (igual oRestAgenda do chefe): so GetData+SaveData. Listagem via
+//   /rest/fwmodel/chamado continua "total":0 (limitacao aceita, ver
+//   discussao). Demais fixes desta sessao (porcaria removida,
+//   SetErrorMessage em CH_PREVALIDA, CH_LOGEMAILARQ removido, classe fora
+//   do Namespace, ABREAGENDA->CNSA003()) mantidos.
+////////////////////////////////////////////////////////////////////////////////
+
+// Class REST generica - so exigida pelo PUBLISH MODEL REST, NAO usada
+// pelo front real (ver aviso acima). Mantida por compatibilidade/padrao
+// CNSA003, caminho /rest/FwModel/chamado sem uso conhecido hoje. Fica FORA
+// do Namespace apia.cnsa porque GETOBJECT(FWRESTMODEL.PRX) so resolve
+// classe global ("Classe oRestChamados nao existe!" quando estava dentro).
+Class oRestChamados From FwRestModel
+
+Method GetData(lFieldDetail, lFieldVirtual, lFieldEmpty, lFirstLevel, lInternalID)
+Method SaveData(cPK, cData, cError)
+
+EndClass
+
+// GetData - injeta ZA1_NOME/ZA1_NOMTEC (gatilho nao executa em leitura REST), igual oRestAgenda
+//-------------------------------------------------------------------
+/*/{Protheus.doc} GetData
+Retorna o JSON de dados do Model (ZA1MASTER) para leitura REST, injetando
+manualmente ZA1_NOME/ZA1_NOMTEC (nome do cliente/tecnico) no resultado, ja
+que o gatilho SX7 nao dispara em leitura via REST.
+@param  lFieldDetail    Inclui detalhe dos campos no JSON
+@param  lFieldVirtual   Inclui campos virtuais no JSON
+@param  lFieldEmpty     Inclui campos vazios no JSON
+@param  lFirstLevel     Retorna somente o primeiro nivel do Model
+@param  lInternalID     Inclui ID interno no JSON
+@return cRet            JSON com os dados do Model, campos de nome ja injetados
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+Method GetData(lFieldDetail, lFieldVirtual, lFieldEmpty, lFirstLevel, lInternalID) Class oRestChamados
+Local cRet
+Local oErroExcpt := Nil
+Local cCodCli    := ""
+Local cLoja      := ""
+Local cCodTec    := ""
+Local cNomeCli   := ""
+Local cNomeTec   := ""
+Local jRegistro  := Nil
+Local aModels    := Nil
+Local aFields    := Nil
+Local nX
+Local nY
+    self:oModel:SetOperation(MODEL_OPERATION_VIEW)
+    self:oModel:Activate()
+    cCodCli := self:oModel:GetValue('ZA1MASTER', 'ZA1_CLIENT')
+    cLoja   := self:oModel:GetValue('ZA1MASTER', 'ZA1_LOJA')
+    cCodTec := self:oModel:GetValue('ZA1MASTER', 'ZA1_CONSUL')
+
+    cRet := self:oModel:GetJsonData(lFieldDetail,,lFieldVirtual,,lFieldEmpty,.T./*lPK*/,.T./*lPKEncoded*/,self:aFields,lFirstLevel,lInternalID)
+    self:oModel:DeActivate()
+
+    Begin Sequence
+        cNomeCli := Posicione("SA1", 1, xFilial("SA1") + cCodCli + cLoja, "A1_NOME")
+        cNomeTec := Posicione("AA1", 1, xFilial("AA1") + cCodTec, "AA1_NOMTEC")
+        jRegistro := JsonObject():New()
+        jRegistro:fromJson(cRet)
+        If jRegistro != Nil
+            aModels := jRegistro:GetJsonObject("models")
+
+            For nX := 1 To Len(aModels)
+            If aModels[nX]:GetJsonText("id") == "ZA1MASTER"
+                aFields := aModels[nX]:GetJsonObject("fields")
+                For nY := 1 To Len(aFields)
+                    If aFields[nY]:GetJsonText("id") == "ZA1_NOME"
+                        aFields[nY]['value'] := cNomeCli
+                    ElseIf aFields[nY]:GetJsonText("id") == "ZA1_NOMTEC"
+                        aFields[nY]['value'] := cNomeTec
+                    EndIf
+                Next nY
+                Exit
+            EndIf
+        Next nX
+
+            cRet := jRegistro:toJson()
+        EndIf
+    Recover Using oErroExcpt
+        ConOut("[oRestChamados:GetData] Falha ao injetar nome cliente/tecnico: " + oErroExcpt:Description)
+    End Sequence
+Return cRet
+
+// SaveData - Update delega pro generico (_Super), igual oRestAgenda. Insert
+// e feito na mao por causa da numeracao manual de ZA1_IDCH (GetSxeNum/
+// ConfirmSX8) - NAO CONFIRMADO contra o dicionario se e de fato nao-automatica.
+//
+// IMPACTO NO FRONT: corpo JSON passa a ser o formato generico do FwModel
+// (models/fields) - campo vazio limpa, campo omitido nao altera.
+//-------------------------------------------------------------------
+/*/{Protheus.doc} SaveData
+Grava dados do Model via REST generico. Alteracao (cPK preenchido) delega
+100% para o metodo herdado (_Super). Inclusao (cPK vazio) e feita chamando
+o nucleo unico CH_NUCLEOINCLUIR, evitando reimplementar a gravacao aqui.
+@param  cPK      Chave primaria do registro (vazia = inclusao)
+@param  cData    Corpo JSON da requisicao com os dados a gravar
+@param  cError   Mensagem de erro (preenchida por referencia em caso de falha)
+@return lRet     .T. se gravou com sucesso, .F. caso contrario
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+Method SaveData(cPK, cData, cError) Class oRestChamados
+Local lRet        := .T.
+Local jBody       := Nil
+Local oErroExcpt  := Nil
+Local aResultado  := {}
+
+    // Alterar delega 100% pro generico (_Super), igual oRestAgenda real do
+    // CNSA003.
+    If !Empty(cPK)
+        Return _Super:SaveData(cPK, cData, cError)
+    EndIf
+
+    Begin Sequence
+        jBody := JsonObject():New()
+        jBody:fromJson(cData)
+        If jBody == Nil
+            cError := "Corpo da requisicao invalido (JSON malformado)."
+            lRet   := .F.
+        Else
+            // Nucleo unico de Incluir (CH_NUCLEOINCLUIR) - mesmo usado pelo
+            // endpoint /CNSACHAMADOSINCLUIR. Evita reimplementar a inclusao
+            // aqui de novo (era a 3a copia da mesma acao neste arquivo).
+            aResultado := CH_NUCLEOINCLUIR(;
+                AllTrim(jBody:GetJsonText("ZA1_ASSUNT")), ;
+                jBody:GetJsonText("ZA1_DATA"), ;
+                AllTrim(jBody:GetJsonText("ZA1_TIPO")), ;
+                AllTrim(jBody:GetJsonText("ZA1_CLIENT")), ;
+                AllTrim(jBody:GetJsonText("ZA1_LOJA")), ;
+                AllTrim(jBody:GetJsonText("ZA1_EMAIL")), ;
+                AllTrim(jBody:GetJsonText("ZA1_CONSUL")), ;
+                AllTrim(jBody:GetJsonText("ZA1_PROJ")), ;
+                AllTrim(jBody:GetJsonText("ZA1_TAREFA")))
+
+            lRet := (aResultado[1] == 200)
+            If !lRet
+                cError := aResultado[2]
+            EndIf
+        EndIf
+    Recover Using oErroExcpt
+        lRet   := .F.
+        cError := "Erro interno: " + oErroExcpt:Description
+        ConOut("[oRestChamados:SaveData] " + cError)
+    End Sequence
+Return lRet
 
 
 // DECISOES DE NOME/CONSOLIDACAO
