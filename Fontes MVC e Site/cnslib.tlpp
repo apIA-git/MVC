@@ -1,0 +1,499 @@
+#include "PROTHEUS.CH"
+#include "TOPCONN.CH"
+#include "TOTVS.CH"
+#include "tlpp-core.th"
+#INCLUDE 'tlpp-rest.th'
+
+////////////////////////////////////////////////////////////////////////////////
+// HISTORICO DE ALTERACOES
+// Henrique - 01/09/2026 09:00 - CNS001_TECLUPA: join com SYS_USR
+//   (AA1_CODUSR = USR_ID) pra trazer AA1_RSPMNT e USR_CODIGO junto na lupa
+//   de tecnico (campos rspmnt/usrCodigo no JSON).
+////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////
+// cnslib.tlpp
+// Henrique - 26/08/2026 - CNS001.TLPP (fonte correta/ativa do pouichamados)
+//   nao tinha as lupas de Tecnico/Cliente/Projeto/Tarefa - a tela dependia do
+//   endpoint /CNS001COMPONENTES de outro fonte (CNS001Rest.tlpp, MVC\Codigos
+//   ANTIGOS apia intraweb henrique - ja encerrado/fora de uso). Extraido
+//   todas as 8 lupas (tecnico/cliente/projeto/tarefa + modulo/motivo/
+//   servico/proposta) + utilitarios pra este fonte proprio. Mesma URL,
+//   mesmo contrato JSON, mesma logica interna (Static Function
+//   CNS001_XXXLUPA) - copia 1:1 do original, so o arquivo mudou.
+////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////
+// Endpoint de apoio pras "lupas" (Consulta Padrao) do portal PO-UI - nao
+// existe F3 nativo em Angular, entao cada campo (Tecnico, Cliente, Projeto,
+// Tarefa) abre um modal que chama este REST e devolve o registro escolhido.
+//
+// Um endpoint so, despachando por "tipo" - mesmo padrao ja usado em
+// CNS001.TLPP (idCh/texto/status). NAO usa multiplas rotas pro mesmo
+// recurso - isso ja deu erro real de compilacao (C2051/C2006) em outro
+// arquivo deste projeto (WSRESTFUL classico), entao evitamos repetir o
+// mesmo risco aqui.
+//
+// FIX (500 com filtro vazio / lista sem resultado): o JSON de resposta NAO
+// e montado com JsonObject['items'] := aItens (array de JsonObject
+// aninhado dentro de outro JsonObject) - montamos a string do array "items"
+// na mao, chamando oLinha:ToJson() item a item e concatenando. Isso elimina
+// qualquer dependencia do comportamento do ToJson() com array vazio (0
+// resultados) ou aninhado, que era suspeito de estourar erro nao-capturavel
+// pelo Begin/Recover Sequence. Resposta sempre inclui "resultado" (true =
+// achou 1+ registro, false = filtro nao encontrou nada - NAO e erro, e
+// resposta 200 normal) pro front distinguir "lista vazia" de "erro real".
+////////////////////////////////////////////////////////////////////////////////
+
+@Get(endpoint="/CNSLIBCOMPONENTES")
+User Function CNS001_COMPONENTES_LISTAR() As Logical
+    Local jQuery        := oRest:getQueryRequest() As Json
+    Local cTipoParam    := ""
+    Local cFiltroParam  := ""
+    Local cProjetoParam := ""
+    Local cClienteParam := ""
+    Local cLojaParam    := ""
+    Local aItens        := {}
+    Local cItensJson    := ""
+    Local cResposta     := ""
+    Local nI            := 0
+    Local oErro         := Nil
+
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
+
+    Begin Sequence
+
+        // Busca por nome acentuado (ex "Joao") - DecodeUTF8 no filtro digitado
+        // antes de montar o LIKE - mesmo tratamento ANSI/UTF-8 do restante do app.
+        cTipoParam    := Lower(AllTrim(CNS001_LUPA_JSONSTR(jQuery,"tipo")))
+        cFiltroParam  := CNS001_LUPA_DECODESAFE(AllTrim(CNS001_LUPA_JSONSTR(jQuery,"filtro")))
+        cProjetoParam := AllTrim(CNS001_LUPA_JSONSTR(jQuery,"projeto"))
+        cClienteParam := AllTrim(CNS001_LUPA_JSONSTR(jQuery,"cliente"))
+        cLojaParam    := AllTrim(CNS001_LUPA_JSONSTR(jQuery,"lojaCliente"))
+
+        Do Case
+            Case cTipoParam == "tecnico"
+                aItens := CNS001_TECLUPA(cFiltroParam)
+            Case cTipoParam == "cliente"
+                aItens := CNS001_CLILUPA(cFiltroParam)
+            Case cTipoParam == "projeto"
+                If Empty(cClienteParam)
+                    Return oRest:setStatusResponse(400, '{"resultado":false,"erro":"Informe o cliente (?cliente=000001) antes de buscar o projeto."}')
+                EndIf
+                aItens := CNS001_PROJLUPA(cFiltroParam, cClienteParam, If(Empty(cLojaParam), "01", cLojaParam))
+            Case cTipoParam == "tarefa"
+                If Empty(cProjetoParam)
+                    Return oRest:setStatusResponse(400, '{"resultado":false,"erro":"Informe o projeto (?projeto=000001) antes de buscar a tarefa."}')
+                EndIf
+                aItens := CNS001_TARLUPA(cFiltroParam, cProjetoParam)
+            Case cTipoParam == "modulo"
+                aItens := CNS001_MODULUPA(cFiltroParam)
+            Case cTipoParam == "motivo"
+                aItens := CNS001_MOTIVLUPA(cFiltroParam)
+            Case cTipoParam == "servico"
+                aItens := CNS001_SERVLUPA(cFiltroParam)
+            Case cTipoParam == "proposta"
+                If Empty(cClienteParam)
+                    Return oRest:setStatusResponse(400, '{"resultado":false,"erro":"Informe o cliente (?cliente=000001) antes de buscar a proposta."}')
+                EndIf
+                aItens := CNS001_PROPLUPA(cFiltroParam, cClienteParam, If(Empty(cLojaParam), "01", cLojaParam))
+            OtherWise
+                Return oRest:setStatusResponse(400, '{"resultado":false,"erro":"Informe um tipo valido (?tipo=tecnico, cliente, projeto, tarefa, modulo, motivo, servico ou proposta)."}')
+        EndCase
+
+        // Monta o array "items" na mao (nao aninha JsonObject dentro de
+        // JsonObject) - funciona igual com 0, 1 ou N linhas.
+        cItensJson := "["
+        For nI := 1 To Len(aItens)
+            If nI > 1
+                cItensJson += ","
+            EndIf
+            cItensJson += aItens[nI]:ToJson()
+        Next nI
+        cItensJson += "]"
+
+        cResposta := '{"resultado":' + If(Len(aItens) > 0, "true", "false") + ',"items":' + cItensJson + '}'
+
+        Return oRest:setStatusResponse(200, cResposta)
+
+    Recover Using oErro
+        If oErro != Nil
+            Return oRest:setStatusResponse(500, '{"resultado":false,"erro":"' + CNS001_LUPA_JSONESC(oErro:Description) + '"}')
+        EndIf
+    End Sequence
+
+Return oRest:setStatusResponse(500, '{"resultado":false,"erro":"Erro desconhecido."}')
+
+////////////////////////////////////////////////////////////////////////////////
+//                                                                            //
+//                 LUPAS COMPARTILHADAS - tecnico/cliente/projeto/tarefa     //
+//                                                                            //
+////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////
+// Erro na query propaga sozinho pro Recover do @Get (que monta o 500 com
+// a descricao real) - nao precisa de Begin/Recover proprio aqui.
+////////////////////////////////////////////////////////////////////////////////
+Static Function CNS001_TECLUPA(cFiltro)
+    Local aRet    := {}
+    Local oLinha  := Nil
+    Local cAlias  := GetNextAlias()
+    // Oracle e case-sensitive em LIKE por padrao - UPPER() nos dois lados
+    // (coluna e valor) resolve "joao" batendo com "JOAO SILVA" cadastrado
+    // em maiusculo.
+    // FIX (ORA-00936 com filtro vazio): passar o valor JA com "%" embutido
+    // via %Exp:cLike% saia em branco na query gerada (SQL virava "LIKE OR
+    // LIKE", sem valor) - o "%" DENTRO do valor colide com o delimitador de
+    // macro do BeginSql (%Exp:%, %Table:%...). Fix: o valor que vai pro
+    // %Exp:% NUNCA contem "%" - o wildcard e montado no proprio SQL via
+    // concatenacao ('%' || valor).
+    Local cFiltroUp  := Upper(cFiltro)
+    Local cFiltroUp2 := cFiltroUp
+
+    BeginSql Alias cAlias
+        SELECT AA1_CODTEC,
+            AA1_NOMTEC,
+            AA1_RSPMNT,
+            USR_CODIGO
+        FROM %Table:AA1% AA1
+        LEFT JOIN SYS_USR USR
+            ON AA1_CODUSR = USR_ID
+            AND USR.%NotDel%
+        WHERE AA1_FILIAL = %xFilial:AA1%
+        AND AA1.%NotDel%
+        AND (UPPER(AA1_CODTEC) LIKE '%' || %Exp:cFiltroUp% || '%'
+        OR UPPER(AA1_NOMTEC) LIKE '%' || %Exp:cFiltroUp2% || '%')
+        ORDER BY AA1_NOMTEC
+    EndSql
+
+    While !(cAlias)->(Eof())
+        oLinha := JsonObject():New()
+        oLinha['codigo']     := CNS001_LUPA_COMPSTR((cAlias)->AA1_CODTEC)
+        oLinha['complemento'] := ""
+        oLinha['descricao']  := CNS001_LUPA_COMPSTR((cAlias)->AA1_NOMTEC)
+        oLinha['rspmnt']     := CNS001_LUPA_COMPSTR((cAlias)->AA1_RSPMNT)
+        oLinha['usrCodigo']  := CNS001_LUPA_COMPSTR((cAlias)->USR_CODIGO)
+
+        AAdd(aRet, oLinha)
+        (cAlias)->(DbSkip())
+    EndDo
+    (cAlias)->(DbCloseArea())
+
+Return aRet
+
+////////////////////////////////////////////////////////////////////////////////
+Static Function CNS001_CLILUPA(cFiltro)
+    Local aRet    := {}
+    Local oLinha  := Nil
+    Local cAlias  := GetNextAlias()
+    // Idem CNS001_TECLUPA - UPPER() case-insensitive, wildcard montado no SQL
+    // via concatenacao (ver FIX ORA-00936 no comentario de CNS001_TECLUPA).
+    Local cFiltroUp  := Upper(cFiltro)
+    Local cFiltroUp2 := cFiltroUp
+
+    BeginSql Alias cAlias
+        SELECT A1_COD, A1_LOJA, A1_NOME
+        FROM %Table:SA1% SA1
+        WHERE A1_FILIAL = %xFilial:SA1%
+          AND %NotDel%
+          AND (UPPER(A1_COD) LIKE '%' || %Exp:cFiltroUp% || '%' OR UPPER(A1_NOME) LIKE '%' || %Exp:cFiltroUp2% || '%')
+        ORDER BY A1_NOME
+    EndSql
+
+    While !(cAlias)->(Eof())
+        oLinha := JsonObject():New()
+        oLinha['codigo']      := CNS001_LUPA_COMPSTR((cAlias)->A1_COD)
+        oLinha['complemento'] := CNS001_LUPA_COMPSTR((cAlias)->A1_LOJA)
+        oLinha['descricao']   := CNS001_LUPA_COMPSTR((cAlias)->A1_NOME)
+        AAdd(aRet, oLinha)
+        (cAlias)->(DbSkip())
+    EndDo
+    (cAlias)->(DbCloseArea())
+
+Return aRet
+
+////////////////////////////////////////////////////////////////////////////////
+// Lupa de Projeto (AF8) - campos confirmados por Henrique (print do
+// dicionario SX3): AF8_PROJET (codigo), AF8_DESCRI (descricao). Devolve
+// tambem AF8_REVISA (versao/revisao do projeto) no campo "complemento" - o
+// front nao precisa exibir isso, mas o CNS001_TARLUPA abaixo usa a mesma
+// logica de revisao mais recente, entao deixamos disponivel caso o front
+// queira mostrar no futuro.
+//
+// FIX (filtro por empresa/status - confirmado por Henrique): so mostra
+// projetos do cliente selecionado (AF8_CLIENT + AF8_LOJA) e SO os ativos
+// (AF8_FASE = "03"). cCliente/cLoja SEMPRE preenchidos aqui (@Get ja
+// bloqueia tipo=projeto sem cliente antes de chegar nesta funcao).
+////////////////////////////////////////////////////////////////////////////////
+Static Function CNS001_PROJLUPA(cFiltro, cCliente, cLoja)
+    Local aRet    := {}
+    Local oLinha  := Nil
+    Local cAlias  := GetNextAlias()
+    // Idem CNS001_TECLUPA - UPPER() case-insensitive, wildcard montado no SQL
+    // via concatenacao (ver FIX ORA-00936 no comentario de CNS001_TECLUPA).
+    Local cFiltroUp  := Upper(cFiltro)
+    Local cFiltroUp2 := cFiltroUp
+
+    BeginSql Alias cAlias
+        SELECT AF8_PROJET, AF8_DESCRI, AF8_REVISA
+        FROM %Table:AF8% AF8
+        WHERE AF8_FILIAL = %xFilial:AF8%
+          AND %NotDel%
+          AND AF8_CLIENT = %Exp:cCliente%
+          AND AF8_LOJA   = %Exp:cLoja%
+          AND AF8_FASE   = '03'
+          AND (UPPER(AF8_PROJET) LIKE '%' || %Exp:cFiltroUp% || '%' OR UPPER(AF8_DESCRI) LIKE '%' || %Exp:cFiltroUp2% || '%')
+        ORDER BY AF8_DESCRI
+    EndSql
+
+    While !(cAlias)->(Eof())
+        oLinha := JsonObject():New()
+        oLinha['codigo']      := CNS001_LUPA_COMPSTR((cAlias)->AF8_PROJET)
+        oLinha['complemento'] := CNS001_LUPA_COMPSTR((cAlias)->AF8_REVISA)
+        oLinha['descricao']   := CNS001_LUPA_COMPSTR((cAlias)->AF8_DESCRI)
+        AAdd(aRet, oLinha)
+        (cAlias)->(DbSkip())
+    EndDo
+    (cAlias)->(DbCloseArea())
+
+Return aRet
+
+////////////////////////////////////////////////////////////////////////////////
+// Lupa de Tarefa (AF9) - SEMPRE filtrada por projeto (AF9_PROJET),
+// confirmado por Henrique: a tarefa e sempre filha de um projeto especifico.
+// campos: AF9_TAREFA (codigo), AF9_DESCRI (descricao).
+//
+// SIMPLIFICACAO ASSUMIDA (Henrique, confere): a AF9 tambem tem AF9_REVISA
+// (o projeto pode ter mais de uma revisao/versao, cada uma com seu proprio
+// conjunto de tarefas) - aqui NAO filtramos por revisao, trazemos todas as
+// tarefas do projeto independente da versao.
+////////////////////////////////////////////////////////////////////////////////
+Static Function CNS001_TARLUPA(cFiltro, cProjeto)
+    Local aRet    := {}
+    Local oLinha  := Nil
+    Local cAlias  := GetNextAlias()
+    // Idem CNS001_TECLUPA - UPPER() case-insensitive, wildcard montado no SQL
+    // via concatenacao (ver FIX ORA-00936 no comentario de CNS001_TECLUPA).
+    Local cFiltroUp  := Upper(cFiltro)
+    Local cFiltroUp2 := cFiltroUp
+
+    BeginSql Alias cAlias
+        SELECT AF9_TAREFA, AF9_DESCRI
+        FROM %Table:AF9% AF9
+        WHERE AF9_FILIAL = %xFilial:AF9%
+          AND %NotDel%
+          AND AF9_PROJET = %Exp:cProjeto%
+          AND (UPPER(AF9_TAREFA) LIKE '%' || %Exp:cFiltroUp% || '%' OR UPPER(AF9_DESCRI) LIKE '%' || %Exp:cFiltroUp2% || '%')
+        ORDER BY AF9_TAREFA
+    EndSql
+
+    While !(cAlias)->(Eof())
+        oLinha := JsonObject():New()
+        oLinha['codigo']      := CNS001_LUPA_COMPSTR((cAlias)->AF9_TAREFA)
+        oLinha['complemento'] := ""
+        oLinha['descricao']   := CNS001_LUPA_COMPSTR((cAlias)->AF9_DESCRI)
+        AAdd(aRet, oLinha)
+        (cAlias)->(DbSkip())
+    EndDo
+    (cAlias)->(DbCloseArea())
+
+Return aRet
+
+////////////////////////////////////////////////////////////////////////////////
+//                                                                            //
+//               LUPAS EXCLUSIVAS DO POUIOS (modulo/motivo/servico/proposta) //
+//                                                                            //
+////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////
+// Lupa de Modulo (SX5 generica, tipo "Z2") - usada no campo Z1_MODULO da OS
+// (pouios). Confirmado via "Visualizar Campo - Z1_MODULO" no dicionario:
+// Cons. Padrao "Z2 - Modulos Para Os's".
+////////////////////////////////////////////////////////////////////////////////
+Static Function CNS001_MODULUPA(cFiltro)
+Return CNS001_GENERICALUPA(cFiltro, "Z2")
+
+////////////////////////////////////////////////////////////////////////////////
+// Lupa de Motivo (SX5 generica, tipo "Z1") - usada no campo Z1_MOTIV da OS
+// (pouios). Confirmado via "Visualizar Campo - Z1_MOTIV": Cons. Padrao
+// "Z1 - Motivos de Os's".
+////////////////////////////////////////////////////////////////////////////////
+Static Function CNS001_MOTIVLUPA(cFiltro)
+Return CNS001_GENERICALUPA(cFiltro, "Z1")
+
+////////////////////////////////////////////////////////////////////////////////
+// Consulta comum as tabelas genericas (SX5) - Modulo e Motivo da OS
+// compartilham o mesmo formato (X5_CHAVE/X5_DESCRI), so muda X5_TABELA.
+////////////////////////////////////////////////////////////////////////////////
+Static Function CNS001_GENERICALUPA(cFiltro, cTabelaX5)
+    Local aRet    := {}
+    Local oLinha  := Nil
+    Local cAlias  := GetNextAlias()
+    Local cFiltroUp  := Upper(cFiltro)
+    Local cFiltroUp2 := cFiltroUp
+
+    BeginSql Alias cAlias
+        SELECT X5_CHAVE, X5_DESCRI
+        FROM %Table:SX5% SX5
+        WHERE X5_FILIAL = %xFilial:SX5%
+          AND %NotDel%
+          AND X5_TABELA = %Exp:cTabelaX5%
+          AND (UPPER(X5_CHAVE) LIKE '%' || %Exp:cFiltroUp% || '%' OR UPPER(X5_DESCRI) LIKE '%' || %Exp:cFiltroUp2% || '%')
+        ORDER BY X5_DESCRI
+    EndSql
+
+    While !(cAlias)->(Eof())
+        oLinha := JsonObject():New()
+        oLinha['codigo']      := CNS001_LUPA_COMPSTR((cAlias)->X5_CHAVE)
+        oLinha['complemento'] := ""
+        oLinha['descricao']   := CNS001_LUPA_COMPSTR((cAlias)->X5_DESCRI)
+        AAdd(aRet, oLinha)
+        (cAlias)->(DbSkip())
+    EndDo
+    (cAlias)->(DbCloseArea())
+
+Return aRet
+
+////////////////////////////////////////////////////////////////////////////////
+// Lupa de Servico (SB1 - Produto) - usada nos campos Z1_TIPO/Z1_NMTIPO
+// ("Cod Servico") da OS (pouios). Confirmado via "Visualizar Campo -
+// Z1_TIPO": Cons. Padrao "SB1 - Produto".
+////////////////////////////////////////////////////////////////////////////////
+Static Function CNS001_SERVLUPA(cFiltro)
+    Local aRet    := {}
+    Local oLinha  := Nil
+    Local cAlias  := GetNextAlias()
+    Local cFiltroUp  := Upper(cFiltro)
+    Local cFiltroUp2 := cFiltroUp
+
+    BeginSql Alias cAlias
+        SELECT B1_COD, B1_DESC
+        FROM %Table:SB1% SB1
+        WHERE B1_FILIAL = %xFilial:SB1%
+          AND %NotDel%
+          AND (UPPER(B1_COD) LIKE '%' || %Exp:cFiltroUp% || '%' OR UPPER(B1_DESC) LIKE '%' || %Exp:cFiltroUp2% || '%')
+        ORDER BY B1_DESC
+    EndSql
+
+    While !(cAlias)->(Eof())
+        oLinha := JsonObject():New()
+        oLinha['codigo']      := CNS001_LUPA_COMPSTR((cAlias)->B1_COD)
+        oLinha['complemento'] := ""
+        oLinha['descricao']   := CNS001_LUPA_COMPSTR((cAlias)->B1_DESC)
+        AAdd(aRet, oLinha)
+        (cAlias)->(DbSkip())
+    EndDo
+    (cAlias)->(DbCloseArea())
+
+Return aRet
+
+////////////////////////////////////////////////////////////////////////////////
+// Lupa de Proposta (SZ3 - Cabecalho de Propostas) - usada no campo
+// Z1_NUMPRO da OS (pouios). Confirmado via "Visualizar Campo - Z1_NUMPRO":
+// Cons. Padrao "SZ3 - Proposta", campos Z3_NUM/Z3_CODCLI/Z3_LOJA/Z3_DESC.
+// Cascata por cliente, mesma logica de CNS001_PROJLUPA (AF8) - so mostra
+// propostas do cliente selecionado.
+////////////////////////////////////////////////////////////////////////////////
+Static Function CNS001_PROPLUPA(cFiltro, cCliente, cLoja)
+    Local aRet    := {}
+    Local oLinha  := Nil
+    Local cAlias  := GetNextAlias()
+    Local cFiltroUp  := Upper(cFiltro)
+    Local cFiltroUp2 := cFiltroUp
+
+    // FIX (mesmo bug de total sempre 0 do SZ1/ZA1): xFilial("SZ3") devolve
+    // branco no contexto de rota @Get/@Post do motor REST TLPP - SZ3 e
+    // tabela customizada por filial (mesma familia Z1/ZA1), usa cFilAnt
+    // direto em vez de xFilial().
+    BeginSql Alias cAlias
+        SELECT Z3_NUM, Z3_DESC
+        FROM %Table:SZ3% SZ3
+        WHERE Z3_FILIAL = %Exp:cFilAnt%
+          AND %NotDel%
+          AND Z3_CODCLI = %Exp:cCliente%
+          AND Z3_LOJA   = %Exp:cLoja%
+          AND (UPPER(Z3_NUM) LIKE '%' || %Exp:cFiltroUp% || '%' OR UPPER(Z3_DESC) LIKE '%' || %Exp:cFiltroUp2% || '%')
+        ORDER BY Z3_NUM
+    EndSql
+
+    While !(cAlias)->(Eof())
+        oLinha := JsonObject():New()
+        oLinha['codigo']      := CNS001_LUPA_COMPSTR((cAlias)->Z3_NUM)
+        oLinha['complemento'] := ""
+        oLinha['descricao']   := CNS001_LUPA_COMPSTR((cAlias)->Z3_DESC)
+        AAdd(aRet, oLinha)
+        (cAlias)->(DbSkip())
+    EndDo
+    (cAlias)->(DbCloseArea())
+
+Return aRet
+
+////////////////////////////////////////////////////////////////////////////////
+//                                                                            //
+//                       UTILITARIOS (usados por todas as lupas acima)       //
+//                                                                            //
+////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////
+// AllTrim direto quebra se o campo vier NIL/tipo diferente de Character (por
+// exemplo linha com valor nulo no banco) - com filtro vazio a query varre
+// muito mais linhas de uma vez, entao qualquer linha "suja" faz o endpoint
+// inteiro cair (erro nao capturavel pelo Begin/Recover). Blinda cada valor
+// antes de expor no JSON.
+////////////////////////////////////////////////////////////////////////////////
+Static Function CNS001_LUPA_COMPSTR(xValor)
+    If ValType(xValor) == "C"
+        Return AllTrim(xValor)
+    EndIf
+Return ""
+
+////////////////////////////////////////////////////////////////////////////////
+// FIX (mesmo bug de total sempre 0 do Apia-OS.tlpp/Apia-Chamados.tlpp):
+// GetJsonText(jDados,"campo") devolve a STRING literal "null" quando o
+// parametro nao veio na querystring, em vez de string vazia -
+// AllTrim(GetJsonText(...)) nunca fica Empty(). Indexacao direta
+// jDados[cCampo] devolve Nil de verdade pra campo ausente - usar sempre
+// isso em vez de GetJsonText().
+////////////////////////////////////////////////////////////////////////////////
+Static Function CNS001_LUPA_JSONSTR(jDados, cCampo)
+    Local xVal := jDados[cCampo]
+    If xVal == Nil .Or. ValType(xVal) != "C"
+        Return ""
+    EndIf
+Return xVal
+
+// Reconstrucao manual byte a byte do bug "UTF-8 lido como CP1252" (mesmo
+// algoritmo do CH_DECODESAFE em CNS001.TLPP) - remonta o par de bytes UTF-8
+// (0xC2/0xC3 + continuacao) que apareceu como 2 chars CP1252 separados.
+// Nunca lanca erro (so Asc/Chr/SubStr).
+Static Function CNS001_LUPA_DECODESAFE(cTexto)
+    Local cRet  := ""
+    Local nLen  := Len(cTexto)
+    Local nI    := 1
+    Local nB1, nB2
+
+    While nI <= nLen
+        nB1 := Asc(SubStr(cTexto, nI, 1))
+        If (nB1 == 195 .Or. nB1 == 194) .And. nI < nLen
+            nB2 := Asc(SubStr(cTexto, nI + 1, 1))
+            If nB2 >= 128 .And. nB2 <= 191
+                cRet += Chr(((nB1 - 192) * 64) + (nB2 - 128))
+                nI   += 2
+                Loop
+            EndIf
+        EndIf
+        cRet += SubStr(cTexto, nI, 1)
+        nI++
+    EndDo
+
+Return cRet
+
+Static Function CNS001_LUPA_JSONESC(cTexto)
+    Local cRet := cTexto
+    cRet := StrTran(cRet, '\',  '\\')
+    cRet := StrTran(cRet, '"',  '\"')
+    cRet := StrTran(cRet, Chr(13)+Chr(10), '\n')
+    cRet := StrTran(cRet, Chr(10), '\n')
+    cRet := StrTran(cRet, Chr(13), '\n')
+    cRet := StrTran(cRet, Chr(9),  '\t')
+Return cRet
