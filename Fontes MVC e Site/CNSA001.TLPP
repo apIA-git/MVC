@@ -4,7 +4,7 @@
 #Include "TopConn.ch"
 #Include "RwMake.ch"
 #Include "Colors.ch"
-#include "tlpp-core.th"
+#include "tlpp-core.th"'
 #include "tlpp-rest.th"
 
 Namespace apia.cnsa
@@ -1368,6 +1368,7 @@ User Function CH_APICHAMADOS() As Logical
     Local cNomeTaf   := ""
     Local oErro      := Nil
     Local cFilAtu    := xFilial("ZA1")
+    Local cIdChParam := ""
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -1379,9 +1380,33 @@ User Function CH_APICHAMADOS() As Logical
         nTamanho  := If(nTamanho < 1 .Or. nTamanho > 100, 10, nTamanho)
         nStartIdx := (nPagina - 1) * nTamanho + 1
 
+        // idCh tem prioridade absoluta (documentado no cabecalho da funcao,
+        // mas nunca implementado - o Get sempre devolvia a pagina inteira e
+        // ignorava esse parametro). Usado por ChamadoServ.buscarPorId() (front)
+        // pra "Visualizar" e pra resolver a lupa de Chamado do CNS009 - sem
+        // esse filtro, tamanho=1 sempre devolvia so o chamado mais recente,
+        // nunca o idCh pedido.
+        cIdChParam := AllTrim(CH_LERJSONTXT(jQuery, "idCh"))
+
         dbSelectArea("ZA1")
         ZA1->(DbSetOrder(1))
-        If ZA1->(DbSeek(cFilAtu))
+        If !Empty(cIdChParam)
+            If ZA1->(DbSeek(cFilAtu + cIdChParam))
+                AAdd(aTodos, {;
+                    AllTrim(ZA1->ZA1_IDCH), ;
+                    CH_DECODESAFE(AllTrim(ZA1->ZA1_ASSUNT)), ;
+                    AllTrim(ZA1->ZA1_STATUS), ;
+                    AllTrim(ZA1->ZA1_CONSUL), ;
+                    AllTrim(ZA1->ZA1_CLIENT), ;
+                    AllTrim(ZA1->ZA1_LOJA), ;
+                    AllTrim(ZA1->ZA1_TIPO), ;
+                    AllTrim(ZA1->ZA1_PROJ), ;
+                    AllTrim(ZA1->ZA1_TAREFA), ;
+                    AllTrim(ZA1->ZA1_EMAIL), ;
+                    ZA1->ZA1_DATA ;
+                })
+            EndIf
+        ElseIf ZA1->(DbSeek(cFilAtu))
             While !ZA1->(Eof()) .And. ZA1->ZA1_FILIAL == cFilAtu
                 AAdd(aTodos, {;
                     AllTrim(ZA1->ZA1_IDCH), ;

@@ -1392,6 +1392,7 @@ User Function OS_APILISTAR() As Logical
     Local cLojaAtual := ""
     Local cProjAtual := ""
     Local cTecAtual  := ""
+    Local cTextoUp   := ""
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -1405,6 +1406,15 @@ User Function OS_APILISTAR() As Logical
         nMinRow   := nStartIdx - 1
         nMaxRow   := nStartIdx + nTamanho - 1
 
+        // Unica excecao a regra "sem filtro de negocio no backend": busca livre
+        // (caixa de pesquisa) por numero da OS, nome do cliente ou nome do
+        // tecnico. Diferente de status/data/etc (filtro real, front-end), aqui
+        // e so o mecanismo tecnico da caixa "Pesquisar" - inviavel fazer no
+        // front porque a SZ1 tem 100k+ linhas (ver historico do bug de
+        // "carregar tudo" que travava a tela). `cTextoUp = ''` no OR faz o
+        // filtro virar no-op quando a caixa esta vazia.
+        cTextoUp := Upper(AllTrim(OS_LERJSONTXT(jQuery, "texto")))
+
         BeginSql Alias cAlias
             SELECT * FROM (
                 SELECT SZ1Q.*, ROWNUM AS SZ1_RNUM
@@ -1417,6 +1427,20 @@ User Function OS_APILISTAR() As Logical
                     FROM %Table:SZ1% SZ1
                     WHERE Z1_FILIAL = %xFilial:SZ1%
                       AND %NotDel%
+                      AND (
+                            %Exp:cTextoUp% = ''
+                            OR UPPER(Z1_OS) LIKE '%'||%Exp:cTextoUp%||'%'
+                            OR EXISTS (
+                                SELECT 1 FROM %Table:SA1% SA1
+                                WHERE SA1.A1_FILIAL = Z1_FILIAL AND SA1.A1_COD = Z1_CLI AND SA1.A1_LOJA = Z1_LOJA
+                                  AND SA1.D_E_L_E_T_ = ' ' AND UPPER(SA1.A1_NOME) LIKE '%'||%Exp:cTextoUp%||'%'
+                            )
+                            OR EXISTS (
+                                SELECT 1 FROM %Table:AA1% AA1
+                                WHERE AA1.AA1_FILIAL = Z1_FILIAL AND AA1.AA1_CODTEC = Z1_TEC
+                                  AND AA1.D_E_L_E_T_ = ' ' AND UPPER(AA1.AA1_NOMTEC) LIKE '%'||%Exp:cTextoUp%||'%'
+                            )
+                          )
                     ORDER BY Z1_OS DESC
                 ) SZ1Q
                 WHERE ROWNUM <= %Exp:nMaxRow%
