@@ -97,8 +97,13 @@ User Function CNS001_COMPONENTES_LISTAR() As Logical
                     Return oRest:setStatusResponse(400, '{"resultado":false,"erro":"Informe o cliente (?cliente=000001) antes de buscar a proposta."}')
                 EndIf
                 aItens := CNS001_PROPLUPA(cFiltroParam, cClienteParam, If(Empty(cLojaParam), "01", cLojaParam))
+            Case cTipoParam == "chamado"
+                If Empty(cClienteParam)
+                    Return oRest:setStatusResponse(400, '{"resultado":false,"erro":"Informe o cliente (?cliente=000001) antes de buscar o chamado."}')
+                EndIf
+                aItens := CNS001_CHAMLUPA(cFiltroParam, cClienteParam, If(Empty(cLojaParam), "01", cLojaParam))
             OtherWise
-                Return oRest:setStatusResponse(400, '{"resultado":false,"erro":"Informe um tipo valido (?tipo=tecnico, cliente, projeto, tarefa, modulo, motivo, servico ou proposta)."}')
+                Return oRest:setStatusResponse(400, '{"resultado":false,"erro":"Informe um tipo valido (?tipo=tecnico, cliente, projeto, tarefa, modulo, motivo, servico, proposta ou chamado)."}')
         EndCase
 
         // Monta o array "items" na mao (nao aninha JsonObject dentro de
@@ -421,6 +426,45 @@ Static Function CNS001_PROPLUPA(cFiltro, cCliente, cLoja)
         oLinha['codigo']      := CNS001_LUPA_COMPSTR((cAlias)->Z3_NUM)
         oLinha['complemento'] := ""
         oLinha['descricao']   := CNS001_LUPA_COMPSTR((cAlias)->Z3_DESC)
+        AAdd(aRet, oLinha)
+        (cAlias)->(DbSkip())
+    EndDo
+    (cAlias)->(DbCloseArea())
+
+Return aRet
+
+////////////////////////////////////////////////////////////////////////////////
+// Lupa de Chamado (ZA1) - usada pela tela de OS (cns003) pra vincular
+// Z1_CHHDK a um chamado, cascata por cliente (mesmo padrao de Projeto/
+// Proposta). Sem filtro de status - lista chamados do cliente em qualquer
+// status (confirmado com o usuario).
+////////////////////////////////////////////////////////////////////////////////
+Static Function CNS001_CHAMLUPA(cFiltro, cCliente, cLoja)
+    Local aRet    := {}
+    Local oLinha  := Nil
+    Local cAlias  := GetNextAlias()
+    Local cFiltroUp  := Upper(cFiltro)
+    Local cFiltroUp2 := cFiltroUp
+
+    // Mesmo bug de total sempre 0 do SZ1/ZA1 em rota @Get/@Post do motor
+    // REST TLPP - ZA1 e tabela customizada por filial, usa cFilAnt direto
+    // em vez de xFilial() (ver CNS001_PROPLUPA acima, mesmo fix).
+    BeginSql Alias cAlias
+        SELECT ZA1_IDCH, ZA1_ASSUNT
+        FROM %Table:ZA1% ZA1
+        WHERE ZA1_FILIAL = %Exp:cFilAnt%
+          AND %NotDel%
+          AND ZA1_CLIENT = %Exp:cCliente%
+          AND ZA1_LOJA   = %Exp:cLoja%
+          AND (UPPER(ZA1_IDCH) LIKE '%' || %Exp:cFiltroUp% || '%' OR UPPER(ZA1_ASSUNT) LIKE '%' || %Exp:cFiltroUp2% || '%')
+        ORDER BY ZA1_DATA DESC
+    EndSql
+
+    While !(cAlias)->(Eof())
+        oLinha := JsonObject():New()
+        oLinha['codigo']      := CNS001_LUPA_COMPSTR((cAlias)->ZA1_IDCH)
+        oLinha['complemento'] := ""
+        oLinha['descricao']   := CNS001_LUPA_COMPSTR((cAlias)->ZA1_ASSUNT)
         AAdd(aRet, oLinha)
         (cAlias)->(DbSkip())
     EndDo

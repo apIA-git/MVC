@@ -1,6 +1,6 @@
 {
     "totvsLanguageServer.welcomePage": false,
-    "totvsLanguageServer.editor.linter.includes": "C:\\Users\\Henrique\\OneDrive - Ápia Consultoria e Sistemas\\Documentos\\Includes",
+    "totvsLanguageServer.editor.linter.includes": "C:\\Users\\henrique\\OneDrive - Ápia Consultoria e Sistemas\\Documentos\\Includes",
     "totvsLanguageServer.askCompileResult": false,
     "git.ignoreLimitWarning": true
 }
