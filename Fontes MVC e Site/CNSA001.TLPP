@@ -79,10 +79,10 @@ Local aRotina := {}
     ADD OPTION aRotina TITLE "Incluir"          ACTION "apia.cnsa001.ViewDef001.CNS001"     OPERATION 3 ACCESS 0
     ADD OPTION aRotina TITLE "Alterar"          ACTION "apia.cnsa001.U_CH_ALTERARTELA"       OPERATION 4 ACCESS 0
     ADD OPTION aRotina TITLE "Excluir"          ACTION "apia.cnsa001.U_CH_EXCLUIRTELA"       OPERATION 0 ACCESS 0
-    ADD OPTION aRotina TITLE "Agendar"          ACTION "apia.cnsa001.U_CNSA_CRIAAGENDA"      OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Ver Agendas"      ACTION "apia.cnsa001.U_CNSA_CRIAAGENDA"      OPERATION 0 ACCESS 0
     ADD OPTION aRotina TITLE "Assumir"          ACTION "apia.cnsa001.U_CH_ASSUMIRTELA"       OPERATION 0 ACCESS 0
     ADD OPTION aRotina TITLE "Anotacoes"        ACTION "apia.cnsa001.U_CNSA_INTERAGIR"       OPERATION 0 ACCESS 0
-    ADD OPTION aRotina TITLE "Ver Agendas"      ACTION "apia.cnsa001.U_ABREAGENDA"           OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Agendar"          ACTION "apia.cnsa001.U_ABREAGENDA"           OPERATION 0 ACCESS 0
     ADD OPTION aRotina TITLE "Legenda"          ACTION "apia.cnsa001.U_CNSA_LEG"             OPERATION 0 ACCESS 0
 
 Return aRotina
