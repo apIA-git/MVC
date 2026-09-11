@@ -222,7 +222,7 @@ Return l_oModel
 // AddGrid/SetRelation E Activate, por isso a montagem esta duplicada
 // abaixo em vez de reusar CH_MONTARMODEL). Uso exclusivo do Insert
 // headless (CH_NUCLEOINCLUIR); Update continua usando ModelDef001 normal
-// (Activate() em outra funcao nunca quebrou lรก, so o Insert chama
+// (Activate() em outra funcao nunca quebrou lแ, so o Insert chama
 // INITVALUE pra campo em branco).
 //-------------------------------------------------------------------
 Static Function CH_MODELINSERT()
@@ -603,37 +603,25 @@ Static Function CH_POSGRAVACAO(p_oModel)
 
 Return .T.
 
-// Copia local de CNSA_NOGRUPO (Static em CNSA001.PRW, nao atravessa arquivo)
+// Regra trocada de grupo (MV_CNSAGRP) pra AA1_RSPMNT - pedido do usuario
+// (responsavel pela manutencao vira admin, nao mais quem esta num grupo
+// especifico). Nome da funcao mantido (chamada em 3 lugares neste fonte).
 //-------------------------------------------------------------------
 /*/{Protheus.doc} CH_TEMACESSOGRUPO
-Verifica se o usuario logado pertence ao grupo com permissao de alteracao
-livre de chamados (parametro MV_CNSAGRP).
-@return .T. se o usuario pertence ao grupo, .F. caso contrario
+Verifica se o tecnico (AA1) vinculado ao usuario logado e responsavel pela
+manutencao (AA1_RSPMNT == "1") - regra de administrador que substituiu a
+antiga checagem de grupo (MV_CNSAGRP).
+@return .T. se o tecnico e responsavel (AA1_RSPMNT == "1"), .F. caso contrario
 @author Henrique
 @since 02/09/2026
 @version P12
+@update 11/09/2026 - Troca a regra de grupo (MV_CNSAGRP) por AA1_RSPMNT
 /*/
 //-------------------------------------------------------------------
 Static Function CH_TEMACESSOGRUPO()
-    Local aGrupos   := FWSFUsrGrps(__cUserId)
-    Local cGrpPerm  := GetMV("MV_CNSAGRP")
-    Local nI        := 0
+    Local cRspMnt := AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_RSPMNT"))
 
-    If ValType(aGrupos) != "A"
-        Return .F.
-    EndIf
-
-    If ValType(cGrpPerm) != "C"
-        Return .F.
-    EndIf
-
-    For nI := 1 To Len(aGrupos)
-        If AllTrim(aGrupos[nI]) == AllTrim(cGrpPerm)
-            Return .T.
-        EndIf
-    Next nI
-
-Return .F.
+Return cRspMnt == "1"
 
 // Alterar - gate de grupo (identico a CNSA_ALT, so aponta pra VIEWDEF001.CNS001)
 //-------------------------------------------------------------------
@@ -2883,9 +2871,9 @@ Return CH_DECODESAFE(xVal)
 // FIX (Error -100 "Fail to write response" derrubando CNSACHAMADOS inteiro,
 // e comportamento incerto do DecodeUTF8 nativo/2o parametro nesse ambiente):
 // reconstrucao manual byte a byte em vez de confiar no DecodeUTF8 nativo.
-// O bug classico "UTF-8 lido como CP1252": um char UTF-8 de 2 bytes (ex "รง" =
-// bytes 0xC3 0xA7) acaba armazenado/lido como 2 CHARS CP1252 separados ("ร"=
-// byte 195 + "ยง"=byte 167). Aqui remonta o par de bytes na formula padrao
+// O bug classico "UTF-8 lido como CP1252": um char UTF-8 de 2 bytes (ex "็" =
+// bytes 0xC3 0xA7) acaba armazenado/lido como 2 CHARS CP1252 separados ("ร"=
+// byte 195 + "ง"=byte 167). Aqui remonta o par de bytes na formula padrao
 // UTF-8 2-bytes (110xxxxx 10yyyyyy -> codepoint) e devolve o char original
 // via Chr() - cobre toda a faixa Latin-1 acentuada (byte lider 0xC2/0xC3,
 // que e exatamente U+0080-U+00FF, onde CP1252 e Unicode coincidem). Char que
