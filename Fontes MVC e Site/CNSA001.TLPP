@@ -4,6 +4,7 @@
 #Include "TopConn.ch"
 #Include "RwMake.ch"
 #Include "Colors.ch"
+#Include "FileIO.ch"
 #include "tlpp-core.th"
 #include "tlpp-rest.th"
 
@@ -26,7 +27,7 @@ User Function CNS001()
 
     Local l_oBrowse := Nil
     Local nCriados  := 0
-    Private aRotina := u_MenuDef001()
+    Private aRotina := u_MenuDef()
     Private cConsultor := " "
 
     cConsultor := Posicione("AA1",4,xFilial("AA1")+__cUserId,"AA1_CODTEC")
@@ -50,10 +51,7 @@ User Function CNS001()
         l_oBrowse:AddLegend( "ZA1->ZA1_STATUS == '2'", "YELLOW", "Pendente Apia" )
         l_oBrowse:AddLegend( "ZA1->ZA1_STATUS == '3'", "ORANGE", "Pendente Cli." )
         l_oBrowse:AddLegend( "ZA1->ZA1_STATUS == '4'", "RED",    "Fechado" )
-
-        // Filtros de negocio (Meus/Nao Assumidos) removidos daqui de proposito
-        // - regra do usuario: filtro e responsabilidade do front-end, backend
-        // so disponibiliza os dados (ver mesma regra em CH_APICHAMADOS).
+        l_oBrowse:AddLegend( "ZA1->ZA1_STATUS == '5'", "PURPLE", "Incompleto" )
         l_oBrowse:Activate()
 
     EndIf
@@ -62,7 +60,7 @@ Return
 
 // Reusa direto as rotinas antigas que nao mudam de mecanismo
 //-------------------------------------------------------------------
-/*/{Protheus.doc} MenuDef001
+/*/{Protheus.doc} MenuDef
 Monta o menu de opcoes (aRotina) da tela de Chamados.
 @return aRotina   Array de opcoes do menu
 @author Henrique
@@ -70,26 +68,26 @@ Monta o menu de opcoes (aRotina) da tela de Chamados.
 @version P12
 /*/
 //-------------------------------------------------------------------
-User Function MenuDef001()
+User Function MenuDef()
 
 Local aRotina := {}
 
     ADD OPTION aRotina TITLE "Pesquisar"        ACTION "AxPesqui"                            OPERATION 1 ACCESS 0
-    ADD OPTION aRotina TITLE "Visualizar"       ACTION "apia.cnsa001.ViewDef001.CNS001"     OPERATION 2 ACCESS 0
-    ADD OPTION aRotina TITLE "Incluir"          ACTION "apia.cnsa001.ViewDef001.CNS001"     OPERATION 3 ACCESS 0
+    ADD OPTION aRotina TITLE "Visualizar"       ACTION "apia.cnsa001.U_CH_VISUALIZARTELA"    OPERATION 2 ACCESS 0
+    ADD OPTION aRotina TITLE "Incluir"          ACTION "apia.cnsa001.U_CH_INCLUIRTELA"       OPERATION 3 ACCESS 0
     ADD OPTION aRotina TITLE "Alterar"          ACTION "apia.cnsa001.U_CH_ALTERARTELA"       OPERATION 4 ACCESS 0
     ADD OPTION aRotina TITLE "Excluir"          ACTION "apia.cnsa001.U_CH_EXCLUIRTELA"       OPERATION 0 ACCESS 0
-    ADD OPTION aRotina TITLE "Agendar"          ACTION "apia.cnsa001.U_CNSA_CRIAAGENDA"      OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Ver Agendas"      ACTION "apia.cnsa001.U_ABREAGENDA"           OPERATION 0 ACCESS 0
     ADD OPTION aRotina TITLE "Assumir"          ACTION "apia.cnsa001.U_CH_ASSUMIRTELA"       OPERATION 0 ACCESS 0
     ADD OPTION aRotina TITLE "Anotacoes"        ACTION "apia.cnsa001.U_CNSA_INTERAGIR"       OPERATION 0 ACCESS 0
-    ADD OPTION aRotina TITLE "Ver Agendas"      ACTION "apia.cnsa001.U_ABREAGENDA"           OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Agendar"          ACTION "apia.cnsa001.U_CNSA_CRIAAGENDA"      OPERATION 0 ACCESS 0
     ADD OPTION aRotina TITLE "Legenda"          ACTION "apia.cnsa001.U_CNSA_LEG"             OPERATION 0 ACCESS 0
 
 Return aRotina
 
 // Identico ao CNSA001.PRW, so troca o modelo carregado por "CNS001"
 //-------------------------------------------------------------------
-/*/{Protheus.doc} ViewDef001
+/*/{Protheus.doc} ViewDef
 Monta a View (FWFormView) da tela de Chamados, com o campo mestre ZA1 e
 os grids de Anotacoes (ZA2) e Agendamento (SZ6).
 @return l_oView   Objeto FWFormView montado, ou Nil se o Model nao carregou
@@ -98,18 +96,13 @@ os grids de Anotacoes (ZA2) e Agendamento (SZ6).
 @version P12
 /*/
 //-------------------------------------------------------------------
-User Function ViewDef001()
+User Function ViewDef()
 
     Local l_oView    := Nil
-    Local l_oModel   := apia.cnsa001.U_ModelDef001()
+    Local l_oModel   := FWModelActive()
     Local l_oStruZA1 := FWFormStruct(2, "ZA1")
     Local l_oStruZA2 := FWFormStruct(2, "ZA2")
     Local l_oStruSZ6 := FWFormStruct(2, "SZ6")
-
-    If l_oModel == Nil
-        MsgStop("Erro: O Modelo (ModelDef001) nao foi carregado.", "Erro")
-        Return Nil
-    EndIf
 
     l_oView := FWFormView():New()
     l_oView:SetModel(l_oModel)
@@ -138,7 +131,7 @@ Return l_oView
 
 // Identica ao CNSA001.PRW (mesmas tabelas/relacoes)
 //-------------------------------------------------------------------
-/*/{Protheus.doc} ModelDef001
+/*/{Protheus.doc} ModelDef
 Monta o Model (MPFormModel) da tela de Chamados, com o mestre ZA1MASTER e
 os grids ZA2DETAIL (anotacoes) e SZ6DETAIL (agendamento).
 @return l_oModel   Objeto MPFormModel montado
@@ -146,22 +139,16 @@ os grids ZA2DETAIL (anotacoes) e SZ6DETAIL (agendamento).
 @since 02/09/2026
 @version P12
 @update 09/09/2026 - ZA2DETAIL/SZ6DETAIL viraram SetOptional (evita EMPTYFORM no VldData em Job Thread/REST, sem uso obrigatorio real hoje)
+@update 14/09/2026 - Unificado com o extinto CH_MODELINSERT (ver comentario em CH_MONTARMODEL)
 /*/
 //-------------------------------------------------------------------
-User Function ModelDef001()
+User Function ModelDef()
+
 Return CH_MONTARMODEL()
 
-// Extraido de ModelDef001 (motor da montagem) porque o Insert headless
-// (CH_NUCLEOINCLUIR) precisa montar E ativar o model NA MESMA funcao -
-// FWInitCpo mantem o "owner private environment" preso ao stack frame de
-// quem monta o model (AddGrid/SetRelation); se o Activate() roda numa
-// funcao diferente de quem montou (ex: ModelDef001 retorna e a funcao
-// chamadora ativa depois, como no fluxo antigo), esse owner some e
-// INITVALUE quebra com "_SetNamedPrvt: owner private environment not
-// found" - mas so no Insert (so ele chama INITVALUE pra campo em branco;
-// Update carrega valor existente e nunca sente isso). Ver CH_MODELINSERT.
 //-------------------------------------------------------------------
-Static Function CH_MONTARMODEL()
+Static Function CH_MONTARMODEL(lAtivarInsert)
+
 
     Local l_oModel  := Nil
     Local l_oStrZA1 := FWFormStruct(1, "ZA1")
@@ -169,71 +156,13 @@ Static Function CH_MONTARMODEL()
     Local l_oStrSZ6 := FWFormStruct(1, "SZ6")
     Local aRelZA2   := {}
     Local aRelSZ6   := {}
+    
     Local oGridSZ6  := Nil
 
-    l_oModel := MPFormModel():New(;
-        "FCNS001",;
-        {|oModel| CH_PREVALIDA(oModel)},;
-        {|oModel| CH_POSGRAVACAO(oModel)},;
-        NIL,;
-        {|oModel| CH_VALIDACANCELA(oModel)})
-
-    l_oModel:AddFields(;
-        "ZA1MASTER",;
-        NIL,;
-        l_oStrZA1,;
-        {|_f,_a,_c,_v| CH_VALIDACAMPO(_f,_a,_c,_v)},;
-        NIL)
-
-    l_oModel:AddGrid("ZA2DETAIL", "ZA1MASTER", l_oStrZA2)
-    aAdd(aRelZA2, {"ZA2_IDCH", "ZA1_IDCH"})
-    l_oModel:SetRelation("ZA2DETAIL", aRelZA2, ZA2->(IndexKey(1)))
-    l_oModel:GetModel("ZA2DETAIL"):SetOptional(.T.)
-
-    l_oModel:AddGrid("SZ6DETAIL", "ZA1MASTER", l_oStrSZ6)
-    // Z6_CHAMADO e Numerico(18,0), ZA1_IDCH e Caractere - par direto de
-    // nomes causava FIELDPUT invalido no Commit ("expected numeric
-    // expression") quando o chamado ja tinha linha de agenda gravada.
-    // Expressao em texto (nao codeblock - isso quebra o BuildWhere do
-    // Load) converte o valor na relacao, igual exemplo do manual MVC
-    // ("xFilial( 'SC6' )" como string). A expressao e resolvida pelo
-    // engine do MVC por registro - nao pode ler ZA1_IDCH aqui (model
-    // ainda nao ativado nesta fase do ModelDef).
-    aAdd(aRelSZ6, {"Z6_CHAMADO", "Val(ZA1->ZA1_IDCH)"})
-    l_oModel:SetRelation("SZ6DETAIL", aRelSZ6, SZ6->(IndexKey(2)))
-
-    oGridSZ6 := l_oModel:GetModel("SZ6DETAIL")
-    If oGridSZ6 <> Nil
-        oGridSZ6:SetNoInsertLine(.T.)
-        oGridSZ6:SetNoDeleteLine(.T.)
-        oGridSZ6:SetNoUpdateLine(.T.)
-        oGridSZ6:SetOptional(.T.)
-    EndIf
-
-    l_oModel:SetPrimaryKey({"ZA1_FILIAL","ZA1_IDCH"})
-
-Return l_oModel
-
-// Monta E ativa o model de Insert na MESMA funcao - ver comentario em
-// CH_MONTARMODEL sobre o owner private environment preso ao stack frame.
-// NAO extrair a montagem pra uma funcao chamada daqui (ja tentei: chamar
-// CH_MONTARMODEL() e ativar aqui depois QUEBRA IGUAL, owner some do mesmo
-// jeito - tem que ser o MESMO texto de funcao fazendo New/AddFields/
-// AddGrid/SetRelation E Activate, por isso a montagem esta duplicada
-// abaixo em vez de reusar CH_MONTARMODEL). Uso exclusivo do Insert
-// headless (CH_NUCLEOINCLUIR); Update continua usando ModelDef001 normal
-// (Activate() em outra funcao nunca quebrou lá, so o Insert chama
-// INITVALUE pra campo em branco).
-//-------------------------------------------------------------------
-Static Function CH_MODELINSERT()
-
-    Local l_oModel  := Nil
-    Local l_oStrZA1 := FWFormStruct(1, "ZA1")
-    Local l_oStrZA2 := FWFormStruct(1, "ZA2")
-    Local l_oStrSZ6 := FWFormStruct(1, "SZ6")
-    Local aRelZA2   := {}
-    Local aRelSZ6   := {}
-    Local oGridSZ6  := Nil
+    Default lAtivarInsert := .F.
+    l_oStrZA1:SetProperty("ZA1_CLIENT", MODEL_FIELD_OBRIGAT, .F.)
+    l_oStrZA1:SetProperty("ZA1_LOJA",   MODEL_FIELD_OBRIGAT, .F.)
+    l_oStrZA1:SetProperty("ZA1_CONSUL", MODEL_FIELD_OBRIGAT, .F.)
 
     l_oModel := MPFormModel():New(;
         "FCNS001",;
@@ -268,8 +197,10 @@ Static Function CH_MODELINSERT()
 
     l_oModel:SetPrimaryKey({"ZA1_FILIAL","ZA1_IDCH"})
 
-    l_oModel:SetOperation(MODEL_OPERATION_INSERT)
-    l_oModel:Activate()
+    If lAtivarInsert
+        l_oModel:SetOperation(MODEL_OPERATION_INSERT)
+        l_oModel:Activate()
+    EndIf
 
 Return l_oModel
 
@@ -291,9 +222,7 @@ Static Function CH_VALIDACAMPO(p_oModel, p_sAcao, p_sCampo, p_vValor)
     Local l_bOk := .T.
 Return l_bOk
 
-// Bloqueia alteracao de chamado fechado (ZA1_STATUS=="4") - regra que so
-// existia no REST, movida pra ca pra valer tambem na tela classica sem
-// duplicar codigo. Efeito colateral: tela classica passa a bloquear isso.
+
 //-------------------------------------------------------------------
 /*/{Protheus.doc} CH_PREVALIDA
 Pre-validacao do Model (Incluir/Alterar): exige assunto/tipo/projeto/
@@ -312,11 +241,7 @@ Static Function CH_PREVALIDA(p_oModel)
     Local nOper  := p_oModel:GetOperation()
     Local oModelZA1 := Nil
 
-    // Campo obrigatorio no Incluir (assunto/tipo/projeto/tarefa) - via
-    // SetErrorMessage, canal correto do Model (nao mais Return ad-hoc no
-    // nucleo). lCnsaIncluirIncompleto (setado por CH_NUCLEOINCLUIR) libera
-    // tipo/projeto/tarefa quando o chamado nasce de e-mail (incompleto de
-    // proposito, alguem completa depois).
+   
     If nOper == 3
         oModelZA1 := p_oModel:GetModel("ZA1MASTER")
         If oModelZA1 <> Nil
@@ -359,12 +284,7 @@ Static Function CH_PREVALIDA(p_oModel)
             Return .F.
         EndIf
 
-        // Elegibilidade especifica de Assumir (CH_NUCLEOASSUMIR) - so vale
-        // quando o gatilho lCnsaAssumindo esta ligado, senao vazaria pra
-        // Alterar comum. cAssumirConsulAnt/cAssumirStatusAnt sao o valor DE
-        // ANTES (capturados da workarea, ja que este proprio Update vai
-        // sobrescrever ZA1_CONSUL/ZA1_STATUS). Cliente/projeto/tarefa nao sao
-        // tocados pelo Assumir, entao GetValue aqui reflete o valor real.
+    
         If Type("lCnsaAssumindo") == "L" .And. lCnsaAssumindo .And. oModelZA1 <> Nil
 
             If !Empty(cAssumirConsulAnt)
@@ -381,10 +301,6 @@ Static Function CH_PREVALIDA(p_oModel)
                 p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_STATUS", "ZA1", "ZA1_STATUS", "Chamado pendente nao pode ser assumido.")
                 Return .F.
             EndIf
-
-            // Cliente NAO e exigido aqui de proposito (pedido do usuario) -
-            // pode ser preenchido depois, na hora de assumir/editar. Esse
-            // bloqueio fica so no Agendar (CH_GRAVARAGENDA ja exige cliente).
 
             If Empty(AllTrim(oModelZA1:GetValue("ZA1_PROJ")))
                 p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_PROJ", "ZA1", "ZA1_PROJ", "O chamado precisa ter um projeto definido antes de ser assumido.")
@@ -424,11 +340,6 @@ Static Function CH_PREVALIDA(p_oModel)
     EndIf
 
     If (nOper == 4)
-        // Le da workarea (ZA1->), nao do model - GetValue aqui ja devolveria
-        // o valor NOVO (campo ja setado no model antes da validacao rodar),
-        // o que fazia cConsulAnterior sair igual a cConsulNovo e o e-mail de
-        // designacao (CH_POSGRAVACAO) nunca disparar. Mesmo motivo do
-        // cAssumirConsulAnt/cAssumirStatusAnt acima, que ja le da workarea.
         cConsulAnterior  := AllTrim(ZA1->ZA1_CONSUL)
         cIdChAnterior    := AllTrim(ZA1->ZA1_IDCH)
         cClienteAnterior := AllTrim(ZA1->ZA1_CLIENT)
@@ -603,37 +514,27 @@ Static Function CH_POSGRAVACAO(p_oModel)
 
 Return .T.
 
-// Copia local de CNSA_NOGRUPO (Static em CNSA001.PRW, nao atravessa arquivo)
+// Regra trocada de grupo (MV_CNSAGRP) pra AA1_RSPMNT - pedido do usuario
+// (responsavel pela manutencao vira admin, nao mais quem esta num grupo
+// especifico). Nome da funcao mantido (chamada em 3 lugares neste fonte).
 //-------------------------------------------------------------------
 /*/{Protheus.doc} CH_TEMACESSOGRUPO
-Verifica se o usuario logado pertence ao grupo com permissao de alteracao
-livre de chamados (parametro MV_CNSAGRP).
-@return .T. se o usuario pertence ao grupo, .F. caso contrario
+Verifica se o tecnico (AA1) vinculado ao usuario logado e responsavel pela
+manutencao (AA1_RSPMNT == "1") - regra de administrador que substituiu a
+antiga checagem de grupo (MV_CNSAGRP).
+@return .T. se o tecnico e responsavel (AA1_RSPMNT == "1"), .F. caso contrario
 @author Henrique
 @since 02/09/2026
 @version P12
+@update 11/09/2026 - Troca a regra de grupo (MV_CNSAGRP) por AA1_RSPMNT
 /*/
 //-------------------------------------------------------------------
 Static Function CH_TEMACESSOGRUPO()
-    Local aGrupos   := FWSFUsrGrps(__cUserId)
-    Local cGrpPerm  := GetMV("MV_CNSAGRP")
-    Local nI        := 0
+    Local cRspMnt := AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_RSPMNT"))
 
-    If ValType(aGrupos) != "A"
-        Return .F.
-    EndIf
+    ConOut("CNS001 DEBUG: CH_TEMACESSOGRUPO cRspMnt=[" + cRspMnt + "]")
 
-    If ValType(cGrpPerm) != "C"
-        Return .F.
-    EndIf
-
-    For nI := 1 To Len(aGrupos)
-        If AllTrim(aGrupos[nI]) == AllTrim(cGrpPerm)
-            Return .T.
-        EndIf
-    Next nI
-
-Return .F.
+Return cRspMnt == "1"
 
 // Alterar - gate de grupo (identico a CNSA_ALT, so aponta pra VIEWDEF001.CNS001)
 //-------------------------------------------------------------------
@@ -648,13 +549,64 @@ se o usuario tem acesso de grupo, senao redireciona para Interagir
 //-------------------------------------------------------------------
 User Function CH_ALTERARTELA()
 
+    ConOut("CNS001 DEBUG: entrou em CH_ALTERARTELA()")
+
     If CH_TEMACESSOGRUPO()
-        FWExecView("Registro de Chamados", "CNS001", 4)
+        ConOut("CNS001 DEBUG: CH_ALTERARTELA vai chamar FWExecView")
+        // Identificador e so o namespace (sem sufixo) - ModelDef/ViewDef sao
+        // bare dentro do Namespace (doc oficial TOTVS).
+        FWExecView("Registro de Chamados", "apia.cnsa001.u_cns001", 4)
+        ConOut("CNS001 DEBUG: CH_ALTERARTELA voltou do FWExecView")
         Return
     EndIf
 
+    ConOut("CNS001 DEBUG: CH_ALTERARTELA vai chamar CNSA_INTERAGIR")
     CNSA_INTERAGIR()
 
+Return
+
+// Visualizar/Incluir - ACTION "VIEWDEF.CNSA001" nao dispara nada dentro do
+// Namespace (confirmado via debug: zero log ao clicar). Troca pro mesmo
+// caminho FWExecView que ja funciona em CH_ALTERARTELA (comprovado por log).
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_VISUALIZARTELA
+Opcao de menu "Visualizar" da tela classica: abre a View em modo consulta.
+@author Henrique
+@since 14/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+User Function CH_VISUALIZARTELA()
+    ConOut("CNS001 DEBUG: entrou em CH_VISUALIZARTELA()")
+    // MODEL_OPERATION_VIEW e 1, nao 2 - "2" e so o codigo do botao no ADD
+    // OPTION (Browse), FWFormModel:SetOperation so aceita {1,3,4,5,6}.
+    FWExecView("Registro de Chamados", "apia.cnsa001.u_cns001", MODEL_OPERATION_VIEW)
+    ConOut("CNS001 DEBUG: CH_VISUALIZARTELA voltou do FWExecView")
+Return
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_INCLUIRTELA
+Opcao de menu "Incluir" da tela classica: abre a View em modo inclusao.
+@author Henrique
+@since 14/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+User Function CH_INCLUIRTELA()
+    Local oModel := Nil
+    ConOut("CNS001 DEBUG: entrou em CH_INCLUIRTELA()")
+
+    // Monta E ativa o Model AQUI (mesma funcao) - igual padrao ja usado em
+    // CNSA_INTERAGIR/CH_MONTAAGENDA. Necessario pro Insert: FWInitCpo prende
+    // o "owner private environment" ao stack frame de quem monta o model
+    // (AddFields/AddGrid/SetRelation); se o framework ativa em outro frame
+    // (fluxo padrao ModelDef->FWExecView), INITVALUE quebra com
+    // "_SetNamedPrvt: owner private environment not found" (so no Insert,
+    // Update/View carregam valor existente e nao chamam INITVALUE).
+    oModel := CH_MONTARMODEL(.T.)
+
+    FWExecView("Registro de Chamados", "apia.cnsa001.u_cns001", MODEL_OPERATION_INSERT, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel)
+    ConOut("CNS001 DEBUG: CH_INCLUIRTELA voltou do FWExecView")
 Return
 
 // Funcoes movidas de CNSA001.PRW (unico fonte compilado agora).
@@ -853,7 +805,17 @@ User Function CNSA_CLIENTE()
 
     cCod  := AllTrim(oModel:GetValue("ZA1MASTER", "ZA1_CLIENT"))
     cLoja := AllTrim(oModel:GetValue("ZA1MASTER", "ZA1_LOJA"))
-    cNome := Posicione("SA1", 1, xFilial("SA1") + cCod + cLoja, "A1_NOME")
+
+    // FIX: mesmo bug do soft-seek ja corrigido em U_CNSA_TECNICO/CH_LISTARNOTAS -
+    // Posicione("SA1",1,xFilial("SA1")+"","A1_NOME") com codigo vazio cai no
+    // primeiro registro da SA1 (ex.: GE CELMA) em vez de devolver vazio. So
+    // aparecia na tela classica do Protheus (gatilho SX7 so dispara nela) -
+    // ZA1_CLIENT no banco continuava vazio de verdade (site/REST batia certo).
+    If Empty(cCod)
+        cNome := ""
+    Else
+        cNome := Posicione("SA1", 1, xFilial("SA1") + cCod + cLoja, "A1_NOME")
+    EndIf
 
     oModel:LoadValue("ZA1MASTER", "ZA1_NOME", SubStr(cNome, 1, TamSX3("ZA1_NOME")[1]))
 
@@ -936,7 +898,7 @@ Agenda (CNSA003).
 /*/
 //-------------------------------------------------------------------
 User Function ABREAGENDA()
-    CNSA003()
+    FWLoadModel("CNSA003")
 Return
 
 // Monta e grava uma agenda (CNSA003) - usada pela tela classica e pelo REST headless
@@ -1115,7 +1077,7 @@ Static Function CH_NUCLEOASSUMIR(cIdCh)
         Public lCnsaAssumindo    := .T.
         Public lCnsaViaRest      := .T.
 
-        oModel := apia.cnsa001.U_ModelDef001()
+        oModel := apia.cnsa001.U_ModelDef()
         oModel:SetOperation(MODEL_OPERATION_UPDATE)
         oModel:Activate()
 
@@ -1723,7 +1685,7 @@ Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
 // /rest/FwModel/chamado sem uso real hoje. Gravacao real e 100% aqui,
 // via RecLock direto (portada de CNS001Rest.tlpp).
 // Nucleo de Incluir unificado com o Model MVC (FCNS001) - era a
-// 3a copia da mesma acao (RecLock direto), junto com o ModelDef001/ViewDef001 da
+// 3a copia da mesma acao (RecLock direto), junto com o ModelDef/ViewDef da
 // tela classica e o SaveData manual do oRestChamados (que agora so chama
 // este nucleo). Chamado nasce SEMPRE sem tecnico (regra de negocio: tecnico
 // so e preenchido quando alguem Assume ou um chefe atribui via Alterar) -
@@ -1782,19 +1744,27 @@ Static Function CH_NUCLEOINCLUIR(cAssunto, cDtAbertura, cTipo, cCodCliente, cLoj
         Public lCnsaViaRest          := .T.
         Public lCnsaIncluirIncompleto := !lExigirCompletos
 
-        // CH_MODELINSERT (nao ModelDef001 + Activate separado): monta e
-        // ativa na MESMA funcao, senao "_SetNamedPrvt: owner private
-        // environment not found" no INITVALUE do Insert - ver comentario
-        // em CH_MONTARMODEL.
-        oModel := CH_MODELINSERT()
+        // CH_MONTARMODEL(.T.): monta e ativa na MESMA funcao, senao
+        // "_SetNamedPrvt: owner private environment not found" no INITVALUE
+        // do Insert - ver comentario em CH_MONTARMODEL.
+        oModel := CH_MONTARMODEL(.T.)
 
         oModelZA1 := oModel:GetModel("ZA1MASTER")
 
         oModelZA1:LoadValue("ZA1_FILIAL", xFilial("ZA1"))
         oModelZA1:LoadValue("ZA1_IDCH",   cIdCh)
-        oModelZA1:LoadValue("ZA1_ASSUNT", cAssunto)
+        // FIX: assunto de e-mail pode vir bem mais longo que um assunto
+        // digitado a mao - ZA1_ASSUNT e Caractere (tamanho real, diferente
+        // de ZA2_DESCRI que e Memo). Sem truncar pelo tamanho do campo (SX3),
+        // LoadValue de string maior travava VldData/CommitData com erro
+        // generico vazio.
+        oModelZA1:LoadValue("ZA1_ASSUNT", SubStr(cAssunto, 1, TamSX3("ZA1_ASSUNT")[1]))
         oModelZA1:LoadValue("ZA1_DATA",   STOD(cDtAbertura))
-        oModelZA1:LoadValue("ZA1_STATUS", "1")
+        // FIX: chamado sem cliente vinculado nasce Incompleto (status "5",
+        // ver STATUS_INCOMPLETO no front apia-po-cnshub) em vez de Aberto -
+        // status fixo em "1" fazia o e-mail sem cliente encontrado (SA1)
+        // nunca cair no status Incompleto, mesmo o front ja tratando isso.
+        oModelZA1:LoadValue("ZA1_STATUS", If(Empty(cCodCliente), "5", "1"))
         oModelZA1:LoadValue("ZA1_TIPO",   cTipo)
 
         // Ordem importa (mesmo padrao do oRestChamados original): cliente
@@ -1805,9 +1775,21 @@ Static Function CH_NUCLEOINCLUIR(cAssunto, cDtAbertura, cTipo, cCodCliente, cLoj
         U_CNSA_CLIENTE()
 
         oModelZA1:LoadValue("ZA1_EMAIL",  cEmailCliente)
+        // FIX: ZA1_CONSUL tem Inicial Padrao (SX3) que auto-preenche com o
+        // tecnico do usuario logado no Activate() (INITVALUE) - sem o Else
+        // aqui, chamado sem consultor explicito (caso normal do e-mail)
+        // nascia atribuido a quem abriu a tela, em vez de ficar sem tecnico.
         If !Empty(cCodConsultor)
             oModelZA1:LoadValue("ZA1_CONSUL", cCodConsultor)
             U_CNSA_TECNICO()
+        Else
+            // FIX: U_CNSA_TECNICO() com codigo vazio nao devolve vazio -
+            // Posicione("AA1",1,xFilial("AA1")+"",...) cai no primeiro
+            // registro da AA1 (seek "soft") e traz o nome dele (ex: Luiz
+            // Muller) em vez de branco. Sem consultor, limpa o nome direto,
+            // sem chamar o gatilho.
+            oModelZA1:LoadValue("ZA1_CONSUL", "")
+            oModelZA1:LoadValue("ZA1_NOMTEC", "")
         EndIf
 
         oModelZA1:LoadValue("ZA1_PROJ",   cProjeto)
@@ -1924,6 +1906,7 @@ Static Function CH_NUCLEOALTERAR(cIdCh, cAssunto, cDtAbertura, cTipo, cCodClient
     Local oModel             := Nil
     Local oModelZA1          := Nil
     Local lOk                := .F.
+    Local cStatusAtual       := ""
 
     Begin Sequence
 
@@ -1933,9 +1916,11 @@ Static Function CH_NUCLEOALTERAR(cIdCh, cAssunto, cDtAbertura, cTipo, cCodClient
             Return {404, '{"erro":"Chamado nao encontrado."}'}
         EndIf
 
+        cStatusAtual := AllTrim(ZA1->ZA1_STATUS)
+
         Public lCnsaViaRest := .T.
 
-        oModel := apia.cnsa001.U_ModelDef001()
+        oModel := apia.cnsa001.U_ModelDef()
         oModel:SetOperation(MODEL_OPERATION_UPDATE)
         oModel:Activate()
 
@@ -1958,6 +1943,13 @@ Static Function CH_NUCLEOALTERAR(cIdCh, cAssunto, cDtAbertura, cTipo, cCodClient
             oModelZA1:LoadValue("ZA1_CLIENT", cCodCliente)
             oModelZA1:LoadValue("ZA1_LOJA",   If(Empty(cLojaCliente), "01", cLojaCliente))
             U_CNSA_CLIENTE()
+
+            // FIX: chamado Incompleto (status "5", ver CH_NUCLEOINCLUIR) que
+            // ganha cliente aqui no Alterar sai do Incompleto - senao ficava
+            // Incompleto pra sempre, mesmo depois de completar o cliente.
+            If cStatusAtual == "5"
+                oModelZA1:LoadValue("ZA1_STATUS", "1")
+            EndIf
         EndIf
 
         If !Empty(cEmailCliente)
@@ -2606,7 +2598,15 @@ Static Function CH_LISTARNOTAS(cIdCh)
                 cDataIso := SubStr(cDataIso, 1, 4) + "-" + SubStr(cDataIso, 5, 2) + "-" + SubStr(cDataIso, 7, 2)
             EndIf
 
-            cNomeCons := AllTrim(Posicione("AA1", 1, xFilial("AA1") + AllTrim((cAlias)->ZA2_CONSUL), "AA1_NOMTEC"))
+            // FIX: mesmo bug do soft-seek do ZA1_CONSUL (ver CH_NUCLEOINCLUIR) -
+            // Posicione com codigo vazio cai no primeiro registro da AA1 (Luiz
+            // Muller) em vez de devolver vazio. Anotacao do e-mail nasce sem
+            // consultor (CH_GRAVARNOTA chamado com cConsultor="").
+            If Empty(AllTrim((cAlias)->ZA2_CONSUL))
+                cNomeCons := ""
+            Else
+                cNomeCons := AllTrim(Posicione("AA1", 1, xFilial("AA1") + AllTrim((cAlias)->ZA2_CONSUL), "AA1_NOMTEC"))
+            EndIf
 
             oLinha := JsonObject():New()
             oLinha['seq']       := AllTrim((cAlias)->ZA2_IDGRID)
@@ -2669,7 +2669,6 @@ Static Function CH_INCLUIRNOTA(cIdCh, cTexto)
     Local oErro      := Nil
     Local cConsultor := ""
     Local cSeq       := ""
-    Local nTamMax    := TamSX3("ZA2_DESCRI")[1]
 
     cTexto := AllTrim(cTexto)
 
@@ -2681,9 +2680,10 @@ Static Function CH_INCLUIRNOTA(cIdCh, cTexto)
             Return {404, '{"erro":"Chamado nao encontrado."}'}
         EndIf
 
-        If Len(cTexto) > nTamMax
-            Return {400, '{"erro":"Anotacao excede o tamanho maximo do campo (' + AllTrim(Str(nTamMax)) + ' caracteres)."}'}
-        EndIf
+        // FIX: ZA2_DESCRI e Memo (TamSX3 devolve 10 - tamanho do ponteiro,
+        // NAO limite real de conteudo). Validacao de tamanho contra TamSX3
+        // rejeitava qualquer anotacao com mais de 10 caracteres. Memo nao
+        // tem limite de negocio conhecido - checagem removida.
 
         cConsultor := Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC")
         cSeq       := CH_GRAVARNOTA(cIdCh, cConsultor, cTexto)
@@ -2883,9 +2883,9 @@ Return CH_DECODESAFE(xVal)
 // FIX (Error -100 "Fail to write response" derrubando CNSACHAMADOS inteiro,
 // e comportamento incerto do DecodeUTF8 nativo/2o parametro nesse ambiente):
 // reconstrucao manual byte a byte em vez de confiar no DecodeUTF8 nativo.
-// O bug classico "UTF-8 lido como CP1252": um char UTF-8 de 2 bytes (ex "ç" =
-// bytes 0xC3 0xA7) acaba armazenado/lido como 2 CHARS CP1252 separados ("Ã"=
-// byte 195 + "§"=byte 167). Aqui remonta o par de bytes na formula padrao
+// O bug classico "UTF-8 lido como CP1252": um char UTF-8 de 2 bytes (ex "�" =
+// bytes 0xC3 0xA7) acaba armazenado/lido como 2 CHARS CP1252 separados ("�"=
+// byte 195 + "�"=byte 167). Aqui remonta o par de bytes na formula padrao
 // UTF-8 2-bytes (110xxxxx 10yyyyyy -> codepoint) e devolve o char original
 // via Chr() - cobre toda a faixa Latin-1 acentuada (byte lider 0xC2/0xC3,
 // que e exatamente U+0080-U+00FF, onde CP1252 e Unicode coincidem). Char que
@@ -3199,10 +3199,25 @@ Static Function CH_BUSCARCLIENTE(cEmail)
     Local cDominio := ""
     Local nPos     := 0
 
+    // FIX: normaliza (trim + upper) antes de comparar - A1_EMAIL/U5_EMAIL
+    // costumam ser gravados em caixa alta (Picture "@!" no SX3), enquanto o
+    // endereco vindo do JSON do Outlook chega em minusculo. Sem normalizar,
+    // "=" nunca batia e o campo ZA1_CLIENT do chamado ficava vazio.
+    cEmail := Upper(AllTrim(cEmail))
+
+    // FIX: e-mail vazio (JSON do Outlook sem "address", falha de parse etc.)
+    // batia com "=" '' contra QUALQUER registro de SU5/SA1 com e-mail em
+    // branco no cadastro (base antiga tem varios), pegando cliente errado
+    // (ex.: primeiro cadastro sem e-mail, tipo "GE CELMA") em vez de deixar
+    // sem cliente. Sem e-mail de verdade, nao tem o que comparar.
+    If Empty(cEmail)
+        Return {"", ""}
+    EndIf
+
     BeginSql Alias cAlias
         SELECT U5_CODCONT
         FROM %Table:SU5% SU5
-        WHERE U5_EMAIL = %Exp:cEmail%
+        WHERE Upper(U5_EMAIL) = %Exp:cEmail%
           AND %NotDel%
     EndSql
     If !(cAlias)->(Eof())
@@ -3236,7 +3251,7 @@ Static Function CH_BUSCARCLIENTE(cEmail)
         SELECT A1_COD, A1_LOJA
         FROM %Table:SA1% SA1
         WHERE A1_FILIAL = %xFilial:SA1%
-          AND A1_EMAIL  = %Exp:cEmail%
+          AND Upper(A1_EMAIL) = %Exp:cEmail%
           AND %NotDel%
         ORDER BY A1_COD, A1_LOJA
     EndSql
@@ -3254,20 +3269,43 @@ Static Function CH_BUSCARCLIENTE(cEmail)
     If nPos == 0
         Return {"", ""}
     EndIf
-    cDominio := "%" + SubStr(cEmail, nPos)
+    cDominio := SubStr(cEmail, nPos + 1)
+
+    // FIX: dominio de webmail publico (gmail/hotmail/outlook/yahoo/etc.) e
+    // usado por clientes diferentes sem nenhuma relacao entre si - o LIKE
+    // por dominio batia no primeiro cliente (ORDER BY A1_COD) que por
+    // coincidencia tivesse esse mesmo provedor cadastrado, atribuindo o
+    // chamado a um cliente errado. Sem dominio corporativo de verdade, nao
+    // arrisca - deixa sem cliente (chamado nasce Incompleto, ver CH_NUCLEOINCLUIR).
+    If AScan({"GMAIL.COM", "HOTMAIL.COM", "OUTLOOK.COM", "YAHOO.COM", "YAHOO.COM.BR", ;
+              "LIVE.COM", "ICLOUD.COM", "UOL.COM.BR", "BOL.COM.BR", "TERRA.COM.BR", ;
+              "MSN.COM", "IG.COM.BR", "R7.COM"}, cDominio) > 0
+        Return {"", ""}
+    EndIf
+
+    cDominio := "%@" + cDominio
 
     cAlias := GetNextAlias()
     BeginSql Alias cAlias
         SELECT A1_COD, A1_LOJA
         FROM %Table:SA1% SA1
         WHERE A1_FILIAL = %xFilial:SA1%
-          AND A1_EMAIL  LIKE %Exp:cDominio%
+          AND Upper(A1_EMAIL) LIKE %Exp:cDominio%
           AND %NotDel%
         ORDER BY A1_COD, A1_LOJA
     EndSql
     If !(cAlias)->(Eof())
         cCod  := AllTrim((cAlias)->A1_COD)
         cLoja := AllTrim((cAlias)->A1_LOJA)
+
+        // FIX: mais de um cliente no mesmo dominio - ambiguo (nao sabe qual
+        // dos dois e o remetente de verdade), nao arrisca escolher o
+        // primeiro. Mesmo raciocinio do bloqueio de webmail publico acima.
+        (cAlias)->(DbSkip())
+        If !(cAlias)->(Eof())
+            cCod  := ""
+            cLoja := ""
+        EndIf
     EndIf
     (cAlias)->(DbCloseArea())
 
@@ -3276,6 +3314,9 @@ Return {cCod, cLoja}
 // Le a caixa apia@apia.com.br (Graph) e cria um chamado (ZA1) por e-mail
 // novo. NAO marca como lido de proposito (deve continuar nao lido na
 // caixa) - dedup contra reprocesso via CH_EMAILJAPROCESSADO (ZA1_MAILID).
+// Chamada por 3 gatilhos independentes (job CH_JOBEMAIL, botao Recarregar
+// via CH_APIVERIFICAEMAIL, tela classica CNS001) - CH_TRAVAREMAIL garante
+// que so uma execucao roda por vez.
 //-------------------------------------------------------------------
 /*/{Protheus.doc} CH_CRIARCHAMADOEMAIL
 Le as mensagens nao lidas da caixa apia@apia.com.br (Microsoft Graph) e
@@ -3288,7 +3329,7 @@ processado, incluindo o corpo como primeira anotacao (CH_GRAVARNOTA).
 /*/
 //-------------------------------------------------------------------
 Static Function CH_CRIARCHAMADOEMAIL()
-    Local cToken := CH_TOKENGRAPH()
+    Local cToken := ""
     Local oRest, oJson, oArr, oMsg, oFrom, oEnd
     Local cPath, cId, cAssunto, cNome, cEmail, cNewId
     Local nI, nCriados := 0
@@ -3298,9 +3339,17 @@ Static Function CH_CRIARCHAMADOEMAIL()
     Local cCorpo     := ""
     Local oBody      := Nil
     Local aResultado := {}
+    Local nLock      := -1
 
+    nLock := CH_TRAVAREMAIL()
+    If nLock == -1
+        Return -1
+    EndIf
+
+    cToken := CH_TOKENGRAPH()
     If Empty(cToken)
-        Return -1   
+        CH_DESTRAVAREMAIL(nLock)
+        Return -1
     EndIf
 
     cPath := "/v1.0/users/apia@apia.com.br/mailFolders/inbox/messages"
@@ -3313,6 +3362,7 @@ Static Function CH_CRIARCHAMADOEMAIL()
     oRest:setPath(cPath)
     If !oRest:Get({"Authorization: Bearer " + cToken, "Accept: application/json", 'Prefer: outlook.body-content-type="text"'})
         ConOut("CH_CRIARCHAMADOEMAIL: falha no GET de mensagens (Graph): " + oRest:GetLastError())
+        CH_DESTRAVAREMAIL(nLock)
         Return -1
     EndIf
 
@@ -3320,12 +3370,14 @@ Static Function CH_CRIARCHAMADOEMAIL()
     If !Empty(oJson:FromJson(oRest:GetResult()))
         ConOut("CH_CRIARCHAMADOEMAIL: resposta do Graph invalida: " + oRest:GetResult())
         FreeObj(oJson)
+        CH_DESTRAVAREMAIL(nLock)
         Return -1
     EndIf
 
     oArr := oJson:GetJsonObject("value")
     If ValType(oArr) <> "A"
         FreeObj(oJson)
+        CH_DESTRAVAREMAIL(nLock)
         Return -1
     EndIf
 
@@ -3405,15 +3457,99 @@ Static Function CH_CRIARCHAMADOEMAIL()
 
         cNewId := aResultado[3]
 
+        // FIX: ZA2_DESCRI e Memo (TamSX3 devolve 10 - tamanho do ponteiro,
+        // NAO limite real de conteudo) - truncar pra 10 caracteres cortava
+        // o corpo do e-mail quase inteiro. Memo aceita o texto completo.
         If !Empty(cCorpo)
-            CH_GRAVARNOTA(cNewId, "", SubStr(cCorpo, 1, TamSX3("ZA2_DESCRI")[1]))
+            CH_GRAVARNOTA(cNewId, "", cCorpo)
         EndIf
 
         nCriados++
     Next nI
 
     FreeObj(oJson)
+    CH_DESTRAVAREMAIL(nLock)
 Return nCriados
+
+// Fica tentando ate conseguir (sem limite de tempo/tentativas) - quem
+// segura a trava sempre solta ao terminar (CH_DESTRAVAREMAIL chamado em
+// todo Return de CH_CRIARCHAMADOEMAIL), entao nunca fica presa pra sempre.
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_TRAVAREMAIL
+Obtem uma trava exclusiva (lock de arquivo) pra impedir que duas chamadas
+concorrentes de CH_CRIARCHAMADOEMAIL (job agendado, botao Recarregar do
+site, tela classica CNS001) processem e-mail ao mesmo tempo. Bloqueia
+(retry a cada 200ms) ate a trava ficar livre.
+@return nHandle   Handle do arquivo travado - usar em CH_DESTRAVAREMAIL
+@author Henrique
+@since 16/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+Static Function CH_TRAVAREMAIL()
+    Local cArqLock := "\system\cnsa_email_import.lck"
+    Local nHandle  := -1
+
+    If !File(cArqLock)
+        nHandle := FCreate(cArqLock)
+        If nHandle != -1
+            FClose(nHandle)
+        EndIf
+    EndIf
+
+    nHandle := FOpen(cArqLock, FO_READWRITE + FO_EXCLUSIVE)
+    While nHandle == -1
+        Sleep(200)
+        nHandle := FOpen(cArqLock, FO_READWRITE + FO_EXCLUSIVE)
+    EndDo
+
+Return nHandle
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_DESTRAVAREMAIL
+Libera a trava obtida em CH_TRAVAREMAIL.
+@param  nHandle   Handle devolvido por CH_TRAVAREMAIL
+@author Henrique
+@since 16/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+Static Function CH_DESTRAVAREMAIL(nHandle)
+    If nHandle != Nil .And. nHandle != -1
+        FClose(nHandle)
+    EndIf
+Return
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CH_APIVERIFICAREMAIL
+Endpoint REST GET /CNSACHAMADOSVERIFICAREMAIL: forca a leitura da caixa de
+e-mail (mesma rotina do job CH_JOBEMAIL) sob demanda, chamado pelo botao
+"Recarregar" do site pra trazer chamados novos sem esperar o agendador.
+@return Logical - resposta HTTP com a quantidade de chamados criados
+@author Henrique
+@since 16/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+@Get(endpoint="/CNSACHAMADOSVERIFICAREMAIL")
+User Function CH_APIVERIFICAEMAIL() As Logical
+    Local oJson    := JsonObject():New()
+    Local nCriados := 0
+
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
+
+    nCriados := CH_CRIARCHAMADOEMAIL()
+
+    If nCriados < 0
+        oJson['sucesso'] := .F.
+        oJson['erro']    := "Falha ao consultar a caixa de e-mail (token/Graph)."
+        Return oRest:setStatusResponse(500, oJson:ToJson())
+    EndIf
+
+    oJson['sucesso'] := .T.
+    oJson['criados']  := nCriados
+
+Return oRest:setStatusResponse(200, oJson:ToJson())
 
 
 // Job agendado (Schedule) - verifica caixa apia@apia.com.br e cria chamados

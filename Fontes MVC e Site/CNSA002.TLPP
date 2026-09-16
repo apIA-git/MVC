@@ -744,8 +744,11 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
         If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"chamadoHpsd")))
             oModelSZ1:SetValue("Z1_CHPSD", AllTrim(OS_LERJSONTXT(jQuery,"chamadoHpsd")))
         EndIf
-        If OS_LERJSONNUM(jQuery,"chamado") <> 0
-            oModelSZ1:SetValue("Z1_CHHDK", OS_LERJSONNUM(jQuery,"chamado"))
+        // Z1_IDCH (caractere) - liga a OS ao chamado novo (ZA1_IDCH), campo
+        // proprio pra isso, separado do Z1_CHHDK (numerico, legado do HPSD -
+        // ver Z6_IDCH/Z6_CHAMADO na Agenda, mesmo padrao).
+        If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"chamado")))
+            oModelSZ1:SetValue("Z1_IDCH", AllTrim(OS_LERJSONTXT(jQuery,"chamado")))
         EndIf
         If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"osDesenv")))
             oModelSZ1:SetValue("Z1_OSDESE", AllTrim(OS_LERJSONTXT(jQuery,"osDesenv")))
@@ -916,9 +919,11 @@ Static Function OS_NUCLEOALTERAR(jQuery)
         If !Empty(cVal) ; oModelSZ1:SetValue("Z1_TAREFA", cVal) ; EndIf
         cVal := AllTrim(OS_LERJSONTXT(jQuery,"chamadoHpsd"))
         If !Empty(cVal) ; oModelSZ1:SetValue("Z1_CHPSD", cVal) ; EndIf
-        If OS_LERJSONNUM(jQuery,"chamado") <> 0
-            oModelSZ1:SetValue("Z1_CHHDK", OS_LERJSONNUM(jQuery,"chamado"))
-        EndIf
+        // Z1_IDCH (caractere) - liga a OS ao chamado novo (ZA1_IDCH), campo
+        // proprio pra isso, separado do Z1_CHHDK (numerico, legado do HPSD -
+        // ver Z6_IDCH/Z6_CHAMADO na Agenda, mesmo padrao).
+        cVal := AllTrim(OS_LERJSONTXT(jQuery,"chamado"))
+        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_IDCH", cVal) ; EndIf
         cVal := AllTrim(OS_LERJSONTXT(jQuery,"osDesenv"))
         If !Empty(cVal) ; oModelSZ1:SetValue("Z1_OSDESE", cVal) ; EndIf
         cVal := AllTrim(OS_LERJSONTXT(jQuery,"linhaPv"))
@@ -1450,7 +1455,7 @@ User Function OS_APILISTAR() As Logical
                     SELECT Z1_OS, Z1_DTDIGIT, Z1_CLI, Z1_LOJA, Z1_USR, Z1_MODULO, Z1_MOTIV, Z1_TIPO, ;
                         Z1_DTOS, Z1_INTERNO, Z1_HRINI, Z1_INI, Z1_HRFIM, Z1_FIM, Z1_TRANS, Z1_PREVIST, ;
                         Z1_HRTOT, Z1_TOTAL, Z1_TEC, Z1_NUMPRO, Z1_PV, Z1_ALMOCO, Z1_PROJET, Z1_REVISA, ;
-                        Z1_TAREFA, Z1_CHPSD, Z1_CHHDK, Z1_OSDESE, Z1_LIN, Z1_VLRHR, Z1_APROVAD, Z1_FATURAR, ;
+                        Z1_TAREFA, Z1_CHPSD, Z1_CHHDK, Z1_IDCH, Z1_OSDESE, Z1_LIN, Z1_VLRHR, Z1_APROVAD, Z1_FATURAR, ;
                         COUNT(*) OVER() AS SZ1_TOTAL
                     FROM %Table:SZ1% SZ1
                     WHERE Z1_FILIAL = %xFilial:SZ1%
@@ -1522,7 +1527,9 @@ User Function OS_APILISTAR() As Logical
             oLinha['tarefa']         := AllTrim((cAlias)->Z1_TAREFA)
             oLinha['nomeTarefa']     := OS_NOMETAREFA(cProjAtual, AllTrim((cAlias)->Z1_TAREFA))
             oLinha['chamadoHpsd']    := AllTrim((cAlias)->Z1_CHPSD)
-            oLinha['chamado']        := cValToChar((cAlias)->Z1_CHHDK)
+            // Z1_IDCH (caractere) - chamado novo (ZA1_IDCH); Z1_CHHDK segue
+            // intocado (legado do HPSD, sem uso novo).
+            oLinha['chamado']        := AllTrim((cAlias)->Z1_IDCH)
             oLinha['osDesenv']       := AllTrim((cAlias)->Z1_OSDESE)
             oLinha['linhaPv']        := AllTrim((cAlias)->Z1_LIN)
             oLinha['valorHora']      := (cAlias)->Z1_VLRHR
