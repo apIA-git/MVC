@@ -15,7 +15,7 @@ PUBLISH MODEL REST NAME OS RESOURCE OBJECT oRestOS
 //-------------------------------------------------------------------
 /*/{Protheus.doc} CNS002
 Funcao principal - ponto de entrada da tela de Browse de Ordem de
-Servico (OS). Monta o menu (MenuDef002) e ativa o FWMBrowse na tabela
+Servico (OS). Monta o menu (MenuDef) e ativa o FWMBrowse na tabela
 SZ1, com as legendas de status (aprovada/faturada/negada/etc).
 @author Henrique
 @since 02/09/2026
@@ -27,7 +27,7 @@ User Function CNS002()
     Local l_oBrowse := Nil
     // FIX: User Function precisa ser chamada com prefixo "u_" mesmo dentro do
     // mesmo arquivo/namespace (mesmo problema real confirmado no CNS001.TLPP).
-    Private aRotina := u_MenuDef002()
+    Private aRotina := u_MenuDef()
 
     l_oBrowse := FWMBrowse():New()
     If l_oBrowse <> Nil
@@ -35,11 +35,11 @@ User Function CNS002()
         l_oBrowse:SetDescription("OS - APIA")
         l_oBrowse:SetAlias("SZ1")
 
-        l_oBrowse:AddLegend("(SZ1->Z1_APROVAD=='S'.OR.SZ1->Z1_APROVAD=='A').AND.SZ1->Z1_FATURAR=='S'",                    "BLUE",     "Aprovada e Faturada")
-        l_oBrowse:AddLegend("SZ1->Z1_FATURAR=='S'.AND.SZ1->Z1_APROVAD!='S'.AND.SZ1->Z1_APROVAD!='A'",                    "PINK",     "Faturada sem Aprovacao")
-        l_oBrowse:AddLegend("(SZ1->Z1_APROVAD=='S'.OR.SZ1->Z1_APROVAD=='A').AND.SZ1->Z1_FATURAR!='S'",                   "GREEN",    "Aprovada")
-        l_oBrowse:AddLegend("SZ1->Z1_APROVAD!='S'.AND.SZ1->Z1_APROVAD!='A'.AND.!Empty(SZ1->Z1_TEC)",                     "YELLOW",   "Aguardando Aprovacao")
-        l_oBrowse:AddLegend("SZ1->Z1_APROVAD!='S'.AND.SZ1->Z1_APROVAD!='A'.AND.Empty(SZ1->Z1_TEC)",                      "BR_CANCEL","Negada")
+        l_oBrowse:AddLegend("(SZ1->Z1_APROVAD=='S'.OR.SZ1->Z1_APROVAD=='A').AND.SZ1->Z1_FATURAR=='S'",   "BLUE",     "Aprovada e Faturada")
+        l_oBrowse:AddLegend("SZ1->Z1_FATURAR=='S'.AND.SZ1->Z1_APROVAD!='S'.AND.SZ1->Z1_APROVAD!='A'",    "PINK",     "Faturada sem Aprovacao")
+        l_oBrowse:AddLegend("(SZ1->Z1_APROVAD=='S'.OR.SZ1->Z1_APROVAD=='A').AND.SZ1->Z1_FATURAR!='S'",   "GREEN",    "Aprovada")
+        l_oBrowse:AddLegend("SZ1->Z1_APROVAD!='S'.AND.SZ1->Z1_APROVAD!='A'.AND.!Empty(SZ1->Z1_TEC)",     "YELLOW",   "Aguardando Aprovacao")
+        l_oBrowse:AddLegend("SZ1->Z1_APROVAD!='S'.AND.SZ1->Z1_APROVAD!='A'.AND.Empty(SZ1->Z1_TEC)",      "BR_CANCEL","Negada")
 
         l_oBrowse:Activate()
 
@@ -48,7 +48,7 @@ User Function CNS002()
 Return
 
 //-------------------------------------------------------------------
-/*/{Protheus.doc} MenuDef002
+/*/{Protheus.doc} MenuDef
 Monta o array de opcoes de menu (aRotina) da tela CNS002 - Pesquisar,
 Visualizar, Incluir, Alterar, Excluir, Copiar e Legenda.
 @return aRotina   Array de opcoes de menu (ADD OPTION)
@@ -57,24 +57,24 @@ Visualizar, Incluir, Alterar, Excluir, Copiar e Legenda.
 @version P12
 /*/
 //-------------------------------------------------------------------
-User Function MenuDef002()
+User Function MenuDef()
 
 Local aRotina  := {}
 
-    ADD OPTION aRotina TITLE "Pesquisar"    ACTION "AxPesqui"                           OPERATION 1 ACCESS 0
-    ADD OPTION aRotina TITLE "Visualizar"   ACTION "apia.cnsa002.ViewDef002.CNS002"     OPERATION 2 ACCESS 0
-    ADD OPTION aRotina TITLE "Incluir"      ACTION "apia.cnsa002.ViewDef002.CNS002"     OPERATION 3 ACCESS 0
-    ADD OPTION aRotina TITLE "Alterar"      ACTION "apia.cnsa002.ViewDef002.CNS002"     OPERATION 4 ACCESS 0
-    ADD OPTION aRotina TITLE "Excluir"      ACTION "apia.cnsa002.ViewDef002.CNS002"     OPERATION 5 ACCESS 0
-    ADD OPTION aRotina TITLE "Copiar"       ACTION "apia.cnsa002.U_OS_COPIARTELA"       OPERATION 0 ACCESS 0
-    ADD OPTION aRotina TITLE "Legenda"      ACTION "apia.cnsa002.U_OS_LEGENDA"          OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Pesquisar"    ACTION "AxPesqui"                        OPERATION 1 ACCESS 0
+    ADD OPTION aRotina TITLE "Visualizar"   ACTION "apia.cnsa002.ViewDef.CNS002"     OPERATION 2 ACCESS 0
+    ADD OPTION aRotina TITLE "Incluir"      ACTION "apia.cnsa002.ViewDef.CNS002"     OPERATION 3 ACCESS 0
+    ADD OPTION aRotina TITLE "Alterar"      ACTION "apia.cnsa002.ViewDef.CNS002"     OPERATION 4 ACCESS 0
+    ADD OPTION aRotina TITLE "Excluir"      ACTION "apia.cnsa002.ViewDef.CNS002"     OPERATION 5 ACCESS 0
+    ADD OPTION aRotina TITLE "Copiar"       ACTION "apia.cnsa002.U_OS_COPIARTELA"    OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Legenda"      ACTION "apia.cnsa002.U_OS_LEGENDA"       OPERATION 0 ACCESS 0
 
 Return aRotina
 
 //-------------------------------------------------------------------
-/*/{Protheus.doc} ViewDef002
+/*/{Protheus.doc} ViewDef
 Monta a view (FWFormView) da tela CNS002 - cabecalho SZ1 (dados da
-OS) e grid SZ2 (horas contratadas). Identico ao ViewDef002 do CNSA002.PRW
+OS) e grid SZ2 (horas contratadas). Identico ao ViewDef do CNSA002.PRW
 classico, so troca o modelo carregado por "CNS002".
 @return l_oView   Objeto FWFormView montado (ou Nil se o Model nao carregar)
 @author Henrique
@@ -82,7 +82,7 @@ classico, so troca o modelo carregado por "CNS002".
 @version P12
 /*/
 //-------------------------------------------------------------------
-User Function ViewDef002()
+User Function ViewDef()
 
     Local l_oView    := Nil
     Local l_oModel   := FWLoadModel("CNS002")
@@ -90,7 +90,7 @@ User Function ViewDef002()
     Local l_oStruSZ2 := FWFormStruct(2, "SZ2")
 
     If l_oModel == Nil
-        MsgStop("Erro: O Modelo (ModelDef002) nao foi carregado.", "Erro")
+        MsgStop("Erro: O Modelo (ModelDef) nao foi carregado.", "Erro")
         Return Nil
     EndIf
 
@@ -114,10 +114,10 @@ User Function ViewDef002()
 Return l_oView
 
 //-------------------------------------------------------------------
-/*/{Protheus.doc} ModelDef002
+/*/{Protheus.doc
 Monta o modelo de dados (MPFormModel) da tela CNS002 - tabela pai SZ1
 (OS) e tabela filha SZ2 (horas contratadas, relacionada por CLIENTE,
-nao por OS). Identico ao ModelDef002 do CNSA002.PRW classico (mesmas
+nao por OS). Identico ao ModelDef do CNSA002.PRW classico (mesmas
 tabelas/relacoes).
 @return l_oModel   Objeto MPFormModel montado
 @author Henrique
@@ -125,7 +125,7 @@ tabelas/relacoes).
 @version P12
 /*/
 //-------------------------------------------------------------------
-User Function ModelDef002()
+User Function ModelDef()
 
     Local l_oModel  := Nil
     Local l_oStrSZ1 := FWFormStruct(1, "SZ1")
