@@ -941,7 +941,15 @@ User Function ABREAGENDA()
 Return
 
 User Function PROTHEUS_ABREAGENDA()
-    FWExecView("Agendas", "CNSA003", MODEL_OPERATION_VIEW)
+    Local oBrowse := Nil
+    Local cIdCh   := AllTrim(ZA1->ZA1_IDCH)
+    Private aRotina := FWMVCMenu('CNSA003')
+
+    oBrowse := FWMBrowse():New()
+    oBrowse:SetDescription("Agendas do Chamado " + cIdCh)
+    oBrowse:SetAlias('SZ6')
+    oBrowse:SetFilterDefault("Z6_CHAMADO == " + cValToChar(Val(cIdCh)))
+    oBrowse:Activate()
 Return
 
 
@@ -1750,6 +1758,7 @@ Static Function CH_NUCLEOEXCLUIR(cIdCh, cMotivo)
     Local cNomeCli    := ""
     Local cNomeTec    := ""
     Local cEmailTec   := ""
+    Local cEmailCli   := ""
     Local cExclPor    := ""
     Local cDataAge    := DToC(Date())
     Local cHmini      := "00:00"
@@ -1831,9 +1840,11 @@ Static Function CH_NUCLEOEXCLUIR(cIdCh, cMotivo)
         If !Empty(cConsulAnt)
             cNomeTec  := AllTrim(Posicione("AA1", 1, xFilial("AA1") + cConsulAnt, "AA1_NOMTEC"))
             cEmailTec := AllTrim(Posicione("AA1", 1, xFilial("AA1") + cConsulAnt, "AA1_EMAIL"))
+            cEmailCli := AllTrim(Posicione("SA1", 1, xFilial("SA1") + cClienteAnt + cLojaAnt, "A1_EMAIL"))
             If !Empty(cEmailTec)
                 cCorpo := CH_HTMLCANCELA(cNomeCli, cDataAge, cHmini, cHmfim, cIdCh, cMotivo, cExclPor)
                 CH_ENVIAREMAIL(cEmailTec, "Cancelamento do Chamado " + cIdCh, cCorpo, "apia@apia.com.br")
+                CH_ENVIAREMAIL(cEmailCli, "Cancelamento do Chamado " + cIdCh, cCorpo, "apia@apia.com.br")
             EndIf
         EndIf
 
@@ -3196,81 +3207,6 @@ Static Function CH_ENVIAREMAIL(cPara, cAssunto, cCorpo, cDe)
 
 Return lOk
 
-/*/{Protheus.doc} CH_HTMLDESIGNA
-Monta o corpo HTML do e-mail de designacao de tecnico para um chamado.
-@param  cNomeTec   Nome do tecnico designado
-@param  cIdCh      Id do chamado
-@param  cCliente   Nome do cliente
-@param  cAssunto   Assunto/servico do chamado
-@param  cDataAge   Data do agendamento (formatada)
-@param  cHmini     Hora inicial do agendamento
-@param  cHmfim     Hora final do agendamento
-@param  cNomeDe    Nome de quem designou
-@param  cTipo      Rotulo do tipo de notificacao (default "DESIGNACAO")
-@return cHtml   Corpo HTML do e-mail
-@author Henrique
-@since 02/09/2026
-@version P12
-/*/
-Static Function CH_HTMLDESIGNA(cNomeTec, cIdCh, cCliente, cAssunto, cDataAge, cHmini, cHmfim, cNomeDe, cTipo)
-    Local cHtml := ""
-    Local cTipoTexto := IIf(Empty(cTipo), "DESIGNACAO", cTipo)
-
-    cHtml := '<div style="font-family:Arial,sans-serif;max-width:600px;border:1px solid #cccccc;border-radius:8px;overflow:hidden">'
-    cHtml += '<div style="background-color:#1a7fc1;padding:20px;text-align:center">'
-    cHtml += '<h2 style="color:#ffffff;margin:0;font-size:18px">Apia Consultoria e Sistemas</h2>'
-    cHtml += '<p style="color:#d0e8f8;margin:5px 0 0 0;font-size:13px;font-style:italic">Voce esta recebendo a <b>' + cTipoTexto + '</b> de um chamado.<br>Por favor, verifique os dados abaixo</p>'
-    cHtml += '</div>'
-    cHtml += '<table style="width:100%;border-collapse:collapse">'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px;width:35%"><b>Tecnico</b></td><td style="padding:10px 15px">' + cNomeTec + '</td></tr>'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Chamado</b></td><td style="padding:10px 15px">' + cIdCh + '</td></tr>'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Cliente</b></td><td style="padding:10px 15px">' + cCliente + '</td></tr>'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Servico</b></td><td style="padding:10px 15px">' + cAssunto + '</td></tr>'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Data</b></td><td style="padding:10px 15px">' + cDataAge + '</td></tr>'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Hora</b></td><td style="padding:10px 15px">' + cHmini + ' ate ' + cHmfim + '</td></tr>'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Designado por</b></td><td style="padding:10px 15px">' + cNomeDe + '</td></tr>'
-    cHtml += '</table>'
-    cHtml += '<div style="background-color:#0d5a8a;padding:12px;text-align:center">'
-    cHtml += '<p style="color:#ffffff;margin:0;font-size:12px">Apia Consultoria e Sistemas - TOTVS Business Partner</p>'
-    cHtml += '</div>'
-    cHtml += '</div>'
-Return cHtml
-
-/*/{Protheus.doc} CH_HTMLDESIGNACLIENTE
-Monta o corpo HTML do e-mail ao cliente informando que um tecnico foi
-designado para o chamado, com o horario do atendimento.
-@param  cNomeTec   Nome do tecnico designado
-@param  cIdCh      Id do chamado
-@param  cAssunto   Assunto/servico do chamado
-@param  cDataAge   Data do agendamento (formatada)
-@param  cHmini     Hora inicial do agendamento
-@param  cHmfim     Hora final do agendamento
-@return cHtml   Corpo HTML do e-mail
-@author Henrique
-@since 17/09/2026
-@version P12
-/*/
-Static Function CH_HTMLDESIGNACLIENTE(cNomeTec, cIdCh, cAssunto, cDataAge, cHmini, cHmfim)
-    Local cHtml := ""
-
-    cHtml := '<div style="font-family:Arial,sans-serif;max-width:600px;border:1px solid #cccccc;border-radius:8px;overflow:hidden">'
-    cHtml += '<div style="background-color:#1a7fc1;padding:20px;text-align:center">'
-    cHtml += '<h2 style="color:#ffffff;margin:0;font-size:18px">Apia Consultoria e Sistemas</h2>'
-    cHtml += '<p style="color:#d0e8f8;margin:5px 0 0 0;font-size:13px;font-style:italic">Um tecnico foi designado para o seu chamado</p>'
-    cHtml += '</div>'
-    cHtml += '<table style="width:100%;border-collapse:collapse">'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px;width:35%"><b>Chamado</b></td><td style="padding:10px 15px">' + cIdCh + '</td></tr>'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Tecnico</b></td><td style="padding:10px 15px">' + cNomeTec + '</td></tr>'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Servico</b></td><td style="padding:10px 15px">' + cAssunto + '</td></tr>'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Data</b></td><td style="padding:10px 15px">' + cDataAge + '</td></tr>'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Hora</b></td><td style="padding:10px 15px">' + cHmini + ' ate ' + cHmfim + '</td></tr>'
-    cHtml += '</table>'
-    cHtml += '<div style="background-color:#0d5a8a;padding:12px;text-align:center">'
-    cHtml += '<p style="color:#ffffff;margin:0;font-size:12px">Apia Consultoria e Sistemas - TOTVS Business Partner</p>'
-    cHtml += '</div>'
-    cHtml += '</div>'
-Return cHtml
-
 /*/{Protheus.doc} CH_HTMLCANCELA
 Monta o corpo HTML do e-mail de cancelamento/exclusao de um agendamento
 ou chamado.
@@ -3301,26 +3237,6 @@ Static Function CH_HTMLCANCELA(cCliente, cDataAge, cHmini, cHmfim, cChamado, cMo
     cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Chamado</b></td><td style="padding:10px 15px">' + cChamado + '</td></tr>'
     cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Motivo exclusao</b></td><td style="padding:10px 15px">' + cMotivo + '</td></tr>'
     cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Excluido por</b></td><td style="padding:10px 15px">' + cExcluidoPor + '</td></tr>'
-    cHtml += '</table>'
-    cHtml += '<div style="background-color:#0d5a8a;padding:12px;text-align:center">'
-    cHtml += '<p style="color:#ffffff;margin:0;font-size:12px">Apia Consultoria e Sistemas - TOTVS Business Partner</p>'
-    cHtml += '</div>'
-    cHtml += '</div>'
-Return cHtml
-
-Static Function CH_HTMLSEMCONTATO(cEmail)
-    Local cHtml := ""
-
-    cHtml := '<div style="font-family:Arial,sans-serif;max-width:600px;border:1px solid #cccccc;border-radius:8px;overflow:hidden">'
-    cHtml += '<div style="background-color:#1a7fc1;padding:20px;text-align:center">'
-    cHtml += '<h2 style="color:#ffffff;margin:0;font-size:18px">Apia Consultoria e Sistemas</h2>'
-    cHtml += '<p style="color:#d0e8f8;margin:5px 0 0 0;font-size:13px;font-style:italic">Nao foi possivel abrir um chamado a partir do seu e-mail</p>'
-    cHtml += '</div>'
-    cHtml += '<table style="width:100%;border-collapse:collapse">'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:15px">'
-    cHtml += 'O e-mail <b>' + cEmail + '</b> nao esta cadastrado entre os contatos autorizados a abrir chamados.<br><br>'
-    cHtml += 'Entre em contato com o administrador e informe este e-mail para cadastro: <b>pericles@apia.com.br</b>'
-    cHtml += '</td></tr>'
     cHtml += '</table>'
     cHtml += '<div style="background-color:#0d5a8a;padding:12px;text-align:center">'
     cHtml += '<p style="color:#ffffff;margin:0;font-size:12px">Apia Consultoria e Sistemas - TOTVS Business Partner</p>'
@@ -3436,6 +3352,81 @@ Static Function CH_NOTIFICARDESIGNA(cIdCh, cCodConsultorNovo, lNotificarCliente)
 
 Return lOk
 
+/*/{Protheus.doc} CH_HTMLDESIGNA
+Monta o corpo HTML do e-mail de designacao de tecnico para um chamado.
+@param  cNomeTec   Nome do tecnico designado
+@param  cIdCh      Id do chamado
+@param  cCliente   Nome do cliente
+@param  cAssunto   Assunto/servico do chamado
+@param  cDataAge   Data do agendamento (formatada)
+@param  cHmini     Hora inicial do agendamento
+@param  cHmfim     Hora final do agendamento
+@param  cNomeDe    Nome de quem designou
+@param  cTipo      Rotulo do tipo de notificacao (default "DESIGNACAO")
+@return cHtml   Corpo HTML do e-mail
+@author Henrique
+@since 02/09/2026
+@version P12
+/*/
+Static Function CH_HTMLDESIGNA(cNomeTec, cIdCh, cCliente, cAssunto, cDataAge, cHmini, cHmfim, cNomeDe, cTipo)
+    Local cHtml := ""
+    Local cTipoTexto := IIf(Empty(cTipo), "DESIGNACAO", cTipo)
+
+    cHtml := '<div style="font-family:Arial,sans-serif;max-width:600px;border:1px solid #cccccc;border-radius:8px;overflow:hidden">'
+    cHtml += '<div style="background-color:#1a7fc1;padding:20px;text-align:center">'
+    cHtml += '<h2 style="color:#ffffff;margin:0;font-size:18px">Apia Consultoria e Sistemas</h2>'
+    cHtml += '<p style="color:#d0e8f8;margin:5px 0 0 0;font-size:13px;font-style:italic">Voce esta recebendo a <b>' + cTipoTexto + '</b> de um chamado.<br>Por favor, verifique os dados abaixo</p>'
+    cHtml += '</div>'
+    cHtml += '<table style="width:100%;border-collapse:collapse">'
+    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px;width:35%"><b>Tecnico</b></td><td style="padding:10px 15px">' + cNomeTec + '</td></tr>'
+    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Chamado</b></td><td style="padding:10px 15px">' + cIdCh + '</td></tr>'
+    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Cliente</b></td><td style="padding:10px 15px">' + cCliente + '</td></tr>'
+    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Servico</b></td><td style="padding:10px 15px">' + cAssunto + '</td></tr>'
+    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Data</b></td><td style="padding:10px 15px">' + cDataAge + '</td></tr>'
+    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Hora</b></td><td style="padding:10px 15px">' + cHmini + ' ate ' + cHmfim + '</td></tr>'
+    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Designado por</b></td><td style="padding:10px 15px">' + cNomeDe + '</td></tr>'
+    cHtml += '</table>'
+    cHtml += '<div style="background-color:#0d5a8a;padding:12px;text-align:center">'
+    cHtml += '<p style="color:#ffffff;margin:0;font-size:12px">Apia Consultoria e Sistemas - TOTVS Business Partner</p>'
+    cHtml += '</div>'
+    cHtml += '</div>'
+Return cHtml
+
+/*/{Protheus.doc} CH_HTMLDESIGNACLIENTE
+Monta o corpo HTML do e-mail ao cliente informando que um tecnico foi
+designado para o chamado, com o horario do atendimento.
+@param  cNomeTec   Nome do tecnico designado
+@param  cIdCh      Id do chamado
+@param  cAssunto   Assunto/servico do chamado
+@param  cDataAge   Data do agendamento (formatada)
+@param  cHmini     Hora inicial do agendamento
+@param  cHmfim     Hora final do agendamento
+@return cHtml   Corpo HTML do e-mail
+@author Henrique
+@since 17/09/2026
+@version P12
+/*/
+Static Function CH_HTMLDESIGNACLIENTE(cNomeTec, cIdCh, cAssunto, cDataAge, cHmini, cHmfim)
+    Local cHtml := ""
+
+    cHtml := '<div style="font-family:Arial,sans-serif;max-width:600px;border:1px solid #cccccc;border-radius:8px;overflow:hidden">'
+    cHtml += '<div style="background-color:#1a7fc1;padding:20px;text-align:center">'
+    cHtml += '<h2 style="color:#ffffff;margin:0;font-size:18px">Apia Consultoria e Sistemas</h2>'
+    cHtml += '<p style="color:#d0e8f8;margin:5px 0 0 0;font-size:13px;font-style:italic">Um tecnico foi designado para o seu chamado</p>'
+    cHtml += '</div>'
+    cHtml += '<table style="width:100%;border-collapse:collapse">'
+    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px;width:35%"><b>Chamado</b></td><td style="padding:10px 15px">' + cIdCh + '</td></tr>'
+    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Tecnico</b></td><td style="padding:10px 15px">' + cNomeTec + '</td></tr>'
+    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Servico</b></td><td style="padding:10px 15px">' + cAssunto + '</td></tr>'
+    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Data</b></td><td style="padding:10px 15px">' + cDataAge + '</td></tr>'
+    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Hora</b></td><td style="padding:10px 15px">' + cHmini + ' ate ' + cHmfim + '</td></tr>'
+    cHtml += '</table>'
+    cHtml += '<div style="background-color:#0d5a8a;padding:12px;text-align:center">'
+    cHtml += '<p style="color:#ffffff;margin:0;font-size:12px">Apia Consultoria e Sistemas - TOTVS Business Partner</p>'
+    cHtml += '</div>'
+    cHtml += '</div>'
+Return cHtml
+
 /*/{Protheus.doc} CH_STATUSLABEL
 Traduz o codigo de status (ZA1_STATUS) pro rotulo exibido na legenda da
 tela classica (ver AddLegend no BrowseDef).
@@ -3457,6 +3448,29 @@ Static Function CH_STATUSLABEL(cStatus)
     EndCase
 
 Return cLabel
+
+/*/{Protheus.doc} CH_NOTIFICARALTERACAO
+Notifica por e-mail o cliente sobre uma ou mais mudancas de campo num
+chamado (status, assunto, tipo, projeto, tarefa, data), listando de/para.
+Nao cobre mudanca de tecnico (ja tem e-mail dedicado em CH_NOTIFICARDESIGNA).
+@param  cEmail      E-mail do cliente (destino)
+@param  cIdCh       Id do chamado
+@param  aMudancas   Array de {rotulo, valorAntigo, valorNovo}
+@return .T./.F. indicando sucesso no envio (via CH_ENVIAREMAIL)
+@author Henrique
+@since 17/09/2026
+@version P12
+/*/
+Static Function CH_NOTIFICARALTERACAO(cEmail, cIdCh, aMudancas)
+    Local cCorpo := ""
+
+    If Empty(cEmail) .Or. Len(aMudancas) == 0
+        Return .F.
+    EndIf
+
+    cCorpo := CH_HTMLALTERACAO(cIdCh, aMudancas)
+
+Return CH_ENVIAREMAIL(cEmail, "Chamado Alterado " + cIdCh, cCorpo, "apia@apia.com.br")
 
 /*/{Protheus.doc} CH_HTMLALTERACAO
 Monta o corpo HTML do e-mail de alteracao de chamado, listando cada campo
@@ -3492,28 +3506,29 @@ Static Function CH_HTMLALTERACAO(cIdCh, aMudancas)
     cHtml += '</div>'
 Return cHtml
 
-/*/{Protheus.doc} CH_NOTIFICARALTERACAO
-Notifica por e-mail o cliente sobre uma ou mais mudancas de campo num
-chamado (status, assunto, tipo, projeto, tarefa, data), listando de/para.
-Nao cobre mudanca de tecnico (ja tem e-mail dedicado em CH_NOTIFICARDESIGNA).
-@param  cEmail      E-mail do cliente (destino)
-@param  cIdCh       Id do chamado
-@param  aMudancas   Array de {rotulo, valorAntigo, valorNovo}
+/*/{Protheus.doc} CH_NOTIFICARNOTA
+Notifica por e-mail o cliente sobre uma anotacao incluida ou removida de
+um chamado.
+@param  cEmail        E-mail do cliente (destino)
+@param  cIdCh         Id do chamado
+@param  cTexto        Texto da anotacao
+@param  cAcaoLabel    Rotulo da acao ("incluida" ou "removida")
+@param  cAssuntoBase  Prefixo do assunto do e-mail (ex: "Nova Anotacao")
 @return .T./.F. indicando sucesso no envio (via CH_ENVIAREMAIL)
 @author Henrique
 @since 17/09/2026
 @version P12
 /*/
-Static Function CH_NOTIFICARALTERACAO(cEmail, cIdCh, aMudancas)
+Static Function CH_NOTIFICARNOTA(cEmail, cIdCh, cTexto, cAcaoLabel, cAssuntoBase)
     Local cCorpo := ""
 
-    If Empty(cEmail) .Or. Len(aMudancas) == 0
+    If Empty(cEmail)
         Return .F.
     EndIf
 
-    cCorpo := CH_HTMLALTERACAO(cIdCh, aMudancas)
+    cCorpo := CH_HTMLNOTA(cIdCh, cTexto, cAcaoLabel)
 
-Return CH_ENVIAREMAIL(cEmail, "Chamado Alterado " + cIdCh, cCorpo, "apia@apia.com.br")
+Return CH_ENVIAREMAIL(cEmail, cAssuntoBase + " - Chamado " + cIdCh, cCorpo, "apia@apia.com.br")
 
 /*/{Protheus.doc} CH_HTMLNOTA
 Monta o corpo HTML do e-mail de anotacao incluida/removida de um chamado.
@@ -3541,30 +3556,6 @@ Static Function CH_HTMLNOTA(cIdCh, cTexto, cAcaoLabel)
     cHtml += '</div>'
 Return cHtml
 
-/*/{Protheus.doc} CH_NOTIFICARNOTA
-Notifica por e-mail o cliente sobre uma anotacao incluida ou removida de
-um chamado.
-@param  cEmail        E-mail do cliente (destino)
-@param  cIdCh         Id do chamado
-@param  cTexto        Texto da anotacao
-@param  cAcaoLabel    Rotulo da acao ("incluida" ou "removida")
-@param  cAssuntoBase  Prefixo do assunto do e-mail (ex: "Nova Anotacao")
-@return .T./.F. indicando sucesso no envio (via CH_ENVIAREMAIL)
-@author Henrique
-@since 17/09/2026
-@version P12
-/*/
-Static Function CH_NOTIFICARNOTA(cEmail, cIdCh, cTexto, cAcaoLabel, cAssuntoBase)
-    Local cCorpo := ""
-
-    If Empty(cEmail)
-        Return .F.
-    EndIf
-
-    cCorpo := CH_HTMLNOTA(cIdCh, cTexto, cAcaoLabel)
-
-Return CH_ENVIAREMAIL(cEmail, cAssuntoBase + " - Chamado " + cIdCh, cCorpo, "apia@apia.com.br")
-
 /*/{Protheus.doc} CH_NOTIFICARSEMCONTATO
 Envia ao remetente de um e-mail nao cadastrado como contato (SU5) um aviso
 informando que o e-mail nao esta entre os contatos cadastrados, e que deve
@@ -3580,15 +3571,41 @@ Static Function CH_NOTIFICARSEMCONTATO(cEmail)
     Local cCorpo := CH_HTMLSEMCONTATO(cEmail)
 Return CH_ENVIAREMAIL(cEmail, "Seu e-mail nao esta cadastrado", cCorpo, "apia@apia.com.br")
 
-/*/{Protheus.doc} CH_HTMLCHAMADOCRIADO
-Monta o corpo HTML do e-mail de confirmacao de abertura de chamado por
-e-mail, enviado ao cliente com o numero do chamado criado.
-@param  cIdCh   Id do chamado criado (ZA1_IDCH)
-@return cHtml   Corpo HTML do e-mail
+Static Function CH_HTMLSEMCONTATO(cEmail)
+    Local cHtml := ""
+
+    cHtml := '<div style="font-family:Arial,sans-serif;max-width:600px;border:1px solid #cccccc;border-radius:8px;overflow:hidden">'
+    cHtml += '<div style="background-color:#1a7fc1;padding:20px;text-align:center">'
+    cHtml += '<h2 style="color:#ffffff;margin:0;font-size:18px">Apia Consultoria e Sistemas</h2>'
+    cHtml += '<p style="color:#d0e8f8;margin:5px 0 0 0;font-size:13px;font-style:italic">Nao foi possivel abrir um chamado a partir do seu e-mail</p>'
+    cHtml += '</div>'
+    cHtml += '<table style="width:100%;border-collapse:collapse">'
+    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:15px">'
+    cHtml += 'O e-mail <b>' + cEmail + '</b> nao esta cadastrado entre os contatos autorizados a abrir chamados.<br><br>'
+    cHtml += 'Entre em contato com o administrador e informe este e-mail para cadastro: <b>pericles@apia.com.br</b>'
+    cHtml += '</td></tr>'
+    cHtml += '</table>'
+    cHtml += '<div style="background-color:#0d5a8a;padding:12px;text-align:center">'
+    cHtml += '<p style="color:#ffffff;margin:0;font-size:12px">Apia Consultoria e Sistemas - TOTVS Business Partner</p>'
+    cHtml += '</div>'
+    cHtml += '</div>'
+Return cHtml
+
+
+/*/{Protheus.doc} CH_NOTIFICARCHAMADOCRIADO
+Notifica por e-mail o cliente (mesmo e-mail de origem) que o chamado foi
+aberto com sucesso, informando o numero do chamado. So dispara para
+chamados criados a partir de e-mail com cliente ja cadastrado (SU5).
+@param  cEmail   E-mail do cliente (destino da confirmacao)
+@param  cIdCh    Id do chamado criado (ZA1_IDCH)
+@return .T./.F. indicando sucesso no envio (via CH_ENVIAREMAIL)
 @author Henrique
 @since 17/09/2026
 @version P12
 /*/
+Static Function CH_NOTIFICARCHAMADOCRIADO(cEmail, cIdCh)
+    Local cCorpo := CH_HTMLCHAMADOCRIADO(cIdCh)
+Return CH_ENVIAREMAIL(cEmail, "Chamado Aberto " + cIdCh, cCorpo, "apia@apia.com.br")
 Static Function CH_HTMLCHAMADOCRIADO(cIdCh)
     Local cHtml := ""
 
@@ -3609,32 +3626,22 @@ Static Function CH_HTMLCHAMADOCRIADO(cIdCh)
     cHtml += '</div>'
 Return cHtml
 
-/*/{Protheus.doc} CH_NOTIFICARCHAMADOCRIADO
-Notifica por e-mail o cliente (mesmo e-mail de origem) que o chamado foi
-aberto com sucesso, informando o numero do chamado. So dispara para
-chamados criados a partir de e-mail com cliente ja cadastrado (SU5).
-@param  cEmail   E-mail do cliente (destino da confirmacao)
-@param  cIdCh    Id do chamado criado (ZA1_IDCH)
+
+
+/*/{Protheus.doc} CH_NOTIFICARENCERRADO
+Notifica por e-mail o cliente (ZA1_EMAIL) que o chamado foi encerrado.
+@param  cEmail     E-mail do cliente (destino da notificacao)
+@param  cIdCh      Id do chamado encerrado (ZA1_IDCH)
+@param  cAssunto   Assunto do chamado
 @return .T./.F. indicando sucesso no envio (via CH_ENVIAREMAIL)
 @author Henrique
 @since 17/09/2026
 @version P12
 /*/
-Static Function CH_NOTIFICARCHAMADOCRIADO(cEmail, cIdCh)
-    Local cCorpo := CH_HTMLCHAMADOCRIADO(cIdCh)
-Return CH_ENVIAREMAIL(cEmail, "Chamado Aberto " + cIdCh, cCorpo, "apia@apia.com.br")
+Static Function CH_NOTIFICARENCERRADO(cEmail, cIdCh, cAssunto)
+    Local cCorpo := CH_HTMLENCERRADO(cIdCh, cAssunto)
+Return CH_ENVIAREMAIL(cEmail, "Chamado Encerrado " + cIdCh, cCorpo, "apia@apia.com.br")
 
-/*/{Protheus.doc} CH_HTMLENCERRADO
-Monta o corpo HTML do e-mail de encerramento de chamado, enviado ao
-cliente com o numero/assunto do chamado e contato do administrador para
-duvidas.
-@param  cIdCh      Id do chamado encerrado (ZA1_IDCH)
-@param  cAssunto   Assunto do chamado
-@return cHtml   Corpo HTML do e-mail
-@author Henrique
-@since 17/09/2026
-@version P12
-/*/
 Static Function CH_HTMLENCERRADO(cIdCh, cAssunto)
     Local cHtml := ""
 
@@ -3657,19 +3664,6 @@ Static Function CH_HTMLENCERRADO(cIdCh, cAssunto)
     cHtml += '</div>'
 Return cHtml
 
-/*/{Protheus.doc} CH_NOTIFICARENCERRADO
-Notifica por e-mail o cliente (ZA1_EMAIL) que o chamado foi encerrado.
-@param  cEmail     E-mail do cliente (destino da notificacao)
-@param  cIdCh      Id do chamado encerrado (ZA1_IDCH)
-@param  cAssunto   Assunto do chamado
-@return .T./.F. indicando sucesso no envio (via CH_ENVIAREMAIL)
-@author Henrique
-@since 17/09/2026
-@version P12
-/*/
-Static Function CH_NOTIFICARENCERRADO(cEmail, cIdCh, cAssunto)
-    Local cCorpo := CH_HTMLENCERRADO(cIdCh, cAssunto)
-Return CH_ENVIAREMAIL(cEmail, "Chamado Encerrado " + cIdCh, cCorpo, "apia@apia.com.br")
 
 /*/{Protheus.doc} CH_EMAILJAPROCESSADO
 Verifica se um e-mail (pelo Id do Graph) ja gerou um chamado, usado como
