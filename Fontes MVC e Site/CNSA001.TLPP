@@ -1289,12 +1289,13 @@ INCLUIR/ALTERAR - endpoints REST customizados. Front manda tudo via query string
 @param  cMailId             Id do e-mail de origem (importacao Graph), dedup
 @param  lExigirCompletos   Exige tipo/projeto/tarefa preenchidos (.F. no caminho de e-mail)
 @param  lNotificarTecnico  .F. pra NAO enviar o e-mail de designacao ao analista (default .T.)
+@param  cDescricao         Descricao do chamado (ZA1_ANOT, cortada no tamanho do campo)
 @return Array {nStatusHTTP, cCorpoJsonOuMensagem, cIdCh}
 @author Henrique
 @since 02/09/2026
 @version P12
 /*/
-Static Function CH_NUCLEOINCLUIR(cAssunto, cDtAbertura, cTipo, cCodCliente, cLojaCliente, cEmailCliente, cCodConsultor, cProjeto, cTarefa, cMailId, lExigirCompletos, lNotificarTecnico)
+Static Function CH_NUCLEOINCLUIR(cAssunto, cDtAbertura, cTipo, cCodCliente, cLojaCliente, cEmailCliente, cCodConsultor, cProjeto, cTarefa, cMailId, lExigirCompletos, lNotificarTecnico, cDescricao)
     Local cIdCh       := ""
     Local oJson       := JsonObject():New()
     Local oErro       := Nil
@@ -1306,6 +1307,7 @@ Static Function CH_NUCLEOINCLUIR(cAssunto, cDtAbertura, cTipo, cCodCliente, cLoj
     Default cMailId          := ""
     Default lExigirCompletos := .T.
     Default lNotificarTecnico := .T.
+    Default cDescricao        := ""
 
     Begin Sequence
 
@@ -1376,6 +1378,9 @@ Static Function CH_NUCLEOINCLUIR(cAssunto, cDtAbertura, cTipo, cCodCliente, cLoj
 
         oModelZA1:LoadValue("ZA1_PROJ",   cProjeto)
         oModelZA1:LoadValue("ZA1_TAREFA", cTarefa)
+        If !Empty(cDescricao)
+            oModelZA1:LoadValue("ZA1_ANOT", SubStr(cDescricao, 1, TamSX3("ZA1_ANOT")[1]))
+        EndIf
         oModelZA1:LoadValue("ZA1_MOD",    Date())
         If !Empty(cMailId)
             oModelZA1:LoadValue("ZA1_MAILID", cMailId)
@@ -1441,7 +1446,7 @@ User Function CH_APIINCLUIR() As Logical
     aResultado := CH_NUCLEOINCLUIR(AllTrim(CH_LERJSONTXT(jQuery,"assunto")), AllTrim(CH_LERJSONTXT(jQuery,"dtAbertura")), AllTrim(CH_LERJSONTXT(jQuery,"tipo")), ;
         AllTrim(CH_LERJSONTXT(jQuery,"codCliente")), AllTrim(CH_LERJSONTXT(jQuery,"lojaCliente")), AllTrim(CH_LERJSONTXT(jQuery,"emailCliente")), ;
         AllTrim(CH_LERJSONTXT(jQuery,"codConsultor")), AllTrim(CH_LERJSONTXT(jQuery,"projeto")), AllTrim(CH_LERJSONTXT(jQuery,"tarefa")), ;
-        "", .T., AllTrim(CH_LERJSONTXT(jQuery,"notificarTecnico")) != "0")
+        "", .T., AllTrim(CH_LERJSONTXT(jQuery,"notificarTecnico")) != "0", AllTrim(CH_LERJSONTXT(jQuery,"descricao")))
 
 Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
@@ -1470,10 +1475,12 @@ Nucleo de Alterar unificado com o Model MVC (FCNS001) - mesmo caminho da tela cl
 @since 02/09/2026
 @version P12
 @param  lNotificarTecnico   .F. pra NAO enviar os e-mails de designacao/remocao ao analista (default .T.)
+@param  cDescricao          Nova descricao (ZA1_ANOT, vazio = nao altera) - Alterar ja e restrito a admin (CH_PREVALIDA)
+@param  lLimparDescricao    Limpa a descricao do chamado
 @update 17/09/2026 - Adiciona cStatus (troca manual de status, so admin, mesmo em chamado fechado) e lNotificarCliente
 /*/
 Static Function CH_NUCLEOALTERAR(cIdCh, cAssunto, cDtAbertura, cTipo, cCodCliente, cLojaCliente, ;
-    cEmailCliente, cCodConsultor, cProjeto, cTarefa, lLimparCliente, lLimparConsultor, cStatus, lNotificarCliente, lNotificarTecnico)
+    cEmailCliente, cCodConsultor, cProjeto, cTarefa, lLimparCliente, lLimparConsultor, cStatus, lNotificarCliente, lNotificarTecnico, cDescricao, lLimparDescricao)
     Local oJson              := JsonObject():New()
     Local oErro              := Nil
     Local oErroModel         := Nil
@@ -1485,6 +1492,8 @@ Static Function CH_NUCLEOALTERAR(cIdCh, cAssunto, cDtAbertura, cTipo, cCodClient
     Default cStatus := ""
     Default lNotificarCliente := .F.
     Default lNotificarTecnico := .T.
+    Default cDescricao        := ""
+    Default lLimparDescricao  := .F.
 
     Begin Sequence
 
@@ -1565,6 +1574,12 @@ Static Function CH_NUCLEOALTERAR(cIdCh, cAssunto, cDtAbertura, cTipo, cCodClient
             oModelZA1:LoadValue("ZA1_TAREFA", cTarefa)
         EndIf
 
+        If lLimparDescricao
+            oModelZA1:LoadValue("ZA1_ANOT", "")
+        ElseIf !Empty(cDescricao)
+            oModelZA1:LoadValue("ZA1_ANOT", SubStr(cDescricao, 1, TamSX3("ZA1_ANOT")[1]))
+        EndIf
+
         // Troca explicita de status (admin, ja validado no topo da funcao) -
         // depois do ajuste automatico "5"->"1" acima, pra prevalecer sobre
         // ele quando o admin pede outro valor especifico.
@@ -1633,7 +1648,8 @@ User Function CH_APIALTERAR() As Logical
         AllTrim(CH_LERJSONTXT(jQuery,"codCliente")), AllTrim(CH_LERJSONTXT(jQuery,"lojaCliente")), AllTrim(CH_LERJSONTXT(jQuery,"emailCliente")), AllTrim(CH_LERJSONTXT(jQuery,"codConsultor")), ;
         AllTrim(CH_LERJSONTXT(jQuery,"projeto")), AllTrim(CH_LERJSONTXT(jQuery,"tarefa")), AllTrim(CH_LERJSONTXT(jQuery,"limparCliente")) == "1", AllTrim(CH_LERJSONTXT(jQuery,"limparConsultor")) == "1", ;
         AllTrim(CH_LERJSONTXT(jQuery,"status")), AllTrim(CH_LERJSONTXT(jQuery,"notificarCliente")) == "1", ;
-        AllTrim(CH_LERJSONTXT(jQuery,"notificarTecnico")) != "0")
+        AllTrim(CH_LERJSONTXT(jQuery,"notificarTecnico")) != "0", ;
+        AllTrim(CH_LERJSONTXT(jQuery,"descricao")), AllTrim(CH_LERJSONTXT(jQuery,"limparDescricao")) == "1")
 
 Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
@@ -2059,7 +2075,8 @@ User Function CH_APICHAMADOS() As Logical
                     AllTrim(ZA1->ZA1_PROJ), ;
                     AllTrim(ZA1->ZA1_TAREFA), ;
                     AllTrim(ZA1->ZA1_EMAIL), ;
-                    ZA1->ZA1_DATA ;
+                    ZA1->ZA1_DATA, ;
+                    CH_DECODESAFE(AllTrim(ZA1->ZA1_ANOT)) ;
                 })
             EndIf
         ElseIf ZA1->(DbSeek(cFilAtu))
@@ -2090,7 +2107,8 @@ User Function CH_APICHAMADOS() As Logical
                         AllTrim(ZA1->ZA1_PROJ), ;
                         AllTrim(ZA1->ZA1_TAREFA), ;
                         AllTrim(ZA1->ZA1_EMAIL), ;
-                        ZA1->ZA1_DATA ;
+                        ZA1->ZA1_DATA, ;
+                        CH_DECODESAFE(AllTrim(ZA1->ZA1_ANOT)) ;
                     })
                 EndIf
 
@@ -2170,6 +2188,9 @@ User Function CH_APICHAMADOS() As Logical
             oLinha['tarefa']       := cTarefa
             oLinha['nomeTarefa']   := cNomeTaf
             oLinha['emailCliente'] := cEmailCli
+            // Descricao do chamado - reaproveita ZA1_ANOT (Caractere 200, antigas
+            // anotacoes, substituidas pelo historico ZA2).
+            oLinha['descricao']    := aTodos[nI][12]
             oLinha['data']         := CH_DATAISOZA1(If(ValType(aTodos[nI][11]) == "D", DToS(aTodos[nI][11]), cValToChar(aTodos[nI][11])))
             AAdd(aRetorno, oLinha)
 
