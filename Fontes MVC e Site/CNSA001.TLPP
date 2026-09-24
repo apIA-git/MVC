@@ -49,11 +49,13 @@ User Function CNS001()
         l_oBrowse:SetDescription("Registro de Chamados - OS")
         l_oBrowse:SetAlias("ZA1")
 
-        l_oBrowse:AddLegend( "ZA1->ZA1_STATUS == '1'", "GREEN",  "Aberto" )
+        // Mesmas cores do portal (shared/paleta-status.ts): azul=aberto,
+        // amarelo=aguardando, rosa=pendencia, verde=concluido, cinza=incompleto.
+        l_oBrowse:AddLegend( "ZA1->ZA1_STATUS == '1'", "BLUE",   "Aberto" )
         l_oBrowse:AddLegend( "ZA1->ZA1_STATUS == '2'", "YELLOW", "Pendente Apia" )
-        l_oBrowse:AddLegend( "ZA1->ZA1_STATUS == '3'", "ORANGE", "Pendente Cli." )
-        l_oBrowse:AddLegend( "ZA1->ZA1_STATUS == '4'", "RED",    "Fechado" )
-        l_oBrowse:AddLegend( "ZA1->ZA1_STATUS == '5'", "PURPLE", "Incompleto" )
+        l_oBrowse:AddLegend( "ZA1->ZA1_STATUS == '3'", "PINK",   "Pendente Cli." )
+        l_oBrowse:AddLegend( "ZA1->ZA1_STATUS == '4'", "GREEN",  "Fechado" )
+        l_oBrowse:AddLegend( "ZA1->ZA1_STATUS == '5'", "GRAY",   "Incompleto" )
         l_oBrowse:Activate()
 
     EndIf
@@ -78,17 +80,17 @@ User Function MenuDef()
     ADD OPTION aRotina TITLE "Alterar"          ACTION "apia.cnsa001.U_CH_ALTERARTELA"       OPERATION 4 ACCESS 0
     ADD OPTION aRotina TITLE "Excluir"          ACTION "apia.cnsa001.U_CH_EXCLUIRTELA"       OPERATION 0 ACCESS 0
     ADD OPTION aRotina TITLE "Ver Agendas"      ACTION "apia.cnsa001.U_PROTHEUS_ABREAGENDA"  OPERATION 0 ACCESS 0
-    ADD OPTION aRotina TITLE "Assumir"          ACTION "apia.cnsa001.U_CH_ASSUMIRTELA"       OPERATION 0 ACCESS 0
-    ADD OPTION aRotina TITLE "Anotacoes"        ACTION "apia.cnsa001.U_CNSA_INTERAGIR"       OPERATION 0 ACCESS 0
-    ADD OPTION aRotina TITLE "Excluir Anotacao" ACTION "apia.cnsa001.U_CH_EXCLUIRNOTATELA"   OPERATION 0 ACCESS 0
     ADD OPTION aRotina TITLE "Agendar"          ACTION "apia.cnsa001.U_CNSA_CRIAAGENDA"      OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Assumir"          ACTION "apia.cnsa001.U_CH_ASSUMIRTELA"       OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Interação"        ACTION "apia.cnsa001.U_CNSA_INTERAGIR"       OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Excluir Interacao" ACTION "apia.cnsa001.U_CH_EXCLUIRINTERACAOTELA"   OPERATION 0 ACCESS 0
     ADD OPTION aRotina TITLE "Legenda"          ACTION "apia.cnsa001.U_CNSA_LEG"             OPERATION 0 ACCESS 0
 
 Return aRotina
 
 /*/{Protheus.doc} ViewDef
 Monta a View (FWFormView) da tela de Chamados, com o campo mestre ZA1 e
-os grids de Anotacoes (ZA2) e Agendamento (SZ6).
+os grids de Interacoes (ZA2) e Agendamento (SZ6).
 Identico ao CNSA001.PRW, so troca o modelo carregado por "CNS001".
 @return l_oView   Objeto FWFormView montado, ou Nil se o Model nao carregou
 @author Henrique
@@ -121,7 +123,7 @@ User Function ViewDef()
     l_oView:SetOwnerView("VIEW_SZ6", "GRIDAGE")
 
     l_oView:EnableTitleView("VIEW_ZA1", "Dados do Chamado")
-    l_oView:EnableTitleView("VIEW_ZA2", "Anotacoes")
+    l_oView:EnableTitleView("VIEW_ZA2", "Interacoes")
     l_oView:EnableTitleView("VIEW_SZ6", "Agendamento")
 
     l_oView:SetCloseOnOk({||.T.})
@@ -130,7 +132,7 @@ Return l_oView
 
 /*/{Protheus.doc} ModelDef
 Monta o Model (MPFormModel) da tela de Chamados, com o mestre ZA1MASTER e
-os grids ZA2DETAIL (anotacoes) e SZ6DETAIL (agendamento).
+os grids ZA2DETAIL (interacoes) e SZ6DETAIL (agendamento).
 Identica ao CNSA001.PRW (mesmas tabelas/relacoes)
 @return l_oModel   Objeto MPFormModel montado
 @author Henrique
@@ -144,8 +146,6 @@ User Function ModelDef()
 Return CH_MONTARMODEL()
 
 Static Function CH_MONTARMODEL(lAtivarInsert)
-
-
     Local l_oModel  := Nil
     Local l_oStrZA1 := FWFormStruct(1, "ZA1")
     Local l_oStrZA2 := FWFormStruct(1, "ZA2")
@@ -199,6 +199,8 @@ Static Function CH_MONTARMODEL(lAtivarInsert)
     EndIf
 
 Return l_oModel
+
+
 
 /*/{Protheus.doc} CH_VALIDACAMPO
 Validacao de campo do Model (stub) - sempre retorna .T., sem regra de
@@ -612,8 +614,6 @@ Regra trocada de grupo (MV_CNSAGRP) pra AA1_RSPMNT - pedido do usuario (responsa
 Static Function CH_TEMACESSOGRUPO()
     Local cRspMnt := AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_RSPMNT"))
 
-    ConOut("CNS001 DEBUG: CH_TEMACESSOGRUPO cRspMnt=[" + cRspMnt + "]")
-
 Return cRspMnt == "1"
 
 /*/{Protheus.doc} CH_ALTERARTELA
@@ -627,18 +627,13 @@ Alterar - gate de grupo (identico a CNSA_ALT, so aponta pra VIEWDEF001.CNS001)
 /*/
 User Function CH_ALTERARTELA()
 
-    ConOut("CNS001 DEBUG: entrou em CH_ALTERARTELA()")
-
     If CH_TEMACESSOGRUPO()
-        ConOut("CNS001 DEBUG: CH_ALTERARTELA vai chamar FWExecView")
         // Identificador e so o namespace (sem sufixo) - ModelDef/ViewDef sao
         // bare dentro do Namespace (doc oficial TOTVS).
         FWExecView("Registro de Chamados", "apia.cnsa001.u_cns001", 4)
-        ConOut("CNS001 DEBUG: CH_ALTERARTELA voltou do FWExecView")
         Return
     EndIf
 
-    ConOut("CNS001 DEBUG: CH_ALTERARTELA vai chamar CNSA_INTERAGIR")
     CNSA_INTERAGIR()
 
 Return
@@ -651,11 +646,9 @@ Visualizar/Incluir - ACTION "VIEWDEF.CNSA001" nao dispara nada dentro do Namespa
 @version P12
 /*/
 User Function CH_VISUALIZARTELA()
-    ConOut("CNS001 DEBUG: entrou em CH_VISUALIZARTELA()")
     // MODEL_OPERATION_VIEW e 1, nao 2 - "2" e so o codigo do botao no ADD
     // OPTION (Browse), FWFormModel:SetOperation so aceita {1,3,4,5,6}.
     FWExecView("Registro de Chamados", "apia.cnsa001.u_cns001", MODEL_OPERATION_VIEW)
-    ConOut("CNS001 DEBUG: CH_VISUALIZARTELA voltou do FWExecView")
 Return
 
 /*/{Protheus.doc} CH_INCLUIRTELA
@@ -666,7 +659,6 @@ Opcao de menu "Incluir" da tela classica: abre a View em modo inclusao.
 /*/
 User Function CH_INCLUIRTELA()
     Local oModel := Nil
-    ConOut("CNS001 DEBUG: entrou em CH_INCLUIRTELA()")
 
     // Monta E ativa o Model AQUI (mesma funcao) - igual padrao ja usado em
     // CNSA_INTERAGIR/CH_MONTAAGENDA. Necessario pro Insert: FWInitCpo prende
@@ -678,12 +670,11 @@ User Function CH_INCLUIRTELA()
     oModel := CH_MONTARMODEL(.T.)
 
     FWExecView("Registro de Chamados", "apia.cnsa001.u_cns001", MODEL_OPERATION_INSERT, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel)
-    ConOut("CNS001 DEBUG: CH_INCLUIRTELA voltou do FWExecView")
 Return
 
 /*/{Protheus.doc} GETIDGRID
 Calcula a proxima sequencia de linha (nao deletada) do grid ZA2DETAIL do
-Model ativo, para numerar uma nova anotacao.
+Model ativo, para numerar uma nova interacao.
 Funcoes movidas de CNSA001.PRW (unico fonte compilado agora). GETIDGRID/CNSA_CLIENTE/CNSA_TECNICO mantem nome exato de proposito - sao chamadas pelo dicionario (SX7/SX3), que guarda o nome como texto.
 @return Sequencia formatada em 3 digitos (StrZero)
 @author Henrique
@@ -730,10 +721,11 @@ Exibe a legenda de cores/status do chamado (BrwLegenda).
 User Function CNSA_LEG()
     BrwLegenda("Legenda de Status", "Status do Chamado", ;
         { ;
-            { "BR_VERDE",     "Aberto"        }, ;
+            { "BR_AZUL",      "Aberto"        }, ;
             { "BR_AMARELO",   "Pendente Apia" }, ;
-            { "BR_LARANJA",   "Pendente Cli." }, ;
-            { "BR_VERMELHO",  "Fechado"       }  ;
+            { "BR_PINK",      "Pendente Cli." }, ;
+            { "BR_VERDE",     "Fechado"       }, ;
+            { "BR_CINZA",     "Incompleto"    }  ;
         })
 Return
 
@@ -770,14 +762,14 @@ User Function CNSA_CRIAAGENDA()
 Return
 
 /*/{Protheus.doc} CNSA_INTERAGIR
-Opcao de menu "Anotar" da tela classica: valida o chamado selecionado
+Opcao de menu "Interagir" da tela classica: valida o chamado selecionado
 (nao fechado, com tecnico e cliente definidos, usuario com permissao) e
-abre a View de inclusao de anotacao (CNSAZA2VIEW).
-Anotar (item de menu classico) - abre CNSAZA2VIEW (model separado, nao consolidado aqui). CNSA_NOGRUPO trocado pelo equivalente local CH_TEMACESSOGRUPO.
+abre a View de inclusao de interacao (CNSAZA2VIEW).
+Interagir (item de menu classico) - abre CNSAZA2VIEW (model separado, nao consolidado aqui). CNSA_NOGRUPO trocado pelo equivalente local CH_TEMACESSOGRUPO.
 @author Henrique
 @since 02/09/2026
 @version P12
-@update 17/09/2026 - Apos salvar, pergunta "deseja informar o cliente?" e envia o texto da anotacao por e-mail (CNSAZA2VIEW e um Model separado, sem CH_POSGRAVACAO - checa se a anotacao foi mesmo gravada via requery)
+@update 17/09/2026 - Apos salvar, pergunta "deseja informar o cliente?" e envia o texto da interacao por e-mail (CNSAZA2VIEW e um Model separado, sem CH_POSGRAVACAO - checa se a interacao foi mesmo gravada via requery)
 /*/
 User Function CNSA_INTERAGIR()
     Local cConsul    := AllTrim(ZA1->ZA1_CONSUL)
@@ -789,30 +781,30 @@ User Function CNSA_INTERAGIR()
     Local cAlias     := GetNextAlias()
     Local nSeq       := 1
     Local cSeqGrav   := ""
-    Local cTextoNota := ""
+    Local cTextoInteracao := ""
 
     If ZA1->(Eof()) .Or. ZA1->(Bof())
-        MsgAlert("Nenhum chamado selecionado.", "Anotar")
+        MsgAlert("Nenhum chamado selecionado.", "Interagir")
         Return
     EndIf
 
     If cStatus == "4"
-        MsgAlert("Chamado fechado nao pode receber anotacoes.", "Anotar")
+        MsgAlert("Chamado fechado nao pode receber interacoes.", "Interagir")
         Return
     EndIf
 
     If Empty(cConsul)
-        MsgAlert("O chamado precisa ter um tecnico designado para Anotar.", "Anotar")
+        MsgAlert("O chamado precisa ter um tecnico designado para Interagir.", "Interagir")
         Return
     EndIf
 
     If Empty(cCliente)
-        MsgAlert("O chamado precisa ter um cliente designado para Anotar.", "Anotar")
+        MsgAlert("O chamado precisa ter um cliente designado para Interagir.", "Interagir")
         Return
     EndIf
 
     If AllTrim(cConsul) <> AllTrim(cConsultor) .And. !CH_TEMACESSOGRUPO()
-        MsgAlert("Voce nao tem permissao para anotar neste chamado.", "Anotar")
+        MsgAlert("Voce nao tem permissao para interagir neste chamado.", "Interagir")
         Return
     EndIf
 
@@ -838,7 +830,7 @@ User Function CNSA_INTERAGIR()
     oModel:SetValue("ZA2MASTER", "ZA2_DATA",   CToD(DToC(Date())))
     oModel:SetValue("ZA2MASTER", "ZA2_IDGRID", StrZero(nSeq, 3))
 
-    FWExecView("Nova Anotacao - Chamado " + cIdCh, ;
+    FWExecView("Nova Interacao - Chamado " + cIdCh, ;
                "CNSAZA2VIEW", ;
                MODEL_OPERATION_INSERT, ;
                , ;
@@ -850,7 +842,7 @@ User Function CNSA_INTERAGIR()
 
     // CNSAZA2VIEW e um Model separado (sem CH_POSGRAVACAO) e FWExecView nao
     // devolve se o usuario salvou ou cancelou - requery pra confirmar que a
-    // anotacao foi mesmo gravada antes de perguntar/notificar.
+    // interacao foi mesmo gravada antes de perguntar/notificar.
     cSeqGrav := StrZero(nSeq, 3)
     cAlias   := GetNextAlias()
     BeginSql Alias cAlias
@@ -862,13 +854,13 @@ User Function CNSA_INTERAGIR()
           AND %NotDel%
     EndSql
     If !(cAlias)->(Eof())
-        cTextoNota := CH_DECODESAFE(AllTrim((cAlias)->ZA2_DESCRI))
+        cTextoInteracao := CH_DECODESAFE(AllTrim((cAlias)->ZA2_DESCRI))
     EndIf
     (cAlias)->(DbCloseArea())
 
-    If !Empty(cTextoNota) .And. !Empty(cEmailCli)
-        If MsgYesNo("Deseja informar o cliente sobre esta anotacao?", "Notificar Cliente")
-            CH_NOTIFICARNOTA(cEmailCli, cIdCh, cTextoNota, "incluida", "Nova Anotacao")
+    If !Empty(cTextoInteracao) .And. !Empty(cEmailCli)
+        If MsgYesNo("Deseja informar o cliente sobre esta interacao?", "Notificar Cliente")
+            CH_NOTIFICARINTERACAO(cEmailCli, cIdCh, cTextoInteracao, "incluida", "Nova Interacao")
         EndIf
     EndIf
 
@@ -892,7 +884,7 @@ User Function CNSA_CLIENTE()
     cCod  := AllTrim(oModel:GetValue("ZA1MASTER", "ZA1_CLIENT"))
     cLoja := AllTrim(oModel:GetValue("ZA1MASTER", "ZA1_LOJA"))
 
-    // FIX: mesmo bug do soft-seek ja corrigido em U_CNSA_TECNICO/CH_LISTARNOTAS -
+    // FIX: mesmo bug do soft-seek ja corrigido em U_CNSA_TECNICO/CH_LISTARINTERACOES -
     // Posicione("SA1",1,xFilial("SA1")+"","A1_NREDUZ") com codigo vazio cai no
     // primeiro registro da SA1 (ex.: GE CELMA) em vez de devolver vazio. So
     // aparecia na tela classica do Protheus (gatilho SX7 so dispara nela) -
@@ -1132,14 +1124,14 @@ User Function CH_EXCLUIRTELA()
         Return
     EndIf
 
-    Private aMotivos := {"Cancelamento pela Apia", "Cancelamento pelo Cliente", "Outro motivo"}
+    Private aMotivos := {"Encerramento pela Apia", "Encerramento pelo Cliente", "Outro motivo"}
     Private cMotivoSel := aMotivos[1]
     Private cOutroMotivo := Space(100)
     Private lMotConfirm  := .F.
 
     DEFINE MSDIALOG oDialog TITLE "Motivo da Exclusao" FROM 0,0 TO 300,600 PIXEL
 
-        @ 10,10  SAY "Selecione o motivo do cancelamento:" SIZE 250,12 PIXEL OF oDialog
+        @ 10,10  SAY "Selecione o motivo do Encerramento:" SIZE 250,12 PIXEL OF oDialog
         @ 25,10  COMBOBOX oCombo VAR cMotivoSel ITEMS aMotivos SIZE 250,12 PIXEL OF oDialog
 
         @ 60,10  SAY "Descricao: " SIZE 300,12 PIXEL OF oDialog
@@ -1155,10 +1147,10 @@ User Function CH_EXCLUIRTELA()
     EndIf
 
     Do Case
-        Case cMotivoSel == "Cancelamento pela Apia"
-            cMotivo := If(Empty(AllTrim(cOutroMotivo)), "Cancelamento pela Apia", "Cancelamento pela Apia - " + AllTrim(cOutroMotivo))
-        Case cMotivoSel == "Cancelamento pelo Cliente"
-            cMotivo := If(Empty(AllTrim(cOutroMotivo)), "Cancelamento pelo Cliente", "Cancelamento pelo Cliente - " + AllTrim(cOutroMotivo))
+        Case cMotivoSel == "Encerramento pela Apia"
+            cMotivo := If(Empty(AllTrim(cOutroMotivo)), "Encerramento pela Apia", "Encerramento pela Apia - " + AllTrim(cOutroMotivo))
+        Case cMotivoSel == "Encerramento pelo Cliente"
+            cMotivo := If(Empty(AllTrim(cOutroMotivo)), "Encerramento pelo Cliente", "Encerramento pelo Cliente - " + AllTrim(cOutroMotivo))
         Case cMotivoSel == "Outro motivo"
             If Empty(AllTrim(cOutroMotivo))
                 MsgAlert("Informe o motivo para a opcao 'Outro'.", "Motivo")
@@ -1174,15 +1166,15 @@ User Function CH_EXCLUIRTELA()
 
 Return
 
-/*/{Protheus.doc} CH_EXCLUIRNOTATELA
-Opcao de menu "Excluir Anotacao" da tela classica: lista as anotacoes do
+/*/{Protheus.doc} CH_EXCLUIRINTERACAOTELA
+Opcao de menu "Excluir Interacao" da tela classica: lista as interacoes do
 chamado selecionado num AChoice, confirma a exclusao e pergunta se deve
-informar o cliente, chamando o nucleo compartilhado CH_NUCLEOEXCLUIRNOTA.
+informar o cliente, chamando o nucleo compartilhado CH_NUCLEOEXCLUIRINTERACAO.
 @author Henrique
 @since 17/09/2026
 @version P12
 /*/
-User Function CH_EXCLUIRNOTATELA()
+User Function CH_EXCLUIRINTERACAOTELA()
     Local cIdCh      := ""
     Local cAlias     := GetNextAlias()
     Local aSeqs      := {}
@@ -1192,7 +1184,7 @@ User Function CH_EXCLUIRNOTATELA()
     Local aResultado := {}
 
     If ZA1->(Eof()) .Or. ZA1->(Bof())
-        MsgAlert("Nenhum chamado selecionado.", "Excluir Anotacao")
+        MsgAlert("Nenhum chamado selecionado.", "Excluir Interação")
         Return
     EndIf
 
@@ -1215,27 +1207,27 @@ User Function CH_EXCLUIRNOTATELA()
     (cAlias)->(DbCloseArea())
 
     If Len(aSeqs) == 0
-        MsgAlert("Este chamado nao tem anotacoes.", "Excluir Anotacao")
+        MsgAlert("Este chamado nao tem interacoes.", "Excluir Interação")
         Return
     EndIf
 
-    nOpcao := AChoice("Excluir Anotacao - Chamado " + cIdCh, aExibicao)
+    nOpcao := AChoice("Excluir Interação - Chamado " + cIdCh, aExibicao)
     If nOpcao == 0
         Return
     EndIf
 
-    If !MsgYesNo("Confirma excluir a anotacao " + aSeqs[nOpcao] + "?", "Excluir Anotacao")
+    If !MsgYesNo("Confirma excluir a Interação " + aSeqs[nOpcao] + "?", "Excluir Interação")
         Return
     EndIf
 
     lNotificar := MsgYesNo("Deseja informar o cliente sobre esta alteracao?", "Notificar Cliente")
 
-    aResultado := CH_NUCLEOEXCLUIRNOTA(cIdCh, aSeqs[nOpcao], lNotificar)
+    aResultado := CH_NUCLEOEXCLUIRINTERACAO(cIdCh, aSeqs[nOpcao], lNotificar)
 
     If aResultado[1] == 200
-        MsgInfo("Anotacao excluida com sucesso!", "Excluir Anotacao")
+        MsgInfo("Interação excluida com sucesso!", "Excluir Interação")
     Else
-        MsgAlert(aResultado[2], "Excluir Anotacao")
+        MsgAlert(aResultado[2], "Excluir Interação")
     EndIf
 
 Return
@@ -1842,9 +1834,9 @@ Static Function CH_NUCLEOEXCLUIR(cIdCh, cMotivo)
             cEmailTec := AllTrim(Posicione("AA1", 1, xFilial("AA1") + cConsulAnt, "AA1_EMAIL"))
             cEmailCli := AllTrim(Posicione("SA1", 1, xFilial("SA1") + cClienteAnt + cLojaAnt, "A1_EMAIL"))
             If !Empty(cEmailTec)
-                cCorpo := CH_HTMLCANCELA(cNomeCli, cDataAge, cHmini, cHmfim, cIdCh, cMotivo, cExclPor)
-                CH_ENVIAREMAIL(cEmailTec, "Cancelamento do Chamado " + cIdCh, cCorpo, "apia@apia.com.br")
-                CH_ENVIAREMAIL(cEmailCli, "Cancelamento do Chamado " + cIdCh, cCorpo, "apia@apia.com.br")
+                cCorpo := CH_HTMLENCERRAMENTO(cNomeCli, cDataAge, cHmini, cHmfim, cIdCh, cMotivo, cExclPor)
+                CH_ENVIAREMAIL(cEmailTec, "Encerramento do Chamado " + cIdCh, cCorpo, "apia@apia.com.br")
+                CH_ENVIAREMAIL(cEmailCli, "Encerramento do Chamado " + cIdCh, cCorpo, "apia@apia.com.br")
             EndIf
         EndIf
 
@@ -2515,25 +2507,32 @@ User Function CH_APIVERAGENDA() As Logical
 Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
 
-/*/{Protheus.doc} CH_GRAVARNOTA
-Grava uma anotacao (ZA2) para um chamado, via Model CNSAZA2VIEW - mesmo
+/*/{Protheus.doc} CH_GRAVARINTERACAO
+Grava uma interacao (ZA2) para um chamado, via Model CNSAZA2VIEW - mesmo
 caminho usado pela tela classica (CNSA_INTERAGIR).
-ANOTACOES (ZA2) - historico, endpoints REST (mesmos paths). Substitui ZA1_ANOT. Unificado com o Model ja usado pela tela classica (CNSA_INTERAGIR -> FWLoadModel("CNSAZA2VIEW")) - evita reimplementar a inclusao via RecLock direto (2a copia da mesma acao).
+INTERACOES (ZA2) - historico, endpoints REST (mesmos paths). Substitui ZA1_ANOT. Unificado com o Model ja usado pela tela classica (CNSA_INTERAGIR -> FWLoadModel("CNSAZA2VIEW")) - evita reimplementar a inclusao via RecLock direto (2a copia da mesma acao).
 @param  cIdCh        Id do chamado (ZA1_IDCH)
-@param  cConsultor   Codigo do consultor autor da anotacao
-@param  cTexto       Texto da anotacao
-@return cSeq   Sequencia (3 digitos) da anotacao gravada
+@param  cConsultor   Codigo do consultor autor da interacao
+@param  cTexto       Texto da interacao
+@param  cOs          Numero da OS que gerou a interacao (ZA2_OS) - opcional
+@param  cErro        (referencia) mensagem de erro do Model quando a gravacao falha
+@return cSeq   Sequencia (3 digitos) da interacao gravada - vazio se falhou
 @author Henrique
 @since 02/09/2026
 @version P12
 /*/
-Static Function CH_GRAVARNOTA(cIdCh, cConsultor, cTexto)
+Static Function CH_GRAVARINTERACAO(cIdCh, cConsultor, cTexto, cOs, cErro)
     Local cAlias      := GetNextAlias()
     Local nSeq        := 1
     Local oModel      := Nil
     Local oModelZA2   := Nil
     Local lOk         := .F.
     Local oErroModel  := Nil
+
+    Default cOs := ""
+
+    cErro := ""
+
     // FIX: ZA2_IDCH e Character. O filtro SQL abaixo precisa comparar
     // Character com Character - usar numero aqui (%Exp:nChamN%) da
     // ORA-01722 "invalid number" (confirmado em producao: Oracle tenta
@@ -2563,6 +2562,9 @@ Static Function CH_GRAVARNOTA(cIdCh, cConsultor, cTexto)
     oModelZA2:SetValue("ZA2_IDGRID", StrZero(nSeq, 3))
     oModelZA2:SetValue("ZA2_HORA",   Left(Time(), 5))
     oModelZA2:SetValue("ZA2_DESCRI", cTexto)
+    If !Empty(cOs)
+        oModelZA2:SetValue("ZA2_OS", cOs)
+    EndIf
 
     If oModel:VldData()
         lOk := oModel:CommitData()
@@ -2572,15 +2574,22 @@ Static Function CH_GRAVARNOTA(cIdCh, cConsultor, cTexto)
 
     If !lOk
         oErroModel := oModel:GetErrorMessage()
-        ConOut("CH_GRAVARNOTA: falha ao gravar via Model CNSAZA2VIEW: " + FwJsonSerialize(oErroModel))
+        ConOut("CH_GRAVARINTERACAO: falha ao gravar via Model CNSAZA2VIEW: " + FwJsonSerialize(oErroModel))
+        // FIX: antes devolvia a sequencia mesmo com falha e o REST respondia
+        // "Interacao adicionada com sucesso" sem ter gravado nada.
+        If ValType(oErroModel) == "A" .And. Len(oErroModel) >= 6 .And. !Empty(oErroModel[6])
+            cErro := AllTrim(cValToChar(oErroModel[6]))
+        Else
+            cErro := "Falha ao gravar a interacao."
+        EndIf
     EndIf
 
     oModel:DeActivate(lOk)
 
-Return StrZero(nSeq, 3)
+Return If(lOk, StrZero(nSeq, 3), "")
 
-/*/{Protheus.doc} CH_LISTARNOTAS
-Monta o JSON com as anotacoes (ZA2) de um chamado, ordenadas por
+/*/{Protheus.doc} CH_LISTARINTERACOES
+Monta o JSON com as interacoes (ZA2) de um chamado, ordenadas por
 sequencia, com consultor resolvido por nome.
 @param  cIdCh   Id do chamado (ZA1_IDCH)
 @return Array {nStatusHTTP, cCorpoJson}
@@ -2588,7 +2597,7 @@ sequencia, com consultor resolvido por nome.
 @since 02/09/2026
 @version P12
 /*/
-Static Function CH_LISTARNOTAS(cIdCh)
+Static Function CH_LISTARINTERACOES(cIdCh)
     Local oJson     := JsonObject():New()
     Local aItens    := {}
     Local oLinha    := Nil
@@ -2607,8 +2616,10 @@ Static Function CH_LISTARNOTAS(cIdCh)
 
         cAlias := GetNextAlias()
 
+        // ZA2_DESCRI (Memo) precisa ser a ULTIMA coluna do SELECT - o DBAccess
+        // nao traz campo LOB que nao esteja no fim (invalid field name).
         BeginSql Alias cAlias
-            SELECT ZA2_IDGRID, ZA2_CONSUL, ZA2_DATA, ZA2_HORA, ZA2_DESCRI
+            SELECT ZA2_IDGRID, ZA2_CONSUL, ZA2_DATA, ZA2_HORA, ZA2_OS, ZA2_DESCRI
             FROM %Table:ZA2% ZA2
             WHERE ZA2_FILIAL = %xFilial:ZA2%
               AND ZA2_IDCH   = %Exp:cIdCh%
@@ -2628,8 +2639,8 @@ Static Function CH_LISTARNOTAS(cIdCh)
 
             // FIX: mesmo bug do soft-seek do ZA1_CONSUL (ver CH_NUCLEOINCLUIR) -
             // Posicione com codigo vazio cai no primeiro registro da AA1 (Luiz
-            // Muller) em vez de devolver vazio. Anotacao do e-mail nasce sem
-            // consultor (CH_GRAVARNOTA chamado com cConsultor="").
+            // Muller) em vez de devolver vazio. Interacao do e-mail nasce sem
+            // consultor (CH_GRAVARINTERACAO chamado com cConsultor="").
             If Empty(AllTrim((cAlias)->ZA2_CONSUL))
                 cNomeCons := ""
             Else
@@ -2642,6 +2653,7 @@ Static Function CH_LISTARNOTAS(cIdCh)
             oLinha['data']      := cDataIso
             oLinha['hora']      := AllTrim((cAlias)->ZA2_HORA)
             oLinha['texto']     := CH_DECODESAFE(AllTrim((cAlias)->ZA2_DESCRI))
+            oLinha['os']        := AllTrim((cAlias)->ZA2_OS)
             AAdd(aItens, oLinha)
 
             (cAlias)->(DbSkip())
@@ -2659,46 +2671,49 @@ Static Function CH_LISTARNOTAS(cIdCh)
 
 Return {500, '{"erro":"Erro desconhecido."}'}
 
-/*/{Protheus.doc} CH_APILISTANOTAS
-Endpoint REST GET /CNSACHAMADOSANOTACOES: lista as anotacoes de um
-chamado (idCh via query), chamando CH_LISTARNOTAS.
-@return Logical - resposta HTTP com o JSON de anotacoes
+/*/{Protheus.doc} CH_APILISTAINTERACOES
+Endpoint REST GET /CNSACHAMADOSINTERACOES: lista as interacoes de um
+chamado (idCh via query), chamando CH_LISTARINTERACOES.
+@return Logical - resposta HTTP com o JSON de interacoes
 @author Henrique
 @since 02/09/2026
 @version P12
 /*/
-@Get(endpoint="/CNSACHAMADOSANOTACOES")
-User Function CH_APILISTANOTAS() As Logical
+@Get(endpoint="/CNSACHAMADOSINTERACOES")
+User Function CH_APILISTAINTERACOES() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
-    aResultado := CH_LISTARNOTAS(AllTrim(CH_LERJSONTXT(jQuery,"idCh")))
+    aResultado := CH_LISTARINTERACOES(AllTrim(CH_LERJSONTXT(jQuery,"idCh")))
 
 Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
-/*/{Protheus.doc} CH_INCLUIRNOTA
-Inclui uma anotacao para um chamado (usado pelo endpoint REST), validando
-tamanho maximo do campo e chamando CH_GRAVARNOTA com o consultor da sessao.
+/*/{Protheus.doc} CH_INCLUIRINTERACAO
+Inclui uma interacao para um chamado (usado pelo endpoint REST), validando
+tamanho maximo do campo e chamando CH_GRAVARINTERACAO com o consultor da sessao.
 Notifica o cliente (ZA1_EMAIL) quando lNotificarCliente for .T.
 @param  cIdCh               Id do chamado (ZA1_IDCH)
-@param  cTexto              Texto da anotacao
-@param  lNotificarCliente   .T. pra tambem enviar e-mail ao cliente sobre a anotacao
+@param  cTexto              Texto da interacao
+@param  lNotificarCliente   .T. pra tambem enviar e-mail ao cliente sobre a interacao
+@param  cOs                 Numero da OS que gerou a interacao (ZA2_OS) - opcional
 @return Array {nStatusHTTP, cCorpoJson}
 @author Henrique
 @since 02/09/2026
 @version P12
-@update 17/09/2026 - Adiciona lNotificarCliente (e-mail ao cliente com o texto da anotacao)
+@update 17/09/2026 - Adiciona lNotificarCliente (e-mail ao cliente com o texto da interacao)
 /*/
-Static Function CH_INCLUIRNOTA(cIdCh, cTexto, lNotificarCliente)
+Static Function CH_INCLUIRINTERACAO(cIdCh, cTexto, lNotificarCliente, cOs)
     Local oJson      := JsonObject():New()
     Local oErro      := Nil
     Local cConsultor := ""
     Local cSeq       := ""
     Local cEmailCli  := ""
+    Local cErroGrv   := ""
 
     Default lNotificarCliente := .F.
+    Default cOs               := ""
 
     cTexto := AllTrim(cTexto)
 
@@ -2714,20 +2729,24 @@ Static Function CH_INCLUIRNOTA(cIdCh, cTexto, lNotificarCliente)
 
         // FIX: ZA2_DESCRI e Memo (TamSX3 devolve 10 - tamanho do ponteiro,
         // NAO limite real de conteudo). Validacao de tamanho contra TamSX3
-        // rejeitava qualquer anotacao com mais de 10 caracteres. Memo nao
+        // rejeitava qualquer interacao com mais de 10 caracteres. Memo nao
         // tem limite de negocio conhecido - checagem removida.
 
         cConsultor := Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC")
-        cSeq       := CH_GRAVARNOTA(cIdCh, cConsultor, cTexto)
+        cSeq       := CH_GRAVARINTERACAO(cIdCh, cConsultor, cTexto, cOs, @cErroGrv)
+
+        If Empty(cSeq)
+            Return {500, '{"erro":"Interacao nao gravada: ' + CH_ESCAPARJSON(cErroGrv) + '"}'}
+        EndIf
 
         If lNotificarCliente .And. !Empty(cEmailCli)
-            CH_NOTIFICARNOTA(cEmailCli, cIdCh, cTexto, "incluida", "Nova Anotacao")
+            CH_NOTIFICARINTERACAO(cEmailCli, cIdCh, cTexto, "incluida", "Nova Interacao")
         EndIf
 
         oJson['sucesso']  := .T.
         oJson['idCh']     := cIdCh
         oJson['seq']      := cSeq
-        oJson['mensagem'] := "Anotacao adicionada com sucesso."
+        oJson['mensagem'] := "Interacao adicionada com sucesso."
 
         Return {200, oJson:ToJson()}
 
@@ -2737,45 +2756,45 @@ Static Function CH_INCLUIRNOTA(cIdCh, cTexto, lNotificarCliente)
 
 Return {500, '{"erro":"Erro desconhecido."}'}
 
-/*/{Protheus.doc} CH_APINOVANOTA
-Endpoint REST POST /CNSACHAMADOSANOTACOESINCLUIR: inclui uma anotacao
-para um chamado (idCh/texto via query), chamando CH_INCLUIRNOTA.
+/*/{Protheus.doc} CH_APINOVAINTERACAO
+Endpoint REST POST /CNSACHAMADOSINTERACOESINCLUIR: inclui uma interacao
+para um chamado (idCh/texto via query), chamando CH_INCLUIRINTERACAO.
 @return Logical - resposta HTTP com o resultado da inclusao
 @author Henrique
 @since 02/09/2026
 @version P12
 /*/
-@Post(endpoint="/CNSACHAMADOSANOTACOESINCLUIR")
-User Function CH_APINOVANOTA() As Logical
+@Post(endpoint="/CNSACHAMADOSINTERACOESINCLUIR")
+User Function CH_APINOVAINTERACAO() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
-    aResultado := CH_INCLUIRNOTA(AllTrim(CH_LERJSONTXT(jQuery,"idCh")), CH_LERJSONTXT(jQuery,"texto"), AllTrim(CH_LERJSONTXT(jQuery,"notificarCliente")) == "1")
+    aResultado := CH_INCLUIRINTERACAO(AllTrim(CH_LERJSONTXT(jQuery,"idCh")), CH_LERJSONTXT(jQuery,"texto"), AllTrim(CH_LERJSONTXT(jQuery,"notificarCliente")) == "1", AllTrim(CH_LERJSONTXT(jQuery,"os")))
 
 Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
-/*/{Protheus.doc} CH_NUCLEOEXCLUIRNOTA
-Nucleo compartilhado (tela + REST) de exclusao de anotacao (ZA2): apaga o
+/*/{Protheus.doc} CH_NUCLEOEXCLUIRINTERACAO
+Nucleo compartilhado (tela + REST) de exclusao de interacao (ZA2): apaga o
 registro via RecLock direto (sem Model, mesmo padrao de CH_NUCLEOEXCLUIR
-pro chamado). So o autor da anotacao ou administrador (CH_TEMACESSOGRUPO)
+pro chamado). So o autor da interacao ou administrador (CH_TEMACESSOGRUPO)
 pode excluir; chamado fechado bloqueia. Notifica o cliente (ZA1_EMAIL)
-com o texto da anotacao removida quando lNotificarCliente for .T.
+com o texto da interacao removida quando lNotificarCliente for .T.
 @param  cIdCh               Id do chamado (ZA1_IDCH)
-@param  cSeq                Sequencia da anotacao (ZA2_IDGRID, 3 digitos)
+@param  cSeq                Sequencia da interacao (ZA2_IDGRID, 3 digitos)
 @param  lNotificarCliente   .T. pra tambem enviar e-mail ao cliente avisando da remocao
 @return Array {nStatusHTTP, cMensagem}
 @author Henrique
 @since 17/09/2026
 @version P12
 /*/
-Static Function CH_NUCLEOEXCLUIRNOTA(cIdCh, cSeq, lNotificarCliente)
+Static Function CH_NUCLEOEXCLUIRINTERACAO(cIdCh, cSeq, lNotificarCliente)
     Local oErro      := Nil
     Local cAlias     := ""
     Local nRecno     := 0
     Local cConsultor := ""
-    Local cAutorNota := ""
+    Local cAutorInteracao := ""
     Local cTexto     := ""
     Local cEmailCli  := ""
     Local cStatusCh  := ""
@@ -2794,7 +2813,7 @@ Static Function CH_NUCLEOEXCLUIRNOTA(cIdCh, cSeq, lNotificarCliente)
         cEmailCli := AllTrim(ZA1->ZA1_EMAIL)
 
         If cStatusCh == "4"
-            Return {400, "Chamado fechado nao pode ter anotacoes excluidas."}
+            Return {400, "Chamado fechado nao pode ter interacoes excluidas."}
         EndIf
 
         cAlias := GetNextAlias()
@@ -2809,18 +2828,18 @@ Static Function CH_NUCLEOEXCLUIRNOTA(cIdCh, cSeq, lNotificarCliente)
 
         If (cAlias)->(Eof())
             (cAlias)->(DbCloseArea())
-            Return {404, "Anotacao nao encontrada."}
+            Return {404, "Interacao nao encontrada."}
         EndIf
 
         nRecno     := (cAlias)->RECNO
-        cAutorNota := AllTrim((cAlias)->ZA2_CONSUL)
+        cAutorInteracao := AllTrim((cAlias)->ZA2_CONSUL)
         cTexto     := CH_DECODESAFE(AllTrim((cAlias)->ZA2_DESCRI))
         (cAlias)->(DbCloseArea())
 
         cConsultor := AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC"))
 
-        If cAutorNota <> cConsultor .And. !CH_TEMACESSOGRUPO()
-            Return {403, "Voce nao tem permissao para excluir esta anotacao."}
+        If cAutorInteracao <> cConsultor .And. !CH_TEMACESSOGRUPO()
+            Return {403, "Voce nao tem permissao para excluir esta interacao."}
         EndIf
 
         dbSelectArea("ZA2")
@@ -2830,10 +2849,10 @@ Static Function CH_NUCLEOEXCLUIRNOTA(cIdCh, cSeq, lNotificarCliente)
         ZA2->(MsUnlock())
 
         If lNotificarCliente .And. !Empty(cEmailCli)
-            CH_NOTIFICARNOTA(cEmailCli, cIdCh, cTexto, "removida", "Anotacao Removida")
+            CH_NOTIFICARINTERACAO(cEmailCli, cIdCh, cTexto, "removida", "Interacao Removida")
         EndIf
 
-        Return {200, "Anotacao excluida com sucesso."}
+        Return {200, "Interacao excluida com sucesso."}
 
     Recover Using oErro
         Return {500, "Erro interno: " + oErro:Description}
@@ -2841,16 +2860,16 @@ Static Function CH_NUCLEOEXCLUIRNOTA(cIdCh, cSeq, lNotificarCliente)
 
 Return {500, "Erro desconhecido."}
 
-/*/{Protheus.doc} CH_APIEXCLUIRNOTA
-Endpoint REST POST /CNSACHAMADOSANOTACOESEXCLUIR: exclui uma anotacao de
-um chamado (idCh/seq via query), chamando CH_NUCLEOEXCLUIRNOTA.
+/*/{Protheus.doc} CH_APIEXCLUIRINTERACAO
+Endpoint REST POST /CNSACHAMADOSINTERACOESEXCLUIR: exclui uma interacao de
+um chamado (idCh/seq via query), chamando CH_NUCLEOEXCLUIRINTERACAO.
 @return Logical - resposta HTTP com o resultado da exclusao
 @author Henrique
 @since 17/09/2026
 @version P12
 /*/
-@Post(endpoint="/CNSACHAMADOSANOTACOESEXCLUIR")
-User Function CH_APIEXCLUIRNOTA() As Logical
+@Post(endpoint="/CNSACHAMADOSINTERACOESEXCLUIR")
+User Function CH_APIEXCLUIRINTERACAO() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local cIdCh      := AllTrim(CH_LERJSONTXT(jQuery,"idCh"))
     Local cSeq       := AllTrim(CH_LERJSONTXT(jQuery,"seq"))
@@ -2859,7 +2878,7 @@ User Function CH_APIEXCLUIRNOTA() As Logical
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
-    aResultado := CH_NUCLEOEXCLUIRNOTA(cIdCh, cSeq, AllTrim(CH_LERJSONTXT(jQuery,"notificarCliente")) == "1")
+    aResultado := CH_NUCLEOEXCLUIRINTERACAO(cIdCh, cSeq, AllTrim(CH_LERJSONTXT(jQuery,"notificarCliente")) == "1")
 
     If aResultado[1] == 200
         oJson['sucesso']  := .T.
@@ -2911,7 +2930,7 @@ Return Val(cValToChar(xVal))
 Le um campo texto de um JsonObject (query string) ja decodificado de
 UTF-8 (via CH_DECODESAFE), com fallback seguro para "" quando o campo
 esta ausente ou nao e texto.
-FIX (caracteres acentuados bugados no assunto/anotacao/etc): campo de texto chega via querystring (nao corpo JSON - ver ChamadoServ.ts, todo POST manda body null), mesmo caminho da lupa (CNS001_LUPA_JSONSTR em cnslib.tlpp), que ja precisava de DecodeUTF8 pra bater certo. Centralizado aqui pra garantir exatamente 1 decodificacao por campo (decode duplicado em call sites separados foi o que bugou da ultima vez que isso foi tentado).
+FIX (caracteres acentuados bugados no assunto/interacao/etc): campo de texto chega via querystring (nao corpo JSON - ver ChamadoServ.ts, todo POST manda body null), mesmo caminho da lupa (CNS001_LUPA_JSONSTR em cnslib.tlpp), que ja precisava de DecodeUTF8 pra bater certo. Centralizado aqui pra garantir exatamente 1 decodificacao por campo (decode duplicado em call sites separados foi o que bugou da ultima vez que isso foi tentado).
 @param  jDados   JsonObject de origem (ex: query string da requisicao)
 @param  cCampo   Nome do campo a ler
 @return cTexto   Valor do campo, decodificado, ou "" se ausente/invalido
@@ -3207,28 +3226,28 @@ Static Function CH_ENVIAREMAIL(cPara, cAssunto, cCorpo, cDe)
 
 Return lOk
 
-/*/{Protheus.doc} CH_HTMLCANCELA
-Monta o corpo HTML do e-mail de cancelamento/exclusao de um agendamento
+/*/{Protheus.doc} CH_HTMLENCERRAMENTO
+Monta o corpo HTML do e-mail de encerramento de um agendamento
 ou chamado.
 @param  cCliente        Nome do cliente
 @param  cDataAge        Data do agendamento (formatada)
 @param  cHmini          Hora inicial do agendamento
 @param  cHmfim          Hora final do agendamento
 @param  cChamado        Id do chamado
-@param  cMotivo         Motivo do cancelamento
-@param  cExcluidoPor    Nome de quem cancelou/excluiu
+@param  cMotivo         Motivo do encerramento
+@param  cExcluidoPor    Nome de quem encerrou
 @return cHtml   Corpo HTML do e-mail
 @author Henrique
 @since 02/09/2026
 @version P12
 /*/
-Static Function CH_HTMLCANCELA(cCliente, cDataAge, cHmini, cHmfim, cChamado, cMotivo, cExcluidoPor)
+Static Function CH_HTMLENCERRAMENTO(cCliente, cDataAge, cHmini, cHmfim, cChamado, cMotivo, cExcluidoPor)
     Local cHtml := ""
 
     cHtml := '<div style="font-family:Arial,sans-serif;max-width:600px;border:1px solid #cccccc;border-radius:8px;overflow:hidden">'
     cHtml += '<div style="background-color:#0d5a8a;padding:20px;text-align:center">'
     cHtml += '<h2 style="color:#ffffff;margin:0;font-size:18px">Apia Consultoria e Sistemas</h2>'
-    cHtml += '<p style="color:#d0e8f8;margin:5px 0 0 0;font-size:13px;font-style:italic">Voce esta recebendo o <b>CANCELAMENTO</b> de um chamado.<br>Por favor, verifique os dados abaixo</p>'
+    cHtml += '<p style="color:#d0e8f8;margin:5px 0 0 0;font-size:13px;font-style:italic">Voce esta recebendo o <b>ENCERRAMENTO</b> de um chamado.<br>Por favor, verifique os dados abaixo</p>'
     cHtml += '</div>'
     cHtml += '<table style="width:100%;border-collapse:collapse">'
     cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px;width:35%"><b>Cliente</b></td><td style="padding:10px 15px">' + cCliente + '</td></tr>'
@@ -3506,47 +3525,47 @@ Static Function CH_HTMLALTERACAO(cIdCh, aMudancas)
     cHtml += '</div>'
 Return cHtml
 
-/*/{Protheus.doc} CH_NOTIFICARNOTA
-Notifica por e-mail o cliente sobre uma anotacao incluida ou removida de
+/*/{Protheus.doc} CH_NOTIFICARINTERACAO
+Notifica por e-mail o cliente sobre uma interacao incluida ou removida de
 um chamado.
 @param  cEmail        E-mail do cliente (destino)
 @param  cIdCh         Id do chamado
-@param  cTexto        Texto da anotacao
+@param  cTexto        Texto da interacao
 @param  cAcaoLabel    Rotulo da acao ("incluida" ou "removida")
-@param  cAssuntoBase  Prefixo do assunto do e-mail (ex: "Nova Anotacao")
+@param  cAssuntoBase  Prefixo do assunto do e-mail (ex: "Nova Interacao")
 @return .T./.F. indicando sucesso no envio (via CH_ENVIAREMAIL)
 @author Henrique
 @since 17/09/2026
 @version P12
 /*/
-Static Function CH_NOTIFICARNOTA(cEmail, cIdCh, cTexto, cAcaoLabel, cAssuntoBase)
+Static Function CH_NOTIFICARINTERACAO(cEmail, cIdCh, cTexto, cAcaoLabel, cAssuntoBase)
     Local cCorpo := ""
 
     If Empty(cEmail)
         Return .F.
     EndIf
 
-    cCorpo := CH_HTMLNOTA(cIdCh, cTexto, cAcaoLabel)
+    cCorpo := CH_HTMLINTERACAO(cIdCh, cTexto, cAcaoLabel)
 
 Return CH_ENVIAREMAIL(cEmail, cAssuntoBase + " - Chamado " + cIdCh, cCorpo, "apia@apia.com.br")
 
-/*/{Protheus.doc} CH_HTMLNOTA
-Monta o corpo HTML do e-mail de anotacao incluida/removida de um chamado.
+/*/{Protheus.doc} CH_HTMLINTERACAO
+Monta o corpo HTML do e-mail de interacao incluida/removida de um chamado.
 @param  cIdCh        Id do chamado
-@param  cTexto       Texto da anotacao
+@param  cTexto       Texto da interacao
 @param  cAcaoLabel   Rotulo da acao ("incluida" ou "removida")
 @return cHtml   Corpo HTML do e-mail
 @author Henrique
 @since 17/09/2026
 @version P12
 /*/
-Static Function CH_HTMLNOTA(cIdCh, cTexto, cAcaoLabel)
+Static Function CH_HTMLINTERACAO(cIdCh, cTexto, cAcaoLabel)
     Local cHtml := ""
 
     cHtml := '<div style="font-family:Arial,sans-serif;max-width:600px;border:1px solid #cccccc;border-radius:8px;overflow:hidden">'
     cHtml += '<div style="background-color:#1a7fc1;padding:20px;text-align:center">'
     cHtml += '<h2 style="color:#ffffff;margin:0;font-size:18px">Apia Consultoria e Sistemas</h2>'
-    cHtml += '<p style="color:#d0e8f8;margin:5px 0 0 0;font-size:13px;font-style:italic">Uma anotacao foi ' + cAcaoLabel + ' no seu chamado ' + cIdCh + '</p>'
+    cHtml += '<p style="color:#d0e8f8;margin:5px 0 0 0;font-size:13px;font-style:italic">Uma interacao foi ' + cAcaoLabel + ' no seu chamado ' + cIdCh + '</p>'
     cHtml += '</div>'
     cHtml += '<div style="padding:15px">' + cTexto + '</div>'
     cHtml += '<div style="padding:0 15px 15px 15px">Qualquer duvida, entre em contato: <b>pericles@apia.com.br</b></div>'
@@ -3798,7 +3817,7 @@ Return
 /*/{Protheus.doc} CH_CRIARCHAMADOEMAIL
 Le as mensagens nao lidas da caixa apia@apia.com.br (Microsoft Graph) e
 cria um chamado (via CH_NUCLEOINCLUIR) para cada e-mail ainda nao
-processado, incluindo o corpo como primeira anotacao (CH_GRAVARNOTA).
+processado, incluindo o corpo como primeira interacao (CH_GRAVARINTERACAO).
 Le a caixa apia@apia.com.br (Graph) e cria um chamado (ZA1) por e-mail novo. NAO marca como lido de proposito (deve continuar nao lido na caixa) - dedup contra reprocesso via CH_EMAILJAPROCESSADO (ZA1_MAILID). Chamada por 3 gatilhos independentes (job CH_JOBEMAIL, botao Recarregar via CH_APIVERIFICAEMAIL, tela classica CNS001) - CH_TRAVAREMAIL garante que so uma execucao roda por vez.
 @return nCriados   Quantidade de chamados criados (-1 em falha de token/Graph)
 @author Henrique
@@ -3952,7 +3971,7 @@ Static Function CH_CRIARCHAMADOEMAIL()
         // NAO limite real de conteudo) - truncar pra 10 caracteres cortava
         // o corpo do e-mail quase inteiro. Memo aceita o texto completo.
         If !Empty(cCorpo)
-            CH_GRAVARNOTA(cNewId, "", cCorpo)
+            CH_GRAVARINTERACAO(cNewId, "", cCorpo)
         EndIf
 
         // Confirma pro cliente (mesmo e-mail de origem) o numero do
@@ -4236,8 +4255,8 @@ Return lRet
 // 1) Este arquivo e o UNICO que precisa ser compilado. CNSA001.PRW e
 //    CNS001Rest.tlpp ficam no disco so como referencia/rollback - NAO
 //    compilar nenhum dos dois junto com este: os globais CH_APIASSUMIR/
-//    CH_APIEXCLUIR/CH_APIAGENDAR/CH_APIVERAGENDA/CH_APILISTANOTAS/
-//    CH_APINOVANOTA usam o MESMO nome e PATH do CNS001Rest.tlpp de
+//    CH_APIEXCLUIR/CH_APIAGENDAR/CH_APIVERAGENDA/CH_APILISTAINTERACOES/
+//    CH_APINOVAINTERACAO usam o MESMO nome e PATH do CNS001Rest.tlpp de
 //    proposito (contrato REST identico) - colisao de global function
 //    garantida se os dois forem compilados juntos.
 // 2) Static Functions reusam nomes ja existentes no CNS001Rest.tlpp sem

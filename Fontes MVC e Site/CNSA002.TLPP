@@ -35,11 +35,13 @@ User Function CNS002()
         l_oBrowse:SetDescription("OS - APIA")
         l_oBrowse:SetAlias("SZ1")
 
-        l_oBrowse:AddLegend("(SZ1->Z1_APROVAD=='S'.OR.SZ1->Z1_APROVAD=='A').AND.SZ1->Z1_FATURAR=='S'",   "BLUE",     "Aprovada e Faturada")
+        // Mesmas cores do portal (shared/paleta-status.ts): verde=concluido,
+        // rosa=pendencia, azul=aprovado, amarelo=aguardando, preto=negada.
+        l_oBrowse:AddLegend("(SZ1->Z1_APROVAD=='S'.OR.SZ1->Z1_APROVAD=='A').AND.SZ1->Z1_FATURAR=='S'",   "GREEN",    "Aprovada e Faturada")
         l_oBrowse:AddLegend("SZ1->Z1_FATURAR=='S'.AND.SZ1->Z1_APROVAD!='S'.AND.SZ1->Z1_APROVAD!='A'",    "PINK",     "Faturada sem Aprovacao")
-        l_oBrowse:AddLegend("(SZ1->Z1_APROVAD=='S'.OR.SZ1->Z1_APROVAD=='A').AND.SZ1->Z1_FATURAR!='S'",   "GREEN",    "Aprovada")
+        l_oBrowse:AddLegend("(SZ1->Z1_APROVAD=='S'.OR.SZ1->Z1_APROVAD=='A').AND.SZ1->Z1_FATURAR!='S'",   "BLUE",     "Aprovada")
         l_oBrowse:AddLegend("SZ1->Z1_APROVAD!='S'.AND.SZ1->Z1_APROVAD!='A'.AND.!Empty(SZ1->Z1_TEC)",     "YELLOW",   "Aguardando Aprovacao")
-        l_oBrowse:AddLegend("SZ1->Z1_APROVAD!='S'.AND.SZ1->Z1_APROVAD!='A'.AND.Empty(SZ1->Z1_TEC)",      "BR_CANCEL","Negada")
+        l_oBrowse:AddLegend("SZ1->Z1_APROVAD!='S'.AND.SZ1->Z1_APROVAD!='A'.AND.Empty(SZ1->Z1_TEC)",      "BLACK",    "Negada")
 
         l_oBrowse:Activate()
 
@@ -211,7 +213,7 @@ Static Function OS_PREVALIDA(p_oModel)
             EndIf
 
             If Empty(AllTrim(oModelSZ1:GetValue("Z1_USR")))
-                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_USR", "SZ1", "Z1_USR", "Informe o usuario.")
+                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_USR", "SZ1", "Z1_USR", "Informe o representante.")
                 Return .F.
             EndIf
 
@@ -282,6 +284,8 @@ Static Function OS_MODELLEVE()
     Local oModel  := Nil
     Local oStrSZ1 := FWFormStruct(1, "SZ1")
 
+    OS_STRUCTHEADLESS(oStrSZ1)
+
     oModel := MPFormModel():New("FCNS002REST", NIL, NIL, NIL, NIL)
     // FIX: faltava plugar OS_VALIDACAMPO como PosValidacao (4o parametro) -
     // sem isso, Incluir/Alterar via Class oRestOS aceitava OS sem cliente/
@@ -291,6 +295,43 @@ Static Function OS_MODELLEVE()
     oModel:SetPrimaryKey({"Z1_FILIAL", "Z1_OS"})
 
 Return oModel
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_STRUCTHEADLESS
+Ajusta a estrutura da SZ1 dos models headless (OS_MODELLEVE/
+OS_MODELINSERT - REST e Copiar). Fora da tela nao existe o ambiente de
+variaveis de memoria (M->) que o dicionario usa: X3_VALID (ex:
+existcpo("SA1") no Z1_CLI, ExistChav("SZ1") no Z1_OS) quebra com
+"type mismatch on +" e o X3_RELACAO dos campos virtuais (ex: FDESC do
+nome do cliente) quebra no Activate com "_SetNamedPrvt: owner private
+environment not found". Remove os campos virtuais (nao usados aqui - nomes
+vem por SQL) e troca VALID/WHEN do dicionario por .T.; obrigatorios
+continuam validados por OS_VALIDACAMPO/OS_PREVALIDA.
+@param  oStrSZ1   Estrutura FWFormStruct(1, "SZ1") a ajustar
+@author Henrique
+@since 23/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+Static Function OS_STRUCTHEADLESS(oStrSZ1)
+    Local aCampos   := oStrSZ1:GetFields()
+    Local aVirtuais := {}
+    Local nI        := 0
+
+    For nI := 1 To Len(aCampos)
+        If aCampos[nI][MODEL_FIELD_VIRTUAL]
+            AAdd(aVirtuais, aCampos[nI][MODEL_FIELD_IDFIELD])
+        Else
+            oStrSZ1:SetProperty(aCampos[nI][MODEL_FIELD_IDFIELD], MODEL_FIELD_VALID, {|| .T.})
+            oStrSZ1:SetProperty(aCampos[nI][MODEL_FIELD_IDFIELD], MODEL_FIELD_WHEN,  {|| .T.})
+        EndIf
+    Next nI
+
+    For nI := 1 To Len(aVirtuais)
+        oStrSZ1:RemoveField(aVirtuais[nI])
+    Next nI
+
+Return
 
 // Monta E ativa o model de Insert na MESMA funcao (nao chama OS_MODELLEVE()
 // e ativa depois na funcao chamadora) - mesmo bug/fix do CH_MODELINSERT em
@@ -307,6 +348,8 @@ Return oModel
 Static Function OS_MODELINSERT()
     Local oModel  := Nil
     Local oStrSZ1 := FWFormStruct(1, "SZ1")
+
+    OS_STRUCTHEADLESS(oStrSZ1)
 
     oModel := MPFormModel():New("FCNS002REST", NIL, NIL, NIL, NIL)
     oModel:AddFields("SZ1MASTER", NIL, oStrSZ1, {|_f,_a,_c,_v| OS_VALIDACAMPO(_f,_a,_c,_v)}, NIL)
@@ -380,7 +423,10 @@ Static Function OS_NUCLEOCOPIAR(cOsOrigem)
 
         // Campos que devem ser diferentes na copia
         oModelSZ1:SetValue("Z1_FILIAL",  cFilAnt)
-        oModelSZ1:SetValue("Z1_OS",      cOsNova)
+        // LoadValue (nao SetValue): X3_VALID do Z1_OS (ExistChav("SZ1")) quebra
+        // com type mismatch fora da tela (rota REST, sem M->Z1_OS). Numero ja
+        // vem unico do GetSxeNum.
+        oModelSZ1:LoadValue("Z1_OS", cOsNova)
         oModelSZ1:SetValue("Z1_DTDIGIT", Date())
         oModelSZ1:SetValue("Z1_APROVAD", "N")
         oModelSZ1:SetValue("Z1_FATURAR", "N")
@@ -475,11 +521,11 @@ User Function OS_LEGENDA()
 
     BrwLegenda("Legenda de Status", "Status da OS", ;
         { ;
-            { "BR_AZUL",      "Faturada e Aprovada"    }, ;
+            { "BR_VERDE",     "Faturada e Aprovada"    }, ;
             { "BR_PINK",      "Faturada sem Aprovacao" }, ;
-            { "BR_VERDE",     "Aprovada"               }, ;
+            { "BR_AZUL",      "Aprovada"               }, ;
             { "BR_AMARELO",   "Aguardando Aprovacao"   }, ;
-            { "BR_CANCEL",    "Negada"                 }  ;
+            { "BR_PRETO",     "Negada"                 }  ;
         })
 
 Return
@@ -545,7 +591,10 @@ Local lIncluir   := Empty(cPK)
 
                 cOs := GetSxeNum("SZ1", "Z1_OS")
                 oModelSZ1:SetValue("Z1_FILIAL",  cFilAnt)
-                oModelSZ1:SetValue("Z1_OS",      cOs)
+                // LoadValue (nao SetValue): X3_VALID do Z1_OS (ExistChav("SZ1")) quebra
+                // com type mismatch fora da tela (rota REST, sem M->Z1_OS). Numero ja
+                // vem unico do GetSxeNum.
+                oModelSZ1:LoadValue("Z1_OS", cOs)
                 oModelSZ1:SetValue("Z1_APROVAD", "N")
                 oModelSZ1:SetValue("Z1_FATURAR", "N")
             Else
@@ -588,6 +637,7 @@ Local lIncluir   := Empty(cPK)
             OS_SETSEFICOU(oModelSZ1, jBody, "Z1_CHPSD")
             OS_SETNUM(oModelSZ1, jBody, "Z1_CHHDK")
             OS_SETSEFICOU(oModelSZ1, jBody, "Z1_OSDESE")
+            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_OSENVCL")
             OS_SETSEFICOU(oModelSZ1, jBody, "Z1_LIN")
             OS_SETNUM(oModelSZ1, jBody, "Z1_VLRHR")
 
@@ -599,6 +649,11 @@ Local lIncluir   := Empty(cPK)
             EndIf
             If lIncluir .And. Empty(oModelSZ1:GetValue("Z1_OSDESE"))
                 oModelSZ1:SetValue("Z1_OSDESE", "N")
+            EndIf
+            // Z1_OSENVCL (OS Enviada, S/N) e obrigatorio - OS antigas estao
+            // vazias, entao preenche "N" tambem no Alterar.
+            If Empty(oModelSZ1:GetValue("Z1_OSENVCL"))
+                oModelSZ1:SetValue("Z1_OSENVCL", "N")
             EndIf
             If lIncluir .And. Empty(oModelSZ1:GetValue("Z1_DTDIGIT"))
                 oModelSZ1:SetValue("Z1_DTDIGIT", Date())
@@ -693,7 +748,10 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
         cOs := GetSxeNum("SZ1", "Z1_OS")
 
         oModelSZ1:SetValue("Z1_FILIAL",  cFilAnt)
-        oModelSZ1:SetValue("Z1_OS",      cOs)
+        // LoadValue (nao SetValue): X3_VALID do Z1_OS (ExistChav("SZ1")) quebra
+        // com type mismatch fora da tela (rota REST, sem M->Z1_OS). Numero ja
+        // vem unico do GetSxeNum.
+        oModelSZ1:LoadValue("Z1_OS", cOs)
         oModelSZ1:SetValue("Z1_DTDIGIT", If(Empty(cDtDigit), Date(), STOD(StrTran(cDtDigit,"-",""))))
         oModelSZ1:SetValue("Z1_CLI",     AllTrim(OS_LERJSONTXT(jQuery,"codCliente")))
         oModelSZ1:SetValue("Z1_LOJA",    AllTrim(OS_LERJSONTXT(jQuery,"lojaCliente")))
@@ -754,6 +812,11 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
             oModelSZ1:SetValue("Z1_OSDESE", AllTrim(OS_LERJSONTXT(jQuery,"osDesenv")))
         Else
             oModelSZ1:SetValue("Z1_OSDESE", "N")
+        EndIf
+        If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"osEnviada")))
+            oModelSZ1:SetValue("Z1_OSENVCL", AllTrim(OS_LERJSONTXT(jQuery,"osEnviada")))
+        Else
+            oModelSZ1:SetValue("Z1_OSENVCL", "N")
         EndIf
         If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"linhaPv")))
             oModelSZ1:SetValue("Z1_LIN", AllTrim(OS_LERJSONTXT(jQuery,"linhaPv")))
@@ -881,7 +944,10 @@ Static Function OS_NUCLEOALTERAR(jQuery)
         cVal := AllTrim(OS_LERJSONTXT(jQuery,"motivo"))
         If !Empty(cVal) ; oModelSZ1:SetValue("Z1_MOTIV", cVal) ; EndIf
         cVal := AllTrim(OS_LERJSONTXT(jQuery,"descricao"))
-        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_SERV", cVal) ; EndIf
+        // Troca so a descricao - mantem os blocos de interacao ja gravados no
+        // Memo (OS sem chamado, ver OS_SEPARAINTERACOES). O front recebe e
+        // devolve so a descricao (OS_APILISTAR).
+        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_SERV", cVal + OS_BLOCOSINTERACAO(oModelSZ1:GetValue("Z1_SERV"))) ; EndIf
         cVal := AllTrim(OS_LERJSONTXT(jQuery,"codServico"))
         If !Empty(cVal) ; oModelSZ1:SetValue("Z1_TIPO", cVal) ; EndIf
         cVal := AllTrim(OS_LERJSONTXT(jQuery,"dataOs"))
@@ -926,6 +992,13 @@ Static Function OS_NUCLEOALTERAR(jQuery)
         If !Empty(cVal) ; oModelSZ1:SetValue("Z1_IDCH", cVal) ; EndIf
         cVal := AllTrim(OS_LERJSONTXT(jQuery,"osDesenv"))
         If !Empty(cVal) ; oModelSZ1:SetValue("Z1_OSDESE", cVal) ; EndIf
+        // Z1_OSENVCL (OS Enviada, S/N) e obrigatorio - OS antigas estao vazias.
+        cVal := AllTrim(OS_LERJSONTXT(jQuery,"osEnviada"))
+        If !Empty(cVal)
+            oModelSZ1:SetValue("Z1_OSENVCL", cVal)
+        ElseIf Empty(oModelSZ1:GetValue("Z1_OSENVCL"))
+            oModelSZ1:SetValue("Z1_OSENVCL", "N")
+        EndIf
         cVal := AllTrim(OS_LERJSONTXT(jQuery,"linhaPv"))
         If !Empty(cVal) ; oModelSZ1:SetValue("Z1_LIN", cVal) ; EndIf
         If OS_LERJSONNUM(jQuery,"valorHora") <> 0
@@ -953,6 +1026,12 @@ Static Function OS_NUCLEOALTERAR(jQuery)
         EndIf
 
         oModel:DeActivate(lOk)
+
+        // OS acabou de ganhar chamado: interacoes que estavam no Memo
+        // (Z1_SERV) passam pra ZA2 do chamado.
+        If lOk
+            OS_MIGRARINTERACOES(cOs)
+        EndIf
 
     Recover Using oErroExcpt
         lOk   := .F.
@@ -1100,10 +1179,11 @@ Return AllTrim(Posicione("SZ1", 1, cFilAnt + cOs, "Z1_SERV"))
 
 //-------------------------------------------------------------------
 /*/{Protheus.doc} OS_NOMECLI
-Le o nome do cliente (SA1) via Posicione, a partir do codigo e loja.
+Le o nome reduzido do cliente (SA1->A1_NREDUZ) via Posicione, a partir do
+codigo e loja - mesmo nome usado no chamado (ZA1_NOME) e na agenda (Z6_NOMCLI).
 @param  cCodCliente   Codigo do cliente (A1_COD)
 @param  cLoja         Loja do cliente (A1_LOJA)
-@return cNome         Nome do cliente (ou "" se cCodCliente vazio)
+@return cNome         Nome reduzido do cliente (ou "" se cCodCliente vazio)
 @author Henrique
 @since 02/09/2026
 @version P12
@@ -1113,7 +1193,7 @@ Static Function OS_NOMECLI(cCodCliente, cLoja)
     If Empty(cCodCliente)
         Return ""
     EndIf
-Return AllTrim(Posicione("SA1", 1, xFilial("SA1") + cCodCliente + cLoja, "A1_NOME"))
+Return AllTrim(Posicione("SA1", 1, xFilial("SA1") + cCodCliente + cLoja, "A1_NREDUZ"))
 
 //-------------------------------------------------------------------
 /*/{Protheus.doc} OS_NOMEGEN
@@ -1455,7 +1535,7 @@ User Function OS_APILISTAR() As Logical
                     SELECT Z1_OS, Z1_DTDIGIT, Z1_CLI, Z1_LOJA, Z1_USR, Z1_MODULO, Z1_MOTIV, Z1_TIPO, ;
                         Z1_DTOS, Z1_INTERNO, Z1_HRINI, Z1_INI, Z1_HRFIM, Z1_FIM, Z1_TRANS, Z1_PREVIST, ;
                         Z1_HRTOT, Z1_TOTAL, Z1_TEC, Z1_NUMPRO, Z1_PV, Z1_ALMOCO, Z1_PROJET, Z1_REVISA, ;
-                        Z1_TAREFA, Z1_CHPSD, Z1_CHHDK, Z1_IDCH, Z1_OSDESE, Z1_LIN, Z1_VLRHR, Z1_APROVAD, Z1_FATURAR, ;
+                        Z1_TAREFA, Z1_CHPSD, Z1_CHHDK, Z1_IDCH, Z1_OSDESE, Z1_OSENVCL, Z1_LIN, Z1_VLRHR, Z1_APROVAD, Z1_FATURAR, ;
                         COUNT(*) OVER() AS SZ1_TOTAL
                     FROM %Table:SZ1% SZ1
                     WHERE Z1_FILIAL = %xFilial:SZ1%
@@ -1466,7 +1546,7 @@ User Function OS_APILISTAR() As Logical
                             OR EXISTS (
                                 SELECT 1 FROM %Table:SA1% SA1
                                 WHERE SA1.A1_FILIAL = Z1_FILIAL AND SA1.A1_COD = Z1_CLI AND SA1.A1_LOJA = Z1_LOJA
-                                  AND SA1.D_E_L_E_T_ = ' ' AND UPPER(SA1.A1_NOME) LIKE '%'||%Exp:cTextoUp%||'%'
+                                  AND SA1.D_E_L_E_T_ = ' ' AND (UPPER(SA1.A1_NOME) LIKE '%'||%Exp:cTextoUp%||'%' OR UPPER(SA1.A1_NREDUZ) LIKE '%'||%Exp:cTextoUp%||'%')
                             )
                             OR EXISTS (
                                 SELECT 1 FROM %Table:AA1% AA1
@@ -1503,7 +1583,8 @@ User Function OS_APILISTAR() As Logical
             oLinha['nomeModulo']     := OS_NOMEGEN("Z2", AllTrim((cAlias)->Z1_MODULO))
             oLinha['motivo']         := AllTrim((cAlias)->Z1_MOTIV)
             oLinha['nomeMotivo']     := OS_NOMEGEN("Z1", AllTrim((cAlias)->Z1_MOTIV))
-            oLinha['descricao']      := OS_DESC(cOsAtual)
+            // So a descricao - os blocos de interacao do Memo vao pelo CNSAOSINTERACOES.
+            oLinha['descricao']      := OS_SEPARAINTERACOES(OS_DESC(cOsAtual))[1]
             oLinha['codServico']     := AllTrim((cAlias)->Z1_TIPO)
             oLinha['nomeServico']    := OS_NOMESERV(AllTrim((cAlias)->Z1_TIPO))
             oLinha['dataOs']         := OS_DATAISO((cAlias)->Z1_DTOS)
@@ -1531,6 +1612,7 @@ User Function OS_APILISTAR() As Logical
             // intocado (legado do HPSD, sem uso novo).
             oLinha['chamado']        := AllTrim((cAlias)->Z1_IDCH)
             oLinha['osDesenv']       := AllTrim((cAlias)->Z1_OSDESE)
+            oLinha['osEnviada']      := AllTrim((cAlias)->Z1_OSENVCL)
             oLinha['linhaPv']        := AllTrim((cAlias)->Z1_LIN)
             oLinha['valorHora']      := (cAlias)->Z1_VLRHR
             oLinha['status']         := OS_STATUSCALC(AllTrim((cAlias)->Z1_APROVAD), AllTrim((cAlias)->Z1_FATURAR), cTecAtual)
@@ -1664,6 +1746,385 @@ User Function OS_APICOPIAR() As Logical
         oJson['osOriginal'] := cOsOrigem
         oJson['osNova']     := aResultado[3]
         oJson['mensagem']   := "OS copiada com sucesso."
+
+        Return oRest:setStatusResponse(200, oJson:ToJson())
+
+    Recover Using oErro
+        Return oRest:setStatusResponse(500, '{"erro":"' + OS_ESCAPARJSON(oErro:Description) + '"}')
+    End Sequence
+
+Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+//                                                                                              //
+//        INTERACOES DA OS SEM CHAMADO (blocos acumulados no Memo Z1_SERV)                     //
+//                                                                                              //
+////////////////////////////////////////////////////////////////////////////////////////////////
+// OS com chamado (Z1_IDCH) grava interacao na ZA2 (CNSA001, CNSACHAMADOSINTERACOES*).
+// OS sem chamado acumula cada interacao no fim do Memo Z1_SERV, num bloco:
+//   === INTERACAO 24/09/2026 10:30 | 000123 | NOME DO CONSULTOR ===
+//   texto da interacao
+// Tudo antes do primeiro bloco e a descricao da OS. Quando a OS ganha
+// chamado (OS_NUCLEOALTERAR), os blocos migram pra ZA2 e saem do Memo -
+// a descricao fica.
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_MARCAINTERACAO
+Marcador de inicio de bloco de interacao dentro do Memo Z1_SERV.
+@return cMarca   Texto do marcador
+@author Henrique
+@since 24/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+Static Function OS_MARCAINTERACAO()
+Return "=== INTERACAO "
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_LIMPABORDAS
+Remove espacos, tabs e quebras de linha do inicio e do fim do texto
+(AllTrim so remove espaco).
+@param  cTexto   Texto a limpar
+@return cRet     Texto sem espacos/quebras nas bordas
+@author Henrique
+@since 24/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+Static Function OS_LIMPABORDAS(cTexto)
+    Local cRet    := cTexto
+    Local cBordas := " " + Chr(9) + Chr(10) + Chr(13)
+
+    While Len(cRet) > 0 .And. Left(cRet, 1) $ cBordas
+        cRet := SubStr(cRet, 2)
+    EndDo
+    While Len(cRet) > 0 .And. Right(cRet, 1) $ cBordas
+        cRet := Left(cRet, Len(cRet) - 1)
+    EndDo
+
+Return cRet
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_TEXTOPURO
+Converte o HTML do editor (po-rich-text) em texto puro pra gravar no
+Memo Z1_SERV: quebra de linha no lugar de <br>/</p>/</div>/</li>,
+remove as demais tags e decodifica as entidades mais comuns.
+@param  cHtml   Texto em HTML
+@return cRet    Texto puro
+@author Henrique
+@since 24/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+Static Function OS_TEXTOPURO(cHtml)
+    Local cRet  := cHtml
+    Local cCRLF := Chr(13) + Chr(10)
+    Local nIni  := 0
+    Local nFim  := 0
+
+    cRet := StrTran(cRet, "<br>",   cCRLF)
+    cRet := StrTran(cRet, "<br/>",  cCRLF)
+    cRet := StrTran(cRet, "<br />", cCRLF)
+    cRet := StrTran(cRet, "</p>",   cCRLF)
+    cRet := StrTran(cRet, "</div>", cCRLF)
+    cRet := StrTran(cRet, "</li>",  cCRLF)
+
+    nIni := At("<", cRet)
+    While nIni > 0
+        nFim := At(">", SubStr(cRet, nIni))
+        If nFim == 0
+            Exit
+        EndIf
+        cRet := Left(cRet, nIni - 1) + SubStr(cRet, nIni + nFim)
+        nIni := At("<", cRet)
+    EndDo
+
+    cRet := StrTran(cRet, "&nbsp;", " ")
+    cRet := StrTran(cRet, "&lt;",   "<")
+    cRet := StrTran(cRet, "&gt;",   ">")
+    cRet := StrTran(cRet, "&quot;", '"')
+    cRet := StrTran(cRet, "&#39;",  "'")
+    cRet := StrTran(cRet, "&amp;",  "&")
+
+Return OS_LIMPABORDAS(cRet)
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_SEPARAINTERACOES
+Separa o Memo Z1_SERV em descricao (texto antes do primeiro bloco) e
+blocos de interacao.
+@param  cMemo   Conteudo do Z1_SERV
+@return aRet    {cDescricao, aBlocos} - cada bloco {cData (DD/MM/AAAA), cHora, cConsultor, cNome, cTexto}
+@author Henrique
+@since 24/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+Static Function OS_SEPARAINTERACOES(cMemo)
+    Local cMarca    := OS_MARCAINTERACAO()
+    Local nPos      := At(cMarca, cMemo)
+    Local cDesc     := ""
+    Local cResto    := ""
+    Local cBloco    := ""
+    Local cCab      := ""
+    Local nFimCab   := 0
+    Local aCab      := {}
+    Local aBlocos   := {}
+
+    If nPos == 0
+        Return {OS_LIMPABORDAS(cMemo), {}}
+    EndIf
+
+    cDesc  := OS_LIMPABORDAS(Left(cMemo, nPos - 1))
+    cResto := SubStr(cMemo, nPos + Len(cMarca))
+
+    While !Empty(cResto)
+        nPos := At(cMarca, cResto)
+        If nPos > 0
+            cBloco := Left(cResto, nPos - 1)
+            cResto := SubStr(cResto, nPos + Len(cMarca))
+        Else
+            cBloco := cResto
+            cResto := ""
+        EndIf
+
+        nFimCab := At(" ===", cBloco)
+        If nFimCab == 0
+            Loop
+        EndIf
+        cCab := Left(cBloco, nFimCab - 1)
+        aCab := StrTokArr2(cCab, "|", .T.)
+        // aCab[1] = "DD/MM/AAAA HH:MM", aCab[2] = codigo, aCab[3] = nome
+        AAdd(aBlocos, { ;
+            Left(AllTrim(aCab[1]), 10), ;
+            AllTrim(SubStr(AllTrim(aCab[1]), 12)), ;
+            If(Len(aCab) >= 2, AllTrim(aCab[2]), ""), ;
+            If(Len(aCab) >= 3, AllTrim(aCab[3]), ""), ;
+            OS_LIMPABORDAS(SubStr(cBloco, nFimCab + 4)) ;
+        })
+    EndDo
+
+Return {cDesc, aBlocos}
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_BLOCOSINTERACAO
+Devolve so a parte de blocos de interacao do Memo (do primeiro marcador
+ate o fim), ja com a quebra de linha que separa da descricao - usado no
+Alterar pra trocar a descricao sem perder o historico.
+@param  cMemo   Conteudo do Z1_SERV
+@return cBlocos Parte de interacoes (ou "" se nao houver)
+@author Henrique
+@since 24/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+Static Function OS_BLOCOSINTERACAO(cMemo)
+    Local nPos := At(OS_MARCAINTERACAO(), cMemo)
+    If nPos == 0
+        Return ""
+    EndIf
+Return Chr(13) + Chr(10) + Chr(13) + Chr(10) + SubStr(cMemo, nPos)
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_MIGRARINTERACOES
+Quando a OS tem chamado (Z1_IDCH) e ainda guarda blocos de interacao no
+Memo Z1_SERV (gravados enquanto nao tinha chamado), copia cada bloco
+para a ZA2 do chamado (com ZA2_OS) e deixa no Memo so a descricao.
+@param  cOs   Numero da OS (Z1_OS)
+@author Henrique
+@since 24/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+Static Function OS_MIGRARINTERACOES(cOs)
+    Local cIdCh   := ""
+    Local aSep    := {}
+    Local aBloco  := {}
+    Local cAlias  := ""
+    Local nSeq    := 1
+    Local nI      := 0
+    Local cData   := ""
+
+    DbSelectArea("SZ1")
+    SZ1->(DbSetOrder(1))
+    If !SZ1->(DbSeek(cFilAnt + cOs))
+        Return
+    EndIf
+
+    cIdCh := AllTrim(SZ1->Z1_IDCH)
+    If Empty(cIdCh)
+        Return
+    EndIf
+
+    aSep := OS_SEPARAINTERACOES(SZ1->Z1_SERV)
+    If Len(aSep[2]) == 0
+        Return
+    EndIf
+
+    // Proxima sequencia da ZA2 do chamado - ZA2_IDCH e Character, comparar
+    // com Character (ver FIX ORA-01722 em CH_GRAVARINTERACAO, CNSA001).
+    cAlias := GetNextAlias()
+    BeginSql Alias cAlias
+        SELECT MAX(ZA2_IDGRID) MAXGRID
+        FROM %Table:ZA2% ZA2
+        WHERE ZA2_FILIAL = %xFilial:ZA2%
+          AND ZA2_IDCH   = %Exp:cIdCh%
+          AND %NotDel%
+    EndSql
+    If !(cAlias)->(Eof()) .And. !Empty(AllTrim((cAlias)->MAXGRID))
+        nSeq := Val(AllTrim((cAlias)->MAXGRID)) + 1
+    EndIf
+    (cAlias)->(DbCloseArea())
+
+    Begin Transaction
+
+        For nI := 1 To Len(aSep[2])
+            aBloco := aSep[2][nI]
+            // DD/MM/AAAA -> AAAAMMDD (nao depende do SET DATE)
+            cData  := SubStr(aBloco[1], 7, 4) + SubStr(aBloco[1], 4, 2) + SubStr(aBloco[1], 1, 2)
+
+            RecLock("ZA2", .T.)
+                ZA2->ZA2_FILIAL := xFilial("ZA2")
+                ZA2->ZA2_IDCH   := cIdCh
+                ZA2->ZA2_IDGRID := StrZero(nSeq, 3)
+                ZA2->ZA2_CONSUL := aBloco[3]
+                ZA2->ZA2_DATA   := SToD(cData)
+                ZA2->ZA2_HORA   := aBloco[2]
+                ZA2->ZA2_DESCRI := aBloco[5]
+                ZA2->ZA2_OS     := cOs
+            ZA2->(MsUnlock())
+            nSeq++
+        Next nI
+
+        RecLock("SZ1", .F.)
+            SZ1->Z1_SERV := aSep[1]
+        SZ1->(MsUnlock())
+
+    End Transaction
+
+Return
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_APILISTAINTERACOES
+Endpoint REST GET /CNSAOSINTERACOES: lista as interacoes gravadas no
+Memo Z1_SERV de uma OS sem chamado (os via query). Mesmo formato de
+item do CNSACHAMADOSINTERACOES (seq/consultor/data/hora/texto/os).
+@return Logical - resposta HTTP com o JSON de interacoes
+@author Henrique
+@since 24/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+@Get(endpoint="/CNSAOSINTERACOES")
+User Function OS_APILISTAINTERACOES() As Logical
+    Local jQuery  := oRest:getQueryRequest() As Json
+    Local cOs     := AllTrim(OS_LERJSONTXT(jQuery,"os"))
+    Local oJson   := JsonObject():New()
+    Local oLinha  := Nil
+    Local aItens  := {}
+    Local aSep    := {}
+    Local aBloco  := {}
+    Local nI      := 0
+    Local oErro   := Nil
+
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
+
+    Begin Sequence
+
+        If Empty(cOs)
+            Return oRest:setStatusResponse(400, '{"erro":"Informe o numero da OS."}')
+        EndIf
+
+        DbSelectArea("SZ1")
+        SZ1->(DbSetOrder(1))
+        If !SZ1->(DbSeek(cFilAnt + cOs))
+            Return oRest:setStatusResponse(404, '{"erro":"OS nao encontrada."}')
+        EndIf
+
+        aSep := OS_SEPARAINTERACOES(SZ1->Z1_SERV)
+
+        For nI := 1 To Len(aSep[2])
+            aBloco := aSep[2][nI]
+            oLinha := JsonObject():New()
+            oLinha['seq']       := StrZero(nI, 3)
+            oLinha['consultor'] := aBloco[4]
+            oLinha['data']      := SubStr(aBloco[1], 7, 4) + "-" + SubStr(aBloco[1], 4, 2) + "-" + SubStr(aBloco[1], 1, 2)
+            oLinha['hora']      := aBloco[2]
+            oLinha['texto']     := aBloco[5]
+            oLinha['os']        := cOs
+            AAdd(aItens, oLinha)
+        Next nI
+
+        oJson['os']    := cOs
+        oJson['items'] := aItens
+
+        Return oRest:setStatusResponse(200, oJson:ToJson())
+
+    Recover Using oErro
+        Return oRest:setStatusResponse(500, '{"erro":"' + OS_ESCAPARJSON(oErro:Description) + '"}')
+    End Sequence
+
+Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_APINOVAINTERACAO
+Endpoint REST POST /CNSAOSINTERACOESINCLUIR: acrescenta uma interacao
+(os/texto via query) no fim do Memo Z1_SERV de uma OS SEM chamado. OS
+com chamado grava na ZA2 (CNSACHAMADOSINTERACOESINCLUIR) - devolve 400.
+@return Logical - resposta HTTP com o resultado da inclusao
+@author Henrique
+@since 24/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+@Post(endpoint="/CNSAOSINTERACOESINCLUIR")
+User Function OS_APINOVAINTERACAO() As Logical
+    Local jQuery     := oRest:getQueryRequest() As Json
+    Local cOs        := AllTrim(OS_LERJSONTXT(jQuery,"os"))
+    Local cTexto     := OS_TEXTOPURO(OS_LERJSONTXT(jQuery,"texto"))
+    Local cCRLF      := Chr(13) + Chr(10)
+    Local cHoje      := DToS(Date())
+    Local cConsultor := ""
+    Local cNome      := ""
+    Local cBloco     := ""
+    Local oJson      := JsonObject():New()
+    Local oErro      := Nil
+
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
+
+    Begin Sequence
+
+        If Empty(cOs)
+            Return oRest:setStatusResponse(400, '{"erro":"Informe o numero da OS."}')
+        EndIf
+        If Empty(cTexto)
+            Return oRest:setStatusResponse(400, '{"erro":"Escreva o texto da interacao."}')
+        EndIf
+
+        DbSelectArea("SZ1")
+        SZ1->(DbSetOrder(1))
+        If !SZ1->(DbSeek(cFilAnt + cOs))
+            Return oRest:setStatusResponse(404, '{"erro":"OS nao encontrada."}')
+        EndIf
+
+        If !Empty(AllTrim(SZ1->Z1_IDCH))
+            Return oRest:setStatusResponse(400, '{"erro":"OS vinculada ao chamado ' + AllTrim(SZ1->Z1_IDCH) + ' - a interacao deve ser gravada no chamado."}')
+        EndIf
+
+        cConsultor := AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC"))
+        cNome      := If(Empty(cConsultor), "", AllTrim(Posicione("AA1", 1, xFilial("AA1") + cConsultor, "AA1_NOMTEC")))
+
+        // Data montada na mao (DD/MM/AAAA) - DToC depende do SET DATE e pode sair com ano de 2 digitos.
+        cBloco := OS_MARCAINTERACAO() + ;
+                  SubStr(cHoje, 7, 2) + "/" + SubStr(cHoje, 5, 2) + "/" + Left(cHoje, 4) + " " + Left(Time(), 5) + ;
+                  " | " + cConsultor + " | " + cNome + " ===" + cCRLF + cTexto
+
+        RecLock("SZ1", .F.)
+            SZ1->Z1_SERV := OS_LIMPABORDAS(SZ1->Z1_SERV) + cCRLF + cCRLF + cBloco
+        SZ1->(MsUnlock())
+
+        oJson['sucesso']  := .T.
+        oJson['os']       := cOs
+        oJson['mensagem'] := "Interacao adicionada com sucesso."
 
         Return oRest:setStatusResponse(200, oJson:ToJson())
 

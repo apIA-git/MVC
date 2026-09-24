@@ -98,9 +98,7 @@ User Function CNS001_COMPONENTES_LISTAR() As Logical
                 EndIf
                 aItens := CNS001_PROPLUPA(cFiltroParam, cClienteParam, If(Empty(cLojaParam), "01", cLojaParam))
             Case cTipoParam == "chamado"
-                If Empty(cClienteParam)
-                    Return oRest:setStatusResponse(400, '{"resultado":false,"erro":"Informe o cliente (?cliente=000001) antes de buscar o chamado."}')
-                EndIf
+                // Cliente opcional: a OS pode vincular o chamado antes de escolher o cliente.
                 aItens := CNS001_CHAMLUPA(cFiltroParam, cClienteParam, If(Empty(cLojaParam), "01", cLojaParam))
             OtherWise
                 Return oRest:setStatusResponse(400, '{"resultado":false,"erro":"Informe um tipo valido (?tipo=tecnico, cliente, projeto, tarefa, modulo, motivo, servico, proposta ou chamado)."}')
@@ -197,11 +195,11 @@ Static Function CNS001_CLILUPA(cFiltro)
     Local cFiltroUp2 := cFiltroUp
 
     BeginSql Alias cAlias
-        SELECT A1_COD, A1_LOJA, A1_NOME
+        SELECT A1_COD, A1_LOJA, A1_NOME, A1_NREDUZ, A1_CONTATO, A1_EMAIL
         FROM %Table:SA1% SA1
         WHERE A1_FILIAL = %xFilial:SA1%
           AND %NotDel%
-          AND (UPPER(A1_COD) LIKE '%' || %Exp:cFiltroUp% || '%' OR UPPER(A1_NOME) LIKE '%' || %Exp:cFiltroUp2% || '%')
+          AND (UPPER(A1_COD) LIKE '%' || %Exp:cFiltroUp% || '%' OR UPPER(A1_NOME) LIKE '%' || %Exp:cFiltroUp2% || '%' OR UPPER(A1_NREDUZ) LIKE '%' || %Exp:cFiltroUp2% || '%')
         ORDER BY A1_NOME
     EndSql
 
@@ -210,6 +208,12 @@ Static Function CNS001_CLILUPA(cFiltro)
         oLinha['codigo']      := CNS001_LUPA_COMPSTR((cAlias)->A1_COD)
         oLinha['complemento'] := CNS001_LUPA_COMPSTR((cAlias)->A1_LOJA)
         oLinha['descricao']   := CNS001_LUPA_COMPSTR((cAlias)->A1_NOME)
+        // Nome reduzido (A1_NREDUZ) - mesmo nome que o chamado mostra (ZA1_NOME).
+        oLinha['nomeReduzido'] := CNS001_LUPA_COMPSTR((cAlias)->A1_NREDUZ)
+        // Representante da empresa (A1_CONTATO) - pre-preenche o Usuario (Z1_USR) da OS.
+        oLinha['contato']      := CNS001_LUPA_COMPSTR((cAlias)->A1_CONTATO)
+        // E-mail do cliente (A1_EMAIL) - pre-preenche o Email Cliente (ZA1_EMAIL) do chamado.
+        oLinha['email']        := CNS001_LUPA_COMPSTR((cAlias)->A1_EMAIL)
         AAdd(aRet, oLinha)
         (cAlias)->(DbSkip())
     EndDo
@@ -437,7 +441,8 @@ Return aRet
 // Lupa de Chamado (ZA1) - usada pela tela de OS (cns003) pra vincular
 // Z1_CHHDK a um chamado, cascata por cliente (mesmo padrao de Projeto/
 // Proposta). Sem filtro de status - lista chamados do cliente em qualquer
-// status (confirmado com o usuario).
+// status (confirmado com o usuario). Sem cliente, lista chamados de todos
+// os clientes (campo Chamado da OS fica sempre habilitado).
 ////////////////////////////////////////////////////////////////////////////////
 Static Function CNS001_CHAMLUPA(cFiltro, cCliente, cLoja)
     Local aRet    := {}
@@ -446,19 +451,30 @@ Static Function CNS001_CHAMLUPA(cFiltro, cCliente, cLoja)
     Local cFiltroUp  := Upper(cFiltro)
     Local cFiltroUp2 := cFiltroUp
 
-    // Mesmo bug de total sempre 0 do SZ1/ZA1 em rota @Get/@Post do motor
-    // REST TLPP - ZA1 e tabela customizada por filial, usa cFilAnt direto
-    // em vez de xFilial() (ver CNS001_PROPLUPA acima, mesmo fix).
-    BeginSql Alias cAlias
-        SELECT ZA1_IDCH, ZA1_ASSUNT
-        FROM %Table:ZA1% ZA1
-        WHERE ZA1_FILIAL = %Exp:cFilAnt%
-          AND %NotDel%
-          AND ZA1_CLIENT = %Exp:cCliente%
-          AND ZA1_LOJA   = %Exp:cLoja%
-          AND (UPPER(ZA1_IDCH) LIKE '%' || %Exp:cFiltroUp% || '%' OR UPPER(ZA1_ASSUNT) LIKE '%' || %Exp:cFiltroUp2% || '%')
-        ORDER BY ZA1_DATA DESC
-    EndSql
+    // %xFilial:ZA1% - mesmo filtro da listagem de chamados (CNSA001.TLPP,
+    // CNSACHAMADOS). cFilAnt aqui nao batia com ZA1_FILIAL e a lupa
+    // voltava vazia sem erro.
+    If Empty(cCliente)
+        BeginSql Alias cAlias
+            SELECT ZA1_IDCH, ZA1_ASSUNT
+            FROM %Table:ZA1% ZA1
+            WHERE ZA1_FILIAL = %xFilial:ZA1%
+              AND %NotDel%
+              AND (UPPER(ZA1_IDCH) LIKE '%' || %Exp:cFiltroUp% || '%' OR UPPER(ZA1_ASSUNT) LIKE '%' || %Exp:cFiltroUp2% || '%')
+            ORDER BY ZA1_DATA DESC
+        EndSql
+    Else
+        BeginSql Alias cAlias
+            SELECT ZA1_IDCH, ZA1_ASSUNT
+            FROM %Table:ZA1% ZA1
+            WHERE ZA1_FILIAL = %xFilial:ZA1%
+              AND %NotDel%
+              AND ZA1_CLIENT = %Exp:cCliente%
+              AND ZA1_LOJA   = %Exp:cLoja%
+              AND (UPPER(ZA1_IDCH) LIKE '%' || %Exp:cFiltroUp% || '%' OR UPPER(ZA1_ASSUNT) LIKE '%' || %Exp:cFiltroUp2% || '%')
+            ORDER BY ZA1_DATA DESC
+        EndSql
+    EndIf
 
     While !(cAlias)->(Eof())
         oLinha := JsonObject():New()
