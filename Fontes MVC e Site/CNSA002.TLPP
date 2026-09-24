@@ -763,6 +763,10 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
         oModelSZ1:SetValue("Z1_DTOS",    STOD(StrTran(AllTrim(OS_LERJSONTXT(jQuery,"dataOs")), "-", "")))
         oModelSZ1:SetValue("Z1_INI",     OS_LERJSONNUM(jQuery,"horaInicialDec"))
         oModelSZ1:SetValue("Z1_FIM",     OS_LERJSONNUM(jQuery,"horaFinalDec"))
+        // Z1_HRINI/Z1_HRFIM ("HH:MM") - na tela classica vem por gatilho, que
+        // nao roda no REST; sem isso o Editar abria Hora Inicial/Final vazias.
+        oModelSZ1:SetValue("Z1_HRINI",   OS_DECPARAHORA(OS_LERJSONNUM(jQuery,"horaInicialDec")))
+        oModelSZ1:SetValue("Z1_HRFIM",   OS_DECPARAHORA(OS_LERJSONNUM(jQuery,"horaFinalDec")))
         oModelSZ1:SetValue("Z1_TOTAL",   OS_LERJSONNUM(jQuery,"horasTiDec"))
         oModelSZ1:SetValue("Z1_TEC",     AllTrim(OS_LERJSONTXT(jQuery,"codAnalista")))
         oModelSZ1:SetValue("Z1_APROVAD", "N")
@@ -954,9 +958,11 @@ Static Function OS_NUCLEOALTERAR(jQuery)
         If !Empty(cVal) ; oModelSZ1:SetValue("Z1_DTOS", STOD(StrTran(cVal,"-",""))) ; EndIf
         If OS_LERJSONNUM(jQuery,"horaInicialDec") <> 0
             oModelSZ1:SetValue("Z1_INI", OS_LERJSONNUM(jQuery,"horaInicialDec"))
+            oModelSZ1:SetValue("Z1_HRINI", OS_DECPARAHORA(OS_LERJSONNUM(jQuery,"horaInicialDec")))
         EndIf
         If OS_LERJSONNUM(jQuery,"horaFinalDec") <> 0
             oModelSZ1:SetValue("Z1_FIM", OS_LERJSONNUM(jQuery,"horaFinalDec"))
+            oModelSZ1:SetValue("Z1_HRFIM", OS_DECPARAHORA(OS_LERJSONNUM(jQuery,"horaFinalDec")))
         EndIf
         If OS_LERJSONNUM(jQuery,"horasTranDec") <> 0
             oModelSZ1:SetValue("Z1_TRANS", OS_LERJSONNUM(jQuery,"horasTranDec"))
@@ -1114,6 +1120,28 @@ Static Function OS_SETTEXTOUTF8(oModelSZ1, jBody, cCampo)
         oModelSZ1:SetValue(cCampo, AllTrim(cValToChar(xVal)))
     EndIf
 Return
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_DECPARAHORA
+Converte hora decimal (Z1_INI/Z1_FIM, ex: 8.5) no texto "HH:MM" dos
+campos Z1_HRINI/Z1_HRFIM (ex: "08:30").
+@param  nDec    Hora em decimal
+@return cHora   Hora no formato "HH:MM"
+@author Henrique
+@since 24/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+Static Function OS_DECPARAHORA(nDec)
+    Local nHoras := Int(nDec)
+    Local nMin   := Round((nDec - nHoras) * 60, 0)
+
+    If nMin >= 60
+        nHoras++
+        nMin -= 60
+    EndIf
+
+Return StrZero(nHoras, 2) + ":" + StrZero(nMin, 2)
 
 //-------------------------------------------------------------------
 /*/{Protheus.doc} OS_SETNUM
