@@ -436,6 +436,7 @@ Static Function CH_POSGRAVACAO(p_oModel)
     Local cDataNovo   := ""
     Local aMudancas   := {}
     Local lNotificarCliente := .F.
+    Local lNotificarTecnico := .T.
 
     If Type("cConsulAnterior") <> "C"
         Public cConsulAnterior := ""
@@ -530,7 +531,19 @@ Static Function CH_POSGRAVACAO(p_oModel)
             EndIf
         EndIf
 
-        If !Empty(cConsulAnterior) .And. cConsulAnterior <> cConsulNovo
+        // "Enviar e-mail ao analista?" - mesma regra do cliente: tela classica
+        // pergunta, REST usa lCnsaNotificarTecnico (parametro notificarTecnico,
+        // default envia). Vale pro e-mail de Remocao (analista anterior) e de
+        // Designacao (analista novo).
+        If cConsulNovo <> cConsulAnterior
+            If lViaRest
+                lNotificarTecnico := (Type("lCnsaNotificarTecnico") <> "L" .Or. lCnsaNotificarTecnico)
+            Else
+                lNotificarTecnico := MsgYesNo("Deseja enviar e-mail ao analista sobre esta designacao?", "Notificar Analista")
+            EndIf
+        EndIf
+
+        If lNotificarTecnico .And. !Empty(cConsulAnterior) .And. cConsulAnterior <> cConsulNovo
 
             cNomeAnt  := AllTrim(Posicione("AA1", 1, xFilial("AA1") + cConsulAnterior, "AA1_NOMTEC"))
             cEmailAnt := AllTrim(Posicione("AA1", 1, xFilial("AA1") + cConsulAnterior, "AA1_EMAIL"))
@@ -546,7 +559,7 @@ Static Function CH_POSGRAVACAO(p_oModel)
         EndIf
 
         If !Empty(cConsulNovo) .And. cConsulNovo <> cConsulAnterior
-            CH_NOTIFICARDESIGNA(cIdCh, cConsulNovo, lNotificarCliente)
+            CH_NOTIFICARDESIGNA(cIdCh, cConsulNovo, lNotificarCliente, lNotificarTecnico)
         EndIf
 
         If lNotificarCliente .And. Len(aMudancas) > 0
@@ -743,6 +756,7 @@ User Function CNSA_CRIAAGENDA()
     Local cTecnico := AllTrim(ZA1->ZA1_CONSUL)
     Local cCliente := AllTrim(ZA1->ZA1_CLIENT)
     Local cLoja    := AllTrim(ZA1->ZA1_LOJA)
+    Local aAgenda  := {}
 
     If ZA1->(Eof()) .Or. ZA1->(Bof())
         MsgAlert("Nenhum chamado selecionado.", "Agendar")
@@ -754,10 +768,14 @@ User Function CNSA_CRIAAGENDA()
         Return
     EndIf
 
-    CH_MONTAAGENDA(cTecnico, Date(), "08:00", "09:00", ;
+    aAgenda := CH_MONTAAGENDA(cTecnico, Date(), "08:00", "09:00", ;
         cCliente, cLoja, ;
         AllTrim(ZA1->ZA1_ASSUNT), AllTrim(ZA1->ZA1_PROJ), ;
         AllTrim(ZA1->ZA1_TAREFA), cIdCh)
+
+    If aAgenda[1] .And. MsgYesNo("Deseja enviar e-mail ao analista sobre o agendamento?", "Notificar Analista")
+        CH_NOTIFICARAGENDAMENTO(cIdCh, cTecnico, DToC(aAgenda[2]), aAgenda[3], aAgenda[4], AllTrim(ZA1->ZA1_ASSUNT))
+    EndIf
 
 Return
 
@@ -959,6 +977,7 @@ Monta e grava uma agenda (CNSA003) - usada pela tela classica e pelo REST headle
 @param  cProjeto   Codigo do projeto
 @param  cTarefa    Codigo da tarefa
 @param  cChamado   Id do chamado (ZA1_IDCH)
+@return aRet       {lGravou, dData, cHmini, cHmfim} - valores que ficaram gravados (usuario pode mudar na tela)
 @author Henrique
 @since 02/09/2026
 @version P12
@@ -971,13 +990,15 @@ Static Function CH_MONTAAGENDA(cTecnico, dData, cHmini, cHmfim, ;
     // via REST headless esse Private nunca existe. Calcula direto do usuario.
     Local cCodConsultorSessao := Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC")
     Local cNomeGravou := AllTrim(Posicione("AA1", 1, xFilial("AA1") + cCodConsultorSessao, "AA1_NOMTEC"))
+    Local lGravou     := .F.
+    Local aRet        := {}
 
     Default lViaRest := .F.
 
     oModel := FWLoadModel("CNSA003")
     If oModel == Nil
         MsgAlert("Nao foi possivel carregar o modelo CNSA003.", "Agenda")
-        Return
+        Return {.F., dData, cHmini, cHmfim}
     EndIf
 
     oModel:SetOperation(MODEL_OPERATION_INSERT)
@@ -1002,11 +1023,11 @@ Static Function CH_MONTAAGENDA(cTecnico, dData, cHmini, cHmfim, ;
         oModel:LoadValue("ModelSZ6_Main", "Z6_QGRAVOU", cNomeGravou)
 
         If oModel:VldData()
-            oModel:CommitData()
+            lGravou := oModel:CommitData()
         EndIf
 
         oModel:DeActivate()
-        Return
+        Return {lGravou, dData, cHmini, cHmfim}
     EndIf
 
     oModel:SetValue("ModelSZ6_Main", "Z6_FILIAL",  xFilial("SZ6"))
@@ -1022,17 +1043,23 @@ Static Function CH_MONTAAGENDA(cTecnico, dData, cHmini, cHmfim, ;
     oModel:SetValue("ModelSZ6_Main", "Z6_CHAMADO", Val(cChamado))
     oModel:SetValue("ModelSZ6_Main", "Z6_QGRAVOU", cNomeGravou)
 
-    FWExecView("Nova Agenda - Chamado " + cChamado, ;
+    // FWExecView devolve 0 quando o usuario confirma (OK) e grava.
+    lGravou := FWExecView("Nova Agenda - Chamado " + cChamado, ;
                "CNSA003", ;
                MODEL_OPERATION_INSERT, ;
                , ;
                {|| .T.}, ;
                NIL, NIL, NIL, NIL, NIL, NIL, ;
-               oModel)
+               oModel) == 0
+
+    aRet := {lGravou, ;
+             oModel:GetValue("ModelSZ6_Main", "Z6_DTAGE"), ;
+             AllTrim(oModel:GetValue("ModelSZ6_Main", "Z6_HMINI")), ;
+             AllTrim(oModel:GetValue("ModelSZ6_Main", "Z6_HMFIM"))}
 
     oModel:DeActivate()
 
-Return
+Return aRet
 
 /*/{Protheus.doc} CH_CRIARAGENDATELA
 Ponte headless chamada por CH_POSGRAVACAO quando o chamado e salvo via
@@ -1069,6 +1096,7 @@ Assumir - item de menu da tela classica.
 User Function CH_ASSUMIRTELA()
     Local aResultado      := {}
     Local lNotificarCliente := .F.
+    Local lNotificarTecnico := .F.
 
     If ZA1->(Eof()) .Or. ZA1->(Bof())
         MsgAlert("Nenhum chamado selecionado.", "Assumir")
@@ -1080,8 +1108,9 @@ User Function CH_ASSUMIRTELA()
     EndIf
 
     lNotificarCliente := MsgYesNo("Deseja informar o cliente sobre esta alteracao?", "Notificar Cliente")
+    lNotificarTecnico := MsgYesNo("Deseja enviar e-mail ao analista sobre esta designacao?", "Notificar Analista")
 
-    aResultado := CH_NUCLEOASSUMIR(AllTrim(ZA1->ZA1_IDCH), lNotificarCliente)
+    aResultado := CH_NUCLEOASSUMIR(AllTrim(ZA1->ZA1_IDCH), lNotificarCliente, lNotificarTecnico)
 
     If aResultado[1] == 200
         MsgInfo("Chamado assumido com sucesso!", "Assumir Chamado")
@@ -1108,6 +1137,7 @@ User Function CH_EXCLUIRTELA()
     Local cIdCh          := ""
     Local cMotivo        := ""
     Local aResultado     := {}
+    Local lNotificarCliente := .F.
 
     If ZA1->(Eof()) .Or. ZA1->(Bof())
         MsgAlert("Nenhum chamado selecionado.", "Excluir")
@@ -1116,8 +1146,12 @@ User Function CH_EXCLUIRTELA()
 
     cIdCh := AllTrim(ZA1->ZA1_IDCH)
 
+    If !Empty(AllTrim(ZA1->ZA1_EMAIL))
+        lNotificarCliente := MsgYesNo("Deseja informar o cliente sobre o encerramento?", "Notificar Cliente")
+    EndIf
+
     If Empty(AllTrim(ZA1->ZA1_CONSUL))
-        aResultado := CH_NUCLEOEXCLUIR(cIdCh, "")
+        aResultado := CH_NUCLEOEXCLUIR(cIdCh, "", lNotificarCliente, .F.)
         If aResultado[1] != 200
             MsgAlert(aResultado[2], "Excluir")
         EndIf
@@ -1159,7 +1193,8 @@ User Function CH_EXCLUIRTELA()
             cMotivo := AllTrim(cOutroMotivo)
     EndCase
 
-    aResultado := CH_NUCLEOEXCLUIR(cIdCh, cMotivo)
+    aResultado := CH_NUCLEOEXCLUIR(cIdCh, cMotivo, lNotificarCliente, ;
+        MsgYesNo("Deseja enviar e-mail ao analista sobre o encerramento?", "Notificar Analista"))
     If aResultado[1] != 200
         MsgAlert(aResultado[2], "Excluir")
     EndIf
@@ -1253,12 +1288,13 @@ INCLUIR/ALTERAR - endpoints REST customizados. Front manda tudo via query string
 @param  cTarefa            Codigo da tarefa
 @param  cMailId             Id do e-mail de origem (importacao Graph), dedup
 @param  lExigirCompletos   Exige tipo/projeto/tarefa preenchidos (.F. no caminho de e-mail)
+@param  lNotificarTecnico  .F. pra NAO enviar o e-mail de designacao ao analista (default .T.)
 @return Array {nStatusHTTP, cCorpoJsonOuMensagem, cIdCh}
 @author Henrique
 @since 02/09/2026
 @version P12
 /*/
-Static Function CH_NUCLEOINCLUIR(cAssunto, cDtAbertura, cTipo, cCodCliente, cLojaCliente, cEmailCliente, cCodConsultor, cProjeto, cTarefa, cMailId, lExigirCompletos)
+Static Function CH_NUCLEOINCLUIR(cAssunto, cDtAbertura, cTipo, cCodCliente, cLojaCliente, cEmailCliente, cCodConsultor, cProjeto, cTarefa, cMailId, lExigirCompletos, lNotificarTecnico)
     Local cIdCh       := ""
     Local oJson       := JsonObject():New()
     Local oErro       := Nil
@@ -1269,6 +1305,7 @@ Static Function CH_NUCLEOINCLUIR(cAssunto, cDtAbertura, cTipo, cCodCliente, cLoj
 
     Default cMailId          := ""
     Default lExigirCompletos := .T.
+    Default lNotificarTecnico := .T.
 
     Begin Sequence
 
@@ -1365,7 +1402,7 @@ Static Function CH_NUCLEOINCLUIR(cAssunto, cDtAbertura, cTipo, cCodCliente, cLoj
         // E-mail de designacao - so dispara se o chamado ja nasce com tecnico
         // (atribuicao manual no Incluir, caso raro; fluxo normal e vazio).
         If !Empty(cCodConsultor)
-            CH_NOTIFICARDESIGNA(cIdCh, cCodConsultor)
+            CH_NOTIFICARDESIGNA(cIdCh, cCodConsultor, .F., lNotificarTecnico)
         EndIf
 
         oJson['sucesso']  := .T.
@@ -1403,7 +1440,8 @@ User Function CH_APIINCLUIR() As Logical
 
     aResultado := CH_NUCLEOINCLUIR(AllTrim(CH_LERJSONTXT(jQuery,"assunto")), AllTrim(CH_LERJSONTXT(jQuery,"dtAbertura")), AllTrim(CH_LERJSONTXT(jQuery,"tipo")), ;
         AllTrim(CH_LERJSONTXT(jQuery,"codCliente")), AllTrim(CH_LERJSONTXT(jQuery,"lojaCliente")), AllTrim(CH_LERJSONTXT(jQuery,"emailCliente")), ;
-        AllTrim(CH_LERJSONTXT(jQuery,"codConsultor")), AllTrim(CH_LERJSONTXT(jQuery,"projeto")), AllTrim(CH_LERJSONTXT(jQuery,"tarefa")))
+        AllTrim(CH_LERJSONTXT(jQuery,"codConsultor")), AllTrim(CH_LERJSONTXT(jQuery,"projeto")), AllTrim(CH_LERJSONTXT(jQuery,"tarefa")), ;
+        "", .T., AllTrim(CH_LERJSONTXT(jQuery,"notificarTecnico")) != "0")
 
 Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
@@ -1431,10 +1469,11 @@ Nucleo de Alterar unificado com o Model MVC (FCNS001) - mesmo caminho da tela cl
 @author Henrique
 @since 02/09/2026
 @version P12
+@param  lNotificarTecnico   .F. pra NAO enviar os e-mails de designacao/remocao ao analista (default .T.)
 @update 17/09/2026 - Adiciona cStatus (troca manual de status, so admin, mesmo em chamado fechado) e lNotificarCliente
 /*/
 Static Function CH_NUCLEOALTERAR(cIdCh, cAssunto, cDtAbertura, cTipo, cCodCliente, cLojaCliente, ;
-    cEmailCliente, cCodConsultor, cProjeto, cTarefa, lLimparCliente, lLimparConsultor, cStatus, lNotificarCliente)
+    cEmailCliente, cCodConsultor, cProjeto, cTarefa, lLimparCliente, lLimparConsultor, cStatus, lNotificarCliente, lNotificarTecnico)
     Local oJson              := JsonObject():New()
     Local oErro              := Nil
     Local oErroModel         := Nil
@@ -1445,6 +1484,7 @@ Static Function CH_NUCLEOALTERAR(cIdCh, cAssunto, cDtAbertura, cTipo, cCodClient
 
     Default cStatus := ""
     Default lNotificarCliente := .F.
+    Default lNotificarTecnico := .T.
 
     Begin Sequence
 
@@ -1473,6 +1513,7 @@ Static Function CH_NUCLEOALTERAR(cIdCh, cAssunto, cDtAbertura, cTipo, cCodClient
         // Decisao "deseja informar o cliente?" vinda do REST - CH_POSGRAVACAO
         // usa isso no lugar do MsgYesNo (que so faz sentido na tela classica).
         Public lCnsaNotificarCliente := lNotificarCliente
+        Public lCnsaNotificarTecnico := lNotificarTecnico
 
         oModel := apia.cnsa001.U_ModelDef()
         oModel:SetOperation(MODEL_OPERATION_UPDATE)
@@ -1543,6 +1584,7 @@ Static Function CH_NUCLEOALTERAR(cIdCh, cAssunto, cDtAbertura, cTipo, cCodClient
         lCnsaViaRest         := .F.
         lCnsaAlterandoStatus := .F.
         lCnsaNotificarCliente := .F.
+        lCnsaNotificarTecnico := .T.
 
         If !lOk
             oErroModel := oModel:GetErrorMessage()
@@ -1563,6 +1605,7 @@ Static Function CH_NUCLEOALTERAR(cIdCh, cAssunto, cDtAbertura, cTipo, cCodClient
         lCnsaViaRest         := .F.
         lCnsaAlterandoStatus := .F.
         lCnsaNotificarCliente := .F.
+        lCnsaNotificarTecnico := .T.
         If oModel <> Nil
             oModel:DeActivate()
         EndIf
@@ -1589,7 +1632,8 @@ User Function CH_APIALTERAR() As Logical
     aResultado := CH_NUCLEOALTERAR(AllTrim(CH_LERJSONTXT(jQuery,"idCh")), AllTrim(CH_LERJSONTXT(jQuery,"assunto")), AllTrim(CH_LERJSONTXT(jQuery,"dtAbertura")), AllTrim(CH_LERJSONTXT(jQuery,"tipo")), ;
         AllTrim(CH_LERJSONTXT(jQuery,"codCliente")), AllTrim(CH_LERJSONTXT(jQuery,"lojaCliente")), AllTrim(CH_LERJSONTXT(jQuery,"emailCliente")), AllTrim(CH_LERJSONTXT(jQuery,"codConsultor")), ;
         AllTrim(CH_LERJSONTXT(jQuery,"projeto")), AllTrim(CH_LERJSONTXT(jQuery,"tarefa")), AllTrim(CH_LERJSONTXT(jQuery,"limparCliente")) == "1", AllTrim(CH_LERJSONTXT(jQuery,"limparConsultor")) == "1", ;
-        AllTrim(CH_LERJSONTXT(jQuery,"status")), AllTrim(CH_LERJSONTXT(jQuery,"notificarCliente")) == "1")
+        AllTrim(CH_LERJSONTXT(jQuery,"status")), AllTrim(CH_LERJSONTXT(jQuery,"notificarCliente")) == "1", ;
+        AllTrim(CH_LERJSONTXT(jQuery,"notificarTecnico")) != "0")
 
 Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
@@ -1612,9 +1656,10 @@ ASSUMIR - nucleo compartilhado (tela + REST), via FWLoadModel/CommitData em vez 
 @since 02/09/2026
 @version P12
 @update 09/09/2026 - Chama U_CNSA_TECNICO apos SetValue(ZA1_CONSUL): ZA1_NOMTEC agora e campo real, gatilho SX7 nao dispara sozinho em Job Thread/REST
+@param  lNotificarTecnico   .F. pra NAO enviar o e-mail de designacao/remocao ao analista (default .T.)
 @update 17/09/2026 - Adiciona lNotificarCliente
 /*/
-Static Function CH_NUCLEOASSUMIR(cIdCh, lNotificarCliente)
+Static Function CH_NUCLEOASSUMIR(cIdCh, lNotificarCliente, lNotificarTecnico)
     Local cConsultorSessao := ""
     Local cNomeTec         := ""
     Local oModel           := Nil
@@ -1624,6 +1669,7 @@ Static Function CH_NUCLEOASSUMIR(cIdCh, lNotificarCliente)
     Local cErro            := ""
 
     Default lNotificarCliente := .F.
+    Default lNotificarTecnico := .T.
 
     Begin Sequence
 
@@ -1651,6 +1697,7 @@ Static Function CH_NUCLEOASSUMIR(cIdCh, lNotificarCliente)
         Public lCnsaAssumindo    := .T.
         Public lCnsaViaRest      := .T.
         Public lCnsaNotificarCliente := lNotificarCliente
+        Public lCnsaNotificarTecnico := lNotificarTecnico
 
         oModel := apia.cnsa001.U_ModelDef()
         oModel:SetOperation(MODEL_OPERATION_UPDATE)
@@ -1675,6 +1722,7 @@ Static Function CH_NUCLEOASSUMIR(cIdCh, lNotificarCliente)
         lCnsaViaRest          := .F.
         lCnsaAssumindo        := .F.
         lCnsaNotificarCliente := .F.
+        lCnsaNotificarTecnico := .T.
 
         If !lOk
             Return {400, "Falha ao assumir o chamado: " + cErro, ""}
@@ -1691,6 +1739,7 @@ Static Function CH_NUCLEOASSUMIR(cIdCh, lNotificarCliente)
         lCnsaViaRest          := .F.
         lCnsaAssumindo        := .F.
         lCnsaNotificarCliente := .F.
+        lCnsaNotificarTecnico := .T.
         If oModel <> Nil
             oModel:DeActivate()
         EndIf
@@ -1717,7 +1766,7 @@ User Function CH_APIASSUMIR() As Logical
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
-    aResultado := CH_NUCLEOASSUMIR(cIdCh, AllTrim(CH_LERJSONTXT(jQuery,"notificarCliente")) == "1")
+    aResultado := CH_NUCLEOASSUMIR(cIdCh, AllTrim(CH_LERJSONTXT(jQuery,"notificarCliente")) == "1", AllTrim(CH_LERJSONTXT(jQuery,"notificarTecnico")) != "0")
 
     If aResultado[1] == 200
         // FIX: faltava "idCh" na resposta (AssumirResposta do front exige).
@@ -1743,7 +1792,7 @@ EXCLUIR - nucleo compartilhado (tela + REST)
 @since 02/09/2026
 @version P12
 /*/
-Static Function CH_NUCLEOEXCLUIR(cIdCh, cMotivo)
+Static Function CH_NUCLEOEXCLUIR(cIdCh, cMotivo, lNotificarCliente, lNotificarTecnico)
     Local cConsulAnt  := ""
     Local cClienteAnt := ""
     Local cLojaAnt    := ""
@@ -1760,6 +1809,9 @@ Static Function CH_NUCLEOEXCLUIR(cIdCh, cMotivo)
     Local nCham       := 0
     Local oErro       := Nil
 
+    Default lNotificarCliente := .F.
+    Default lNotificarTecnico := .T.
+
     Begin Sequence
 
         // Sem Model neste nucleo (RecLock direto, de proposito - ver
@@ -1775,6 +1827,12 @@ Static Function CH_NUCLEOEXCLUIR(cIdCh, cMotivo)
         cConsulAnt  := AllTrim(ZA1->ZA1_CONSUL)
         cClienteAnt := AllTrim(ZA1->ZA1_CLIENT)
         cLojaAnt    := AllTrim(ZA1->ZA1_LOJA)
+        // E-mail do chamado (ZA1_EMAIL), igual aos demais e-mails ao cliente -
+        // cai pro cadastro (A1_EMAIL) so se o chamado nao tiver.
+        cEmailCli   := AllTrim(ZA1->ZA1_EMAIL)
+        If Empty(cEmailCli) .And. !Empty(cClienteAnt)
+            cEmailCli := AllTrim(Posicione("SA1", 1, xFilial("SA1") + cClienteAnt + cLojaAnt, "A1_EMAIL"))
+        EndIf
 
         cExclPor := AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_NOMTEC"))
         cNomeCli := AllTrim(Posicione("SA1", 1, xFilial("SA1") + cClienteAnt + cLojaAnt, "A1_NREDUZ"))
@@ -1829,15 +1887,19 @@ Static Function CH_NUCLEOEXCLUIR(cIdCh, cMotivo)
         EndDo
         (cAlias)->(DbCloseArea())
 
-        If !Empty(cConsulAnt)
+        // Analista e cliente sao independentes: cada um so recebe se o usuario
+        // escolheu enviar (antes o cliente so recebia se o analista tivesse
+        // AA1_EMAIL, e sem perguntar).
+        cCorpo := CH_HTMLENCERRAMENTO(cNomeCli, cDataAge, cHmini, cHmfim, cIdCh, cMotivo, cExclPor)
+        If lNotificarTecnico .And. !Empty(cConsulAnt)
             cNomeTec  := AllTrim(Posicione("AA1", 1, xFilial("AA1") + cConsulAnt, "AA1_NOMTEC"))
             cEmailTec := AllTrim(Posicione("AA1", 1, xFilial("AA1") + cConsulAnt, "AA1_EMAIL"))
-            cEmailCli := AllTrim(Posicione("SA1", 1, xFilial("SA1") + cClienteAnt + cLojaAnt, "A1_EMAIL"))
             If !Empty(cEmailTec)
-                cCorpo := CH_HTMLENCERRAMENTO(cNomeCli, cDataAge, cHmini, cHmfim, cIdCh, cMotivo, cExclPor)
                 CH_ENVIAREMAIL(cEmailTec, "Encerramento do Chamado " + cIdCh, cCorpo, "apia@apia.com.br")
-                CH_ENVIAREMAIL(cEmailCli, "Encerramento do Chamado " + cIdCh, cCorpo, "apia@apia.com.br")
             EndIf
+        EndIf
+        If lNotificarCliente .And. !Empty(cEmailCli)
+            CH_ENVIAREMAIL(cEmailCli, "Encerramento do Chamado " + cIdCh, cCorpo, "apia@apia.com.br")
         EndIf
 
         Return {200, "Chamado excluido com sucesso."}
@@ -1866,7 +1928,8 @@ User Function CH_APIEXCLUIR() As Logical
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
-    aResultado := CH_NUCLEOEXCLUIR(cIdCh, AllTrim(CH_LERJSONTXT(jQuery,"motivo")))
+    aResultado := CH_NUCLEOEXCLUIR(cIdCh, AllTrim(CH_LERJSONTXT(jQuery,"motivo")), ;
+        AllTrim(CH_LERJSONTXT(jQuery,"notificarCliente")) == "1", AllTrim(CH_LERJSONTXT(jQuery,"notificarTecnico")) != "0")
 
     If aResultado[1] == 200
         // FIX: faltava "idCh" na resposta (ExcluirResposta do front exige).
@@ -2185,6 +2248,7 @@ Grava um dia de agenda via Model (CNSA003) em vez de RecLock direto na SZ6. Lock
 @param  cTarefa            Codigo da tarefa
 @param  cTipoHora          Tipo de hora
 @param  cCodAgendador      Codigo de quem esta agendando (default: usuario da sessao)
+@param  lNotificarTecnico  .T. pra enviar ao analista o e-mail de agendamento (default .T.)
 @return Array {nStatusHTTP, cCorpoJson}
 @author Henrique
 @since 02/09/2026
@@ -2192,7 +2256,7 @@ Grava um dia de agenda via Model (CNSA003) em vez de RecLock direto na SZ6. Lock
 /*/
 Static Function CH_GRAVARAGENDA(cIdCh, cDataIni, cDataFim, cCodTecnico, cHoraIni, cHoraFim, cCodCliente, ;
     cLojaCliente, cDescricao, cConfirmacao, cTurno, cAgInterna, cAgCobravel, cTipoAgenda, cProjeto, ;
-    cRevisao, cTarefa, cTipoHora, cCodAgendador)
+    cRevisao, cTarefa, cTipoHora, cCodAgendador, lNotificarTecnico)
     Local nCham       := 0
     Local dDataIni    := CToD("")
     Local dDataFim    := CToD("")
@@ -2226,6 +2290,7 @@ Static Function CH_GRAVARAGENDA(cIdCh, cDataIni, cDataFim, cCodTecnico, cHoraIni
         // servidor de uma chamada que gere agenda pra um intervalo absurdo).
         Default cDataFim := cDataIni
         Default cLojaCliente := "01"
+        Default lNotificarTecnico := .T.
 
         dbSelectArea("ZA1")
         ZA1->(DbSetOrder(1))
@@ -2344,6 +2409,11 @@ Static Function CH_GRAVARAGENDA(cIdCh, cDataIni, cDataFim, cCodTecnico, cHoraIni
             Return {500, '{"erro":"' + CH_ESCAPARJSON(oErroLoop:Description) + '"}'}
         EndIf
 
+        If nCriados > 0 .And. lNotificarTecnico
+            CH_NOTIFICARAGENDAMENTO(cIdCh, cCodTecnico, ;
+                DToC(dDataIni) + If(dDataFim > dDataIni, " a " + DToC(dDataFim), ""), cHoraIni, cHoraFim, cDescricao)
+        EndIf
+
         oJson['sucesso']    := nCriados > 0
         oJson['idCh']       := cIdCh
         oJson['quantidade'] := nCriados
@@ -2378,7 +2448,8 @@ User Function CH_APIAGENDAR() As Logical
         AllTrim(CH_LERJSONTXT(jQuery,"codTecnico")), AllTrim(CH_LERJSONTXT(jQuery,"horaInicio")), AllTrim(CH_LERJSONTXT(jQuery,"horaFim")), AllTrim(CH_LERJSONTXT(jQuery,"codCliente")), ;
         AllTrim(CH_LERJSONTXT(jQuery,"lojaCliente")), AllTrim(CH_LERJSONTXT(jQuery,"descricao")), AllTrim(CH_LERJSONTXT(jQuery,"confirmacao")), AllTrim(CH_LERJSONTXT(jQuery,"turno")), ;
         AllTrim(CH_LERJSONTXT(jQuery,"agInterna")), AllTrim(CH_LERJSONTXT(jQuery,"agCobravel")), AllTrim(CH_LERJSONTXT(jQuery,"tipoAgenda")), AllTrim(CH_LERJSONTXT(jQuery,"projeto")), ;
-        AllTrim(CH_LERJSONTXT(jQuery,"revisao")), AllTrim(CH_LERJSONTXT(jQuery,"tarefa")), AllTrim(CH_LERJSONTXT(jQuery,"tipoHora")), AllTrim(CH_LERJSONTXT(jQuery,"codAgendador")))
+        AllTrim(CH_LERJSONTXT(jQuery,"revisao")), AllTrim(CH_LERJSONTXT(jQuery,"tarefa")), AllTrim(CH_LERJSONTXT(jQuery,"tipoHora")), AllTrim(CH_LERJSONTXT(jQuery,"codAgendador")), ;
+        AllTrim(CH_LERJSONTXT(jQuery,"notificarTecnico")) != "0")
 
 Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
@@ -3273,13 +3344,14 @@ E-mail de designacao - unico (Incluir/Alterar/Assumir chamam esta quando resulta
 @param  cIdCh                 Id do chamado (ZA1_IDCH)
 @param  cCodConsultorNovo     Codigo do tecnico designado (AA1)
 @param  lNotificarCliente     .T. pra tambem enviar ao cliente (ZA1_EMAIL) - decisao do usuario (MsgYesNo na tela classica ou flag no REST, ver CH_POSGRAVACAO)
+@param  lNotificarTecnico     .F. pra NAO enviar ao analista - decisao do usuario (default .T.)
 @return .T./.F. indicando sucesso no envio ao tecnico (via CH_ENVIAREMAIL)
 @author Henrique
 @since 02/09/2026
 @version P12
 @update 17/09/2026 - Notifica tambem o cliente (ZA1_EMAIL) com os dados do tecnico/agendamento, condicionado a lNotificarCliente
 /*/
-Static Function CH_NOTIFICARDESIGNA(cIdCh, cCodConsultorNovo, lNotificarCliente)
+Static Function CH_NOTIFICARDESIGNA(cIdCh, cCodConsultorNovo, lNotificarCliente, lNotificarTecnico)
     Local cNomeTec   := ""
     Local cEmailTec  := ""
     Local cNomeCli   := ""
@@ -3296,6 +3368,7 @@ Static Function CH_NOTIFICARDESIGNA(cIdCh, cCodConsultorNovo, lNotificarCliente)
     Local nCham      := Val(cIdCh)
 
     Default lNotificarCliente := .F.
+    Default lNotificarTecnico := .T.
 
     If Empty(cCodConsultorNovo)
         Return .F.
@@ -3361,7 +3434,7 @@ Static Function CH_NOTIFICARDESIGNA(cIdCh, cCodConsultorNovo, lNotificarCliente)
         CH_ENVIAREMAIL(cEmailCli, "Tecnico Designado - Chamado " + cIdCh, cCorpoCli, "apia@apia.com.br")
     EndIf
 
-    If Empty(cEmailTec)
+    If !lNotificarTecnico .Or. Empty(cEmailTec)
         Return .F.
     EndIf
 
@@ -3410,6 +3483,42 @@ Static Function CH_HTMLDESIGNA(cNomeTec, cIdCh, cCliente, cAssunto, cDataAge, cH
     cHtml += '</div>'
     cHtml += '</div>'
 Return cHtml
+
+/*/{Protheus.doc} CH_NOTIFICARAGENDAMENTO
+Envia ao analista o e-mail de agendamento criado a partir do chamado
+(mesmo layout do e-mail de designacao, tipo "AGENDAMENTO").
+@param  cIdCh      Id do chamado (ZA1_IDCH)
+@param  cCodTec    Codigo do analista (AA1)
+@param  cPeriodo   Data (ou intervalo "dd/mm/aaaa a dd/mm/aaaa") ja formatado
+@param  cHmini     Hora inicial
+@param  cHmfim     Hora final
+@param  cServico   Descricao/servico do agendamento
+@return .T./.F. indicando sucesso no envio (via CH_ENVIAREMAIL)
+@author Henrique
+@since 24/09/2026
+@version P12
+/*/
+Static Function CH_NOTIFICARAGENDAMENTO(cIdCh, cCodTec, cPeriodo, cHmini, cHmfim, cServico)
+    Local cEmailTec := AllTrim(Posicione("AA1", 1, xFilial("AA1") + cCodTec, "AA1_EMAIL"))
+    Local cNomeTec  := AllTrim(Posicione("AA1", 1, xFilial("AA1") + cCodTec, "AA1_NOMTEC"))
+    Local cNomeDe   := AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_NOMTEC"))
+    Local cNomeCli  := ""
+    Local cCorpo    := ""
+
+    If Empty(cEmailTec)
+        ConOut("CH_NOTIFICARAGENDAMENTO: tecnico " + cCodTec + " sem AA1_EMAIL cadastrado - e-mail de agendamento nao enviado.")
+        Return .F.
+    EndIf
+
+    dbSelectArea("ZA1")
+    ZA1->(DbSetOrder(1))
+    If ZA1->(DbSeek(xFilial("ZA1") + cIdCh))
+        cNomeCli := AllTrim(Posicione("SA1", 1, xFilial("SA1") + AllTrim(ZA1->ZA1_CLIENT) + AllTrim(ZA1->ZA1_LOJA), "A1_NREDUZ"))
+    EndIf
+
+    cCorpo := CH_HTMLDESIGNA(cNomeTec, cIdCh, cNomeCli, cServico, cPeriodo, cHmini, cHmfim, cNomeDe, "AGENDAMENTO")
+
+Return CH_ENVIAREMAIL(cEmailTec, "Agendamento - Chamado " + cIdCh, cCorpo, "apia@apia.com.br")
 
 /*/{Protheus.doc} CH_HTMLDESIGNACLIENTE
 Monta o corpo HTML do e-mail ao cliente informando que um tecnico foi
