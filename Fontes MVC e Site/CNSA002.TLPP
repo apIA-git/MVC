@@ -2005,9 +2005,11 @@ Return
 
 //-------------------------------------------------------------------
 /*/{Protheus.doc} OS_APILISTAINTERACOES
-Endpoint REST GET /CNSAOSINTERACOES: lista as interacoes gravadas no
-Memo Z1_SERV de uma OS sem chamado (os via query). Mesmo formato de
-item do CNSACHAMADOSINTERACOES (seq/consultor/data/hora/texto/os).
+Endpoint REST GET /CNSAOSINTERACOES: lista todas as interacoes feitas
+por uma OS (os via query) - as do Memo Z1_SERV (OS sem chamado) e as da
+ZA2 gravadas com ZA2_OS desta OS (em qualquer chamado, com idCh).
+Mesmo formato de item do CNSACHAMADOSINTERACOES (seq/consultor/data/
+hora/texto/os + idCh), ordenado por data/hora.
 @return Logical - resposta HTTP com o JSON de interacoes
 @author Henrique
 @since 24/09/2026
@@ -2023,8 +2025,12 @@ User Function OS_APILISTAINTERACOES() As Logical
     Local aItens  := {}
     Local aSep    := {}
     Local aBloco  := {}
+    Local aOrdem  := {}
     Local nI      := 0
     Local oErro   := Nil
+    Local cAlias  := ""
+    Local cData   := ""
+    Local cConsul := ""
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -2040,18 +2046,64 @@ User Function OS_APILISTAINTERACOES() As Logical
             Return oRest:setStatusResponse(404, '{"erro":"OS nao encontrada."}')
         EndIf
 
+        // 1) Memo da OS (interacoes de quando ela nao tinha chamado)
         aSep := OS_SEPARAINTERACOES(SZ1->Z1_SERV)
 
         For nI := 1 To Len(aSep[2])
             aBloco := aSep[2][nI]
+            cData  := SubStr(aBloco[1], 7, 4) + "-" + SubStr(aBloco[1], 4, 2) + "-" + SubStr(aBloco[1], 1, 2)
             oLinha := JsonObject():New()
-            oLinha['seq']       := StrZero(nI, 3)
+            // seq unico na lista toda (front usa como track) - "OS-nnn" pro Memo
+            oLinha['seq']       := "OS-" + StrZero(nI, 3)
             oLinha['consultor'] := aBloco[4]
-            oLinha['data']      := SubStr(aBloco[1], 7, 4) + "-" + SubStr(aBloco[1], 4, 2) + "-" + SubStr(aBloco[1], 1, 2)
+            oLinha['data']      := cData
             oLinha['hora']      := aBloco[2]
             oLinha['texto']     := aBloco[5]
             oLinha['os']        := cOs
-            AAdd(aItens, oLinha)
+            oLinha['idCh']      := ""
+            AAdd(aOrdem, {cData + aBloco[2], oLinha})
+        Next nI
+
+        // 2) ZA2 gravadas por esta OS (ZA2_OS), em qualquer chamado.
+        // ZA2_DESCRI (Memo) precisa ser a ULTIMA coluna do SELECT (DBAccess).
+        cAlias := GetNextAlias()
+        BeginSql Alias cAlias
+            SELECT ZA2_IDCH, ZA2_IDGRID, ZA2_CONSUL, ZA2_DATA, ZA2_HORA, ZA2_DESCRI
+            FROM %Table:ZA2% ZA2
+            WHERE ZA2_FILIAL = %xFilial:ZA2%
+              AND ZA2_OS     = %Exp:cOs%
+              AND %NotDel%
+        EndSql
+
+        While !(cAlias)->(Eof())
+            If ValType((cAlias)->ZA2_DATA) == "D"
+                cData := DToS((cAlias)->ZA2_DATA)
+            Else
+                cData := AllTrim((cAlias)->ZA2_DATA)
+            EndIf
+            If Len(cData) == 8
+                cData := SubStr(cData, 1, 4) + "-" + SubStr(cData, 5, 2) + "-" + SubStr(cData, 7, 2)
+            EndIf
+            cConsul := AllTrim((cAlias)->ZA2_CONSUL)
+
+            oLinha := JsonObject():New()
+            oLinha['seq']       := AllTrim((cAlias)->ZA2_IDCH) + "-" + AllTrim((cAlias)->ZA2_IDGRID)
+            oLinha['consultor'] := If(Empty(cConsul), "", AllTrim(Posicione("AA1", 1, xFilial("AA1") + cConsul, "AA1_NOMTEC")))
+            oLinha['data']      := cData
+            oLinha['hora']      := AllTrim((cAlias)->ZA2_HORA)
+            oLinha['texto']     := OS_DECODESAFE(AllTrim((cAlias)->ZA2_DESCRI))
+            oLinha['os']        := cOs
+            oLinha['idCh']      := AllTrim((cAlias)->ZA2_IDCH)
+            AAdd(aOrdem, {cData + AllTrim((cAlias)->ZA2_HORA), oLinha})
+
+            (cAlias)->(DbSkip())
+        EndDo
+        (cAlias)->(DbCloseArea())
+
+        // Mais recente primeiro
+        ASort(aOrdem, , , {|x, y| x[1] > y[1]})
+        For nI := 1 To Len(aOrdem)
+            AAdd(aItens, aOrdem[nI][2])
         Next nI
 
         oJson['os']    := cOs
