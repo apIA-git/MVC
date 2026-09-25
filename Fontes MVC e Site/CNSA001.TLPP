@@ -3318,6 +3318,133 @@ Static Function CH_ENVIAREMAIL(cPara, cAssunto, cCorpo, cDe)
 
 Return lOk
 
+/*/{Protheus.doc} CH_HTMLEMAIL
+Layout unico dos e-mails do chamado (identidade da Apia): logo + selo com o
+numero do chamado, alerta em vermelho centralizado, saudacao, cartao com os
+dados (rotulo/valor), bloco opcional de texto (descricao, interacao, motivo)
+e rodape. Tabelas + estilo inline (Outlook nao aplica CSS externo); acentos
+como entidade HTML (fonte em CP1252).
+@param  cIdCh        Numero do chamado (vazio = sem selo)
+@param  cAlerta      Texto do alerta em vermelho
+@param  cNome        Nome pra saudacao ("Ola, <nome>,") - vazio = "Ola,"
+@param  cIntro       Frase de introducao
+@param  aLinhas      Array de {rotulo, valorHtml} do cartao (vazio = sem cartao)
+@param  cTituloTexto Titulo do bloco de texto (ex: "Descricao")
+@param  cTexto       Texto do bloco (vazio = sem bloco)
+@param  cObs         Linha extra antes do rodape (ex: contato) - opcional
+@return cHtml   Corpo HTML do e-mail
+@author Henrique
+@since 25/09/2026
+@version P12
+/*/
+Static Function CH_HTMLEMAIL(cIdCh, cAlerta, cNome, cIntro, aLinhas, cTituloTexto, cTexto, cObs)
+    Local cHtml   := ""
+    Local nI      := 0
+    Local cBorda  := "border-bottom:1px solid #e6e9ef;"
+    Local cRot    := ""
+    Local cVal    := ""
+
+    Default cIdCh        := ""
+    Default cNome        := ""
+    Default aLinhas      := {}
+    Default cTituloTexto := ""
+    Default cTexto       := ""
+    Default cObs         := ""
+
+    cHtml := '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f6f9;font-family:Arial,Helvetica,sans-serif">'
+    cHtml += '<tr><td align="center" style="padding:16px 8px">'
+    cHtml += '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background-color:#ffffff">'
+
+    // Cabecalho branco: logo da Apia (publicado no portal) + selo com o numero do chamado
+    cHtml += '<tr><td style="background-color:#ffffff;padding:18px 28px">'
+    cHtml += '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
+    cHtml += '<td align="left"><img src="https://www.apia.com.br/apia_cs/logo-apia-completa.png" alt="&Aacute;pia Consultoria e Sistemas" height="48" style="display:block;border:0;height:48px"></td>'
+    If !Empty(cIdCh)
+        cHtml += '<td align="right"><span style="display:inline-block;background-color:#1a7fc1;color:#ffffff;font-size:14px;font-weight:bold;letter-spacing:1px;padding:8px 14px;border-radius:6px">CHAMADO #' + cIdCh + '</span></td>'
+    EndIf
+    cHtml += '</tr></table>'
+    cHtml += '</td></tr>'
+    cHtml += '<tr><td style="background-color:#1a7fc1;height:4px;line-height:4px;font-size:0">&nbsp;</td></tr>'
+
+    // Alerta: sem fundo, texto em vermelho, centralizado
+    cHtml += '<tr><td align="center" style="background-color:#ffffff;padding:16px 28px;color:#c62828;font-size:16px;font-weight:bold;text-align:center">&#9888; ' + cAlerta + '</td></tr>'
+
+    // Saudacao
+    cHtml += '<tr><td style="background-color:#f4f6f9;padding:24px 28px 8px 28px">'
+    cHtml += '<div style="color:#374151;font-size:15px;line-height:1.5">Ol&aacute;' + If(Empty(cNome), "", ", " + cNome) + ',<br>' + cIntro + '</div>'
+    cHtml += '</td></tr>'
+
+    // Cartao com os dados + bloco de texto
+    If Len(aLinhas) > 0 .Or. !Empty(cTexto)
+        cHtml += '<tr><td style="background-color:#f4f6f9;padding:12px 28px">'
+        cHtml += '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#ffffff">'
+        If Len(aLinhas) > 0
+            cHtml += '<tr><td style="padding:20px 28px 4px 28px"><div style="color:#0d5a8a;font-size:18px;font-weight:bold;padding-bottom:12px;border-bottom:1px solid #e6e9ef">Chamado</div>'
+            cHtml += '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
+            For nI := 1 To Len(aLinhas)
+                // ultima linha sem borda embaixo
+                cRot := 'style="padding:14px 0;' + If(nI < Len(aLinhas), cBorda, "") + 'color:#6b7280;font-size:14px;width:38%;vertical-align:top"'
+                cVal := 'style="padding:14px 0;' + If(nI < Len(aLinhas), cBorda, "") + 'color:#111827;font-size:15px;font-weight:bold;vertical-align:top"'
+                cHtml += '<tr><td ' + cRot + '>' + aLinhas[nI][1] + '</td><td ' + cVal + '>' + aLinhas[nI][2] + '</td></tr>'
+            Next nI
+            cHtml += '</table>'
+            cHtml += '</td></tr>'
+        EndIf
+        If !Empty(cTexto)
+            cHtml += '<tr><td style="padding:18px 28px 20px 28px;' + If(Len(aLinhas) > 0, 'border-top:1px solid #e6e9ef', '') + '">'
+            If !Empty(cTituloTexto)
+                cHtml += '<div style="color:#0d5a8a;font-size:18px;font-weight:bold;padding-bottom:8px">' + cTituloTexto + '</div>'
+            EndIf
+            cHtml += '<div style="color:#374151;font-size:15px;line-height:1.5">' + cTexto + '</div>'
+            cHtml += '</td></tr>'
+        EndIf
+        cHtml += '</table>'
+        cHtml += '</td></tr>'
+    EndIf
+
+    If !Empty(cObs)
+        cHtml += '<tr><td align="center" style="background-color:#f4f6f9;padding:12px 28px 0 28px;color:#374151;font-size:14px">' + cObs + '</td></tr>'
+    EndIf
+
+    cHtml += '<tr><td align="center" style="background-color:#f4f6f9;padding:16px 28px 20px 28px;color:#9ca3af;font-size:13px">--- Mensagem autom&aacute;tica, por favor n&atilde;o responda ---</td></tr>'
+
+    // Rodape no padrao da Apia
+    cHtml += '<tr><td align="center" style="background-color:#0d5a8a;padding:12px 28px;color:#ffffff;font-size:12px">&Aacute;pia Consultoria e Sistemas - TOTVS Business Partner</td></tr>'
+
+    cHtml += '</table>'
+    cHtml += '</td></tr>'
+    cHtml += '</table>'
+
+Return cHtml
+
+/*/{Protheus.doc} CH_HTMLCANCELA
+Monta o corpo HTML do e-mail ao analista removido de um chamado (tecnico
+substituido no Alterar - ver CH_POSGRAVACAO).
+@param  cCliente     Nome do cliente
+@param  cDataAge     Data do agendamento (formatada)
+@param  cHmini       Hora inicial
+@param  cHmfim       Hora final
+@param  cIdCh        Id do chamado
+@param  cMotivo      Motivo da remocao
+@param  cAlteradoPor Nome de quem fez a troca
+@return cHtml   Corpo HTML do e-mail
+@author Henrique
+@since 25/09/2026
+@version P12
+/*/
+Static Function CH_HTMLCANCELA(cCliente, cDataAge, cHmini, cHmfim, cIdCh, cMotivo, cAlteradoPor)
+    Local aLinhas := {}
+
+    AAdd(aLinhas, {"N&uacute;mero", '<span style="color:#1a7fc1">' + cIdCh + '</span>'})
+    AAdd(aLinhas, {"Cliente", cCliente})
+    AAdd(aLinhas, {"Data", cDataAge})
+    AAdd(aLinhas, {"Hor&aacute;rio", cHmini + " &agrave;s " + cHmfim})
+    AAdd(aLinhas, {"Alterado por", cAlteradoPor})
+
+Return CH_HTMLEMAIL(cIdCh, "Voc&ecirc; foi removido de um chamado", "", ;
+    "Este chamado foi designado para outro analista.", ;
+    aLinhas, "Motivo", cMotivo, "")
+
 /*/{Protheus.doc} CH_HTMLENCERRAMENTO
 Monta o corpo HTML do e-mail de encerramento de um agendamento
 ou chamado.
@@ -3336,23 +3463,18 @@ ou chamado.
 Static Function CH_HTMLENCERRAMENTO(cCliente, cDataAge, cHmini, cHmfim, cChamado, cMotivo, cExcluidoPor)
     Local cHtml := ""
 
-    cHtml := '<div style="font-family:Arial,sans-serif;max-width:600px;border:1px solid #cccccc;border-radius:8px;overflow:hidden">'
-    cHtml += '<div style="background-color:#0d5a8a;padding:20px;text-align:center">'
-    cHtml += '<h2 style="color:#ffffff;margin:0;font-size:18px">Apia Consultoria e Sistemas</h2>'
-    cHtml += '<p style="color:#d0e8f8;margin:5px 0 0 0;font-size:13px;font-style:italic">Voce esta recebendo o <b>ENCERRAMENTO</b> de um chamado.<br>Por favor, verifique os dados abaixo</p>'
-    cHtml += '</div>'
-    cHtml += '<table style="width:100%;border-collapse:collapse">'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px;width:35%"><b>Cliente</b></td><td style="padding:10px 15px">' + cCliente + '</td></tr>'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Data</b></td><td style="padding:10px 15px">' + cDataAge + '</td></tr>'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Horario</b></td><td style="padding:10px 15px">' + cHmini + ' - ' + cHmfim + '</td></tr>'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Chamado</b></td><td style="padding:10px 15px">' + cChamado + '</td></tr>'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Motivo exclusao</b></td><td style="padding:10px 15px">' + cMotivo + '</td></tr>'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Excluido por</b></td><td style="padding:10px 15px">' + cExcluidoPor + '</td></tr>'
-    cHtml += '</table>'
-    cHtml += '<div style="background-color:#0d5a8a;padding:12px;text-align:center">'
-    cHtml += '<p style="color:#ffffff;margin:0;font-size:12px">Apia Consultoria e Sistemas - TOTVS Business Partner</p>'
-    cHtml += '</div>'
-    cHtml += '</div>'
+    Local aLinhas := {}
+
+    AAdd(aLinhas, {"N&uacute;mero", '<span style="color:#1a7fc1">' + cChamado + '</span>'})
+    AAdd(aLinhas, {"Cliente", cCliente})
+    AAdd(aLinhas, {"Data", cDataAge})
+    AAdd(aLinhas, {"Hor&aacute;rio", cHmini + " &agrave;s " + cHmfim})
+    AAdd(aLinhas, {"Encerrado por", cExcluidoPor})
+
+    cHtml := CH_HTMLEMAIL(cChamado, "Chamado encerrado", "", ;
+        "Este chamado foi encerrado e o agendamento vinculado a ele foi removido.", ;
+        aLinhas, "Motivo", cMotivo, "")
+
 Return cHtml
 
 /*/{Protheus.doc} CH_NOTIFICARDESIGNA
@@ -3470,8 +3592,7 @@ Return lOk
 /*/{Protheus.doc} CH_HTMLDESIGNA
 Monta o corpo HTML do e-mail ao analista (designacao ou agendamento de um
 chamado) - layout "ticket": cabecalho com o numero do chamado, faixa de
-acao, cartao com os dados do chamado, detalhes (descricao) e botao pra
-abrir o portal. Tabelas + estilo inline (Outlook nao aplica CSS externo);
+acao, cartao com os dados do chamado, detalhes (descricao). Tabelas + estilo inline (Outlook nao aplica CSS externo);
 acentos como entidade HTML (fonte em CP1252).
 @param  cNomeTec    Nome do analista
 @param  cIdCh       Id do chamado
@@ -3488,91 +3609,38 @@ acentos como entidade HTML (fonte em CP1252).
 @author Henrique
 @since 02/09/2026
 @version P12
-@update 25/09/2026 - Novo layout (ticket), com e-mail do cliente, descricao e botao pro portal
+@update 25/09/2026 - Novo layout (ticket) com a identidade da Apia, e-mail do cliente e descricao
 /*/
 Static Function CH_HTMLDESIGNA(cNomeTec, cIdCh, cCliente, cAssunto, cDataAge, cHmini, cHmfim, cNomeDe, cTipo, cEmailCli, cDescricao)
-    Local cHtml      := ""
+    Local cHtml := ""
+
     Local lAgenda    := AllTrim(Upper(cValToChar(cTipo))) == "AGENDAMENTO"
-    Local cFaixa     := ""
-    Local cIntro     := ""
-    Local cLink      := "https://www.apia.com.br/apia_cs/cns001"
-    Local cLinha     := ""
-    Local cRotulo    := 'style="padding:14px 0;border-bottom:1px solid #e6e9ef;color:#6b7280;font-size:14px;width:38%;vertical-align:top"'
-    Local cValor     := 'style="padding:14px 0;border-bottom:1px solid #e6e9ef;color:#111827;font-size:15px;font-weight:bold;vertical-align:top"'
+    Local aLinhas    := {}
+    Local cCliLinha  := cCliente
 
     Default cEmailCli  := ""
     Default cDescricao := ""
 
-    If lAgenda
-        cFaixa := "AGENDAMENTO &middot; voc&ecirc; tem um atendimento agendado neste chamado"
-        cIntro := "Um atendimento foi agendado para voc&ecirc; neste chamado. Confira a data e o hor&aacute;rio abaixo."
-    Else
-        cFaixa := "A&Ccedil;&Atilde;O DO ANALISTA &middot; este chamado foi designado para voc&ecirc;"
-        cIntro := "Um chamado foi designado para voc&ecirc;. Verifique os dados abaixo e acompanhe o atendimento."
-    EndIf
-
-    cHtml := '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#eef1f6;font-family:Arial,Helvetica,sans-serif">'
-    cHtml += '<tr><td align="center" style="padding:16px 8px">'
-    cHtml += '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background-color:#ffffff">'
-
-    // Cabecalho azul-marinho: selo com o numero do chamado + marca
-    cHtml += '<tr><td style="background-color:#10254b;padding:24px 28px">'
-    cHtml += '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
-    cHtml += '<td align="left"><span style="display:inline-block;background-color:#ffffff;color:#10254b;font-size:14px;font-weight:bold;letter-spacing:1px;padding:8px 14px;border-radius:6px">CHAMADO #' + cIdCh + '</span></td>'
-    cHtml += '<td align="right" style="color:#ffffff;font-size:18px">&Aacute;pia Consultoria</td>'
-    cHtml += '</tr></table>'
-    cHtml += '</td></tr>'
-
-    // Faixa laranja de acao
-    cHtml += '<tr><td style="background-color:#f57c00;padding:14px 28px;color:#ffffff;font-size:14px;font-weight:bold">' + cFaixa + '</td></tr>'
-
-    // Titulo + saudacao
-    cHtml += '<tr><td style="background-color:#eef1f6;padding:28px 28px 8px 28px">'
-    cHtml += '<div style="color:#10254b;font-size:24px;font-weight:bold;line-height:1.3">' + cAssunto + '</div>'
-    cHtml += '<div style="color:#374151;font-size:15px;line-height:1.5;padding-top:12px">Ol&aacute;, ' + cNomeTec + ',<br>' + cIntro + '</div>'
-    cHtml += '</td></tr>'
-
-    // Cartao "Chamado"
-    cHtml += '<tr><td style="background-color:#eef1f6;padding:12px 28px">'
-    cHtml += '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#ffffff">'
-    cHtml += '<tr><td style="padding:20px 28px 4px 28px"><div style="color:#10254b;font-size:18px;font-weight:bold;padding-bottom:12px;border-bottom:1px solid #e6e9ef">Chamado</div>'
-    cHtml += '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
-    cHtml += '<tr><td ' + cRotulo + '>N&uacute;mero</td><td ' + cValor + '><span style="color:#1d5fa8">' + cIdCh + '</span></td></tr>'
-    cLinha := cCliente
     If !Empty(cEmailCli)
-        cLinha += '<br><span style="font-size:13px;font-weight:normal;color:#1d5fa8">' + cEmailCli + '</span>'
+        cCliLinha += '<br><span style="font-size:13px;font-weight:normal;color:#1a7fc1">' + cEmailCli + '</span>'
     EndIf
-    cHtml += '<tr><td ' + cRotulo + '>Cliente</td><td ' + cValor + '>' + cLinha + '</td></tr>'
-    cHtml += '<tr><td ' + cRotulo + '>Data</td><td ' + cValor + '>' + cDataAge + '</td></tr>'
-    cHtml += '<tr><td ' + cRotulo + '>Hor&aacute;rio</td><td ' + cValor + '>' + cHmini + ' &agrave;s ' + cHmfim + '</td></tr>'
-    cHtml += '<tr><td ' + StrTran(cRotulo, "border-bottom:1px solid #e6e9ef;", "") + '>' + If(lAgenda, "Agendado por", "Designado por") + '</td><td ' + StrTran(cValor, "border-bottom:1px solid #e6e9ef;", "") + '>' + cNomeDe + '</td></tr>'
-    cHtml += '</table>'
-    cHtml += '</td></tr>'
 
-    // Detalhes (descricao do chamado)
-    If !Empty(cDescricao)
-        cHtml += '<tr><td style="padding:8px 28px 20px 28px;border-top:1px solid #e6e9ef">'
-        cHtml += '<div style="color:#10254b;font-size:18px;font-weight:bold;padding:12px 0">Detalhes</div>'
-        cHtml += '<div style="color:#6b7280;font-size:12px;font-weight:bold;letter-spacing:1px;padding-bottom:6px">DESCRI&Ccedil;&Atilde;O</div>'
-        cHtml += '<div style="color:#374151;font-size:15px;line-height:1.5">' + cDescricao + '</div>'
-        cHtml += '</td></tr>'
+    AAdd(aLinhas, {"N&uacute;mero", '<span style="color:#1a7fc1">' + cIdCh + '</span>'})
+    AAdd(aLinhas, {"Cliente", cCliLinha})
+    AAdd(aLinhas, {"Data", cDataAge})
+    AAdd(aLinhas, {"Hor&aacute;rio", cHmini + " &agrave;s " + cHmfim})
+    AAdd(aLinhas, {If(lAgenda, "Agendado por", "Designado por"), cNomeDe})
+
+    If lAgenda
+        cHtml := CH_HTMLEMAIL(cIdCh, "Voc&ecirc; tem um atendimento agendado", cNomeTec, ;
+            "Um atendimento foi agendado para voc&ecirc; neste chamado. Confira a data e o hor&aacute;rio abaixo.", ;
+            aLinhas, "Descri&ccedil;&atilde;o", cDescricao, "")
+    Else
+        cHtml := CH_HTMLEMAIL(cIdCh, "Voc&ecirc; foi designado para um chamado", cNomeTec, ;
+            "Um chamado foi designado para voc&ecirc;. Verifique os dados abaixo e acompanhe o atendimento.", ;
+            aLinhas, "Descri&ccedil;&atilde;o", cDescricao, "")
     EndIf
-    cHtml += '</table>'
-    cHtml += '</td></tr>'
 
-    // Botao pro portal
-    cHtml += '<tr><td align="center" style="background-color:#eef1f6;padding:16px 28px 8px 28px">'
-    cHtml += '<a href="' + cLink + '" style="display:inline-block;background-color:#1d3f8a;color:#ffffff;font-size:17px;font-weight:bold;text-decoration:none;padding:14px 48px;border-radius:6px">Abrir o chamado</a>'
-    cHtml += '</td></tr>'
-    cHtml += '<tr><td align="center" style="background-color:#eef1f6;padding:6px 28px 20px 28px;color:#9ca3af;font-size:13px">--- Mensagem autom&aacute;tica, por favor n&atilde;o responda ---</td></tr>'
-
-    // Rodape azul-marinho
-    cHtml += '<tr><td align="center" style="background-color:#10254b;padding:26px 28px;color:#ffffff;font-size:18px;font-weight:bold;letter-spacing:1px">&Aacute;PIA CONSULTORIA E SISTEMAS'
-    cHtml += '<div style="color:#c7d2e3;font-size:12px;font-weight:normal;letter-spacing:0;padding-top:6px">TOTVS Business Partner</div></td></tr>'
-
-    cHtml += '</table>'
-    cHtml += '</td></tr>'
-    cHtml += '</table>'
 Return cHtml
 
 /*/{Protheus.doc} CH_NOTIFICARAGENDAMENTO
@@ -3632,22 +3700,18 @@ designado para o chamado, com o horario do atendimento.
 Static Function CH_HTMLDESIGNACLIENTE(cNomeTec, cIdCh, cAssunto, cDataAge, cHmini, cHmfim)
     Local cHtml := ""
 
-    cHtml := '<div style="font-family:Arial,sans-serif;max-width:600px;border:1px solid #cccccc;border-radius:8px;overflow:hidden">'
-    cHtml += '<div style="background-color:#1a7fc1;padding:20px;text-align:center">'
-    cHtml += '<h2 style="color:#ffffff;margin:0;font-size:18px">Apia Consultoria e Sistemas</h2>'
-    cHtml += '<p style="color:#d0e8f8;margin:5px 0 0 0;font-size:13px;font-style:italic">Um tecnico foi designado para o seu chamado</p>'
-    cHtml += '</div>'
-    cHtml += '<table style="width:100%;border-collapse:collapse">'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px;width:35%"><b>Chamado</b></td><td style="padding:10px 15px">' + cIdCh + '</td></tr>'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Tecnico</b></td><td style="padding:10px 15px">' + cNomeTec + '</td></tr>'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Data</b></td><td style="padding:10px 15px">' + cDataAge + '</td></tr>'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Servico</b></td><td style="padding:10px 15px">' + cAssunto + '</td></tr>'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Hora</b></td><td style="padding:10px 15px">' + cHmini + ' ate ' + cHmfim + '</td></tr>'
-    cHtml += '</table>'
-    cHtml += '<div style="background-color:#0d5a8a;padding:12px;text-align:center">'
-    cHtml += '<p style="color:#ffffff;margin:0;font-size:12px">Apia Consultoria e Sistemas - TOTVS Business Partner</p>'
-    cHtml += '</div>'
-    cHtml += '</div>'
+    Local aLinhas := {}
+
+    AAdd(aLinhas, {"N&uacute;mero", '<span style="color:#1a7fc1">' + cIdCh + '</span>'})
+    AAdd(aLinhas, {"T&eacute;cnico", cNomeTec})
+    AAdd(aLinhas, {"Assunto", cAssunto})
+    AAdd(aLinhas, {"Data", cDataAge})
+    AAdd(aLinhas, {"Hor&aacute;rio", cHmini + " &agrave;s " + cHmfim})
+
+    cHtml := CH_HTMLEMAIL(cIdCh, "Um t&eacute;cnico foi designado para o seu chamado", "", ;
+        "Seu chamado j&aacute; tem um t&eacute;cnico respons&aacute;vel. Confira os dados do atendimento abaixo.", ;
+        aLinhas, "", "", "Qualquer d&uacute;vida, entre em contato: <b>pericles@apia.com.br</b>")
+
 Return cHtml
 
 /*/{Protheus.doc} CH_STATUSLABEL
@@ -3707,26 +3771,22 @@ mudado (de/para) numa tabela.
 /*/
 Static Function CH_HTMLALTERACAO(cIdCh, aMudancas)
     Local cHtml := ""
-    Local nI    := 0
 
-    cHtml := '<div style="font-family:Arial,sans-serif;max-width:600px;border:1px solid #cccccc;border-radius:8px;overflow:hidden">'
-    cHtml += '<div style="background-color:#1a7fc1;padding:20px;text-align:center">'
-    cHtml += '<h2 style="color:#ffffff;margin:0;font-size:18px">Apia Consultoria e Sistemas</h2>'
-    cHtml += '<p style="color:#d0e8f8;margin:5px 0 0 0;font-size:13px;font-style:italic">Seu chamado ' + cIdCh + ' foi alterado</p>'
-    cHtml += '</div>'
-    cHtml += '<table style="width:100%;border-collapse:collapse">'
-    cHtml += '<tr style="background-color:#0d5a8a;color:#ffffff"><td style="padding:8px 15px"><b>Campo</b></td><td style="padding:8px 15px"><b>De</b></td><td style="padding:8px 15px"><b>Para</b></td></tr>'
+    Local aLinhas := {}
+    Local nI      := 0
+
+    AAdd(aLinhas, {"N&uacute;mero", '<span style="color:#1a7fc1">' + cIdCh + '</span>'})
+    // De -> Para: valor antigo riscado em cinza, novo em destaque
     For nI := 1 To Len(aMudancas)
-        cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:8px 15px">' + aMudancas[nI][1] + '</td><td style="padding:8px 15px">' + aMudancas[nI][2] + '</td><td style="padding:8px 15px">' + aMudancas[nI][3] + '</td></tr>'
+        AAdd(aLinhas, {aMudancas[nI][1], ;
+            '<span style="color:#9ca3af;font-weight:normal;text-decoration:line-through">' + aMudancas[nI][2] + '</span>' + ;
+            ' &rarr; ' + aMudancas[nI][3]})
     Next nI
-    cHtml += '</table>'
-    cHtml += '<div style="padding:15px">'
-    cHtml += 'Qualquer duvida, entre em contato: <b>pericles@apia.com.br</b>'
-    cHtml += '</div>'
-    cHtml += '<div style="background-color:#0d5a8a;padding:12px;text-align:center">'
-    cHtml += '<p style="color:#ffffff;margin:0;font-size:12px">Apia Consultoria e Sistemas - TOTVS Business Partner</p>'
-    cHtml += '</div>'
-    cHtml += '</div>'
+
+    cHtml := CH_HTMLEMAIL(cIdCh, "Seu chamado foi alterado", "", ;
+        "As informa&ccedil;&otilde;es abaixo foram atualizadas no seu chamado.", ;
+        aLinhas, "", "", "Qualquer d&uacute;vida, entre em contato: <b>pericles@apia.com.br</b>")
+
 Return cHtml
 
 /*/{Protheus.doc} CH_NOTIFICARINTERACAO
@@ -3766,17 +3826,15 @@ Monta o corpo HTML do e-mail de interacao incluida/removida de um chamado.
 Static Function CH_HTMLINTERACAO(cIdCh, cTexto, cAcaoLabel)
     Local cHtml := ""
 
-    cHtml := '<div style="font-family:Arial,sans-serif;max-width:600px;border:1px solid #cccccc;border-radius:8px;overflow:hidden">'
-    cHtml += '<div style="background-color:#1a7fc1;padding:20px;text-align:center">'
-    cHtml += '<h2 style="color:#ffffff;margin:0;font-size:18px">Apia Consultoria e Sistemas</h2>'
-    cHtml += '<p style="color:#d0e8f8;margin:5px 0 0 0;font-size:13px;font-style:italic">Uma interacao foi ' + cAcaoLabel + ' no seu chamado ' + cIdCh + '</p>'
-    cHtml += '</div>'
-    cHtml += '<div style="padding:15px">' + cTexto + '</div>'
-    cHtml += '<div style="padding:0 15px 15px 15px">Qualquer duvida, entre em contato: <b>pericles@apia.com.br</b></div>'
-    cHtml += '<div style="background-color:#0d5a8a;padding:12px;text-align:center">'
-    cHtml += '<p style="color:#ffffff;margin:0;font-size:12px">Apia Consultoria e Sistemas - TOTVS Business Partner</p>'
-    cHtml += '</div>'
-    cHtml += '</div>'
+    Local aLinhas := {}
+    Local cAcao   := If(Lower(AllTrim(cAcaoLabel)) == "incluida", "inclu&iacute;da", cAcaoLabel)
+
+    AAdd(aLinhas, {"N&uacute;mero", '<span style="color:#1a7fc1">' + cIdCh + '</span>'})
+
+    cHtml := CH_HTMLEMAIL(cIdCh, "Uma intera&ccedil;&atilde;o foi " + cAcao + " no seu chamado", "", ;
+        "Confira abaixo o texto da intera&ccedil;&atilde;o.", ;
+        aLinhas, "Intera&ccedil;&atilde;o", cTexto, "Qualquer d&uacute;vida, entre em contato: <b>pericles@apia.com.br</b>")
+
 Return cHtml
 
 /*/{Protheus.doc} CH_NOTIFICARSEMCONTATO
@@ -3797,21 +3855,10 @@ Return CH_ENVIAREMAIL(cEmail, "Seu e-mail nao esta cadastrado", cCorpo, "apia@ap
 Static Function CH_HTMLSEMCONTATO(cEmail)
     Local cHtml := ""
 
-    cHtml := '<div style="font-family:Arial,sans-serif;max-width:600px;border:1px solid #cccccc;border-radius:8px;overflow:hidden">'
-    cHtml += '<div style="background-color:#1a7fc1;padding:20px;text-align:center">'
-    cHtml += '<h2 style="color:#ffffff;margin:0;font-size:18px">Apia Consultoria e Sistemas</h2>'
-    cHtml += '<p style="color:#d0e8f8;margin:5px 0 0 0;font-size:13px;font-style:italic">Nao foi possivel abrir um chamado a partir do seu e-mail</p>'
-    cHtml += '</div>'
-    cHtml += '<table style="width:100%;border-collapse:collapse">'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:15px">'
-    cHtml += 'O e-mail <b>' + cEmail + '</b> nao esta cadastrado entre os contatos autorizados a abrir chamados.<br><br>'
-    cHtml += 'Entre em contato com o administrador e informe este e-mail para cadastro: <b>pericles@apia.com.br</b>'
-    cHtml += '</td></tr>'
-    cHtml += '</table>'
-    cHtml += '<div style="background-color:#0d5a8a;padding:12px;text-align:center">'
-    cHtml += '<p style="color:#ffffff;margin:0;font-size:12px">Apia Consultoria e Sistemas - TOTVS Business Partner</p>'
-    cHtml += '</div>'
-    cHtml += '</div>'
+    cHtml := CH_HTMLEMAIL("", "N&atilde;o foi poss&iacute;vel abrir um chamado a partir do seu e-mail", "", ;
+        "O e-mail <b>" + cEmail + "</b> n&atilde;o est&aacute; cadastrado entre os contatos autorizados a abrir chamados.", ;
+        {}, "", "", "Entre em contato com o administrador e informe este e-mail para cadastro: <b>pericles@apia.com.br</b>")
+
 Return cHtml
 
 
@@ -3832,21 +3879,14 @@ Return CH_ENVIAREMAIL(cEmail, "Chamado Aberto " + cIdCh, cCorpo, "apia@apia.com.
 Static Function CH_HTMLCHAMADOCRIADO(cIdCh)
     Local cHtml := ""
 
-    cHtml := '<div style="font-family:Arial,sans-serif;max-width:600px;border:1px solid #cccccc;border-radius:8px;overflow:hidden">'
-    cHtml += '<div style="background-color:#1a7fc1;padding:20px;text-align:center">'
-    cHtml += '<h2 style="color:#ffffff;margin:0;font-size:18px">Apia Consultoria e Sistemas</h2>'
-    cHtml += '<p style="color:#d0e8f8;margin:5px 0 0 0;font-size:13px;font-style:italic">Seu chamado foi aberto com sucesso</p>'
-    cHtml += '</div>'
-    cHtml += '<table style="width:100%;border-collapse:collapse">'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:15px">'
-    cHtml += 'Seu chamado numero <b>' + cIdCh + '</b> foi aberto com sucesso a partir do seu e-mail.<br><br>'
-    cHtml += 'Em breve nossa equipe entrara em contato.'
-    cHtml += '</td></tr>'
-    cHtml += '</table>'
-    cHtml += '<div style="background-color:#0d5a8a;padding:12px;text-align:center">'
-    cHtml += '<p style="color:#ffffff;margin:0;font-size:12px">Apia Consultoria e Sistemas - TOTVS Business Partner</p>'
-    cHtml += '</div>'
-    cHtml += '</div>'
+    Local aLinhas := {}
+
+    AAdd(aLinhas, {"N&uacute;mero", '<span style="color:#1a7fc1">' + cIdCh + '</span>'})
+
+    cHtml := CH_HTMLEMAIL(cIdCh, "Seu chamado foi aberto com sucesso", "", ;
+        "Seu chamado foi aberto a partir do seu e-mail. Em breve nossa equipe entrar&aacute; em contato.", ;
+        aLinhas, "", "", "Qualquer d&uacute;vida, entre em contato: <b>pericles@apia.com.br</b>")
+
 Return cHtml
 
 
@@ -3868,23 +3908,15 @@ Return CH_ENVIAREMAIL(cEmail, "Chamado Encerrado " + cIdCh, cCorpo, "apia@apia.c
 Static Function CH_HTMLENCERRADO(cIdCh, cAssunto)
     Local cHtml := ""
 
-    cHtml := '<div style="font-family:Arial,sans-serif;max-width:600px;border:1px solid #cccccc;border-radius:8px;overflow:hidden">'
-    cHtml += '<div style="background-color:#0d5a8a;padding:20px;text-align:center">'
-    cHtml += '<h2 style="color:#ffffff;margin:0;font-size:18px">Apia Consultoria e Sistemas</h2>'
-    cHtml += '<p style="color:#d0e8f8;margin:5px 0 0 0;font-size:13px;font-style:italic">Seu chamado foi encerrado</p>'
-    cHtml += '</div>'
-    cHtml += '<table style="width:100%;border-collapse:collapse">'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px;width:35%"><b>Chamado</b></td><td style="padding:10px 15px">' + cIdCh + '</td></tr>'
-    cHtml += '<tr style="background-color:#1a7fc1;color:#ffffff"><td style="padding:10px 15px"><b>Assunto</b></td><td style="padding:10px 15px">' + cAssunto + '</td></tr>'
-    cHtml += '</table>'
-    cHtml += '<div style="padding:15px">'
-    cHtml += 'Seu chamado numero <b>' + cIdCh + '</b> foi encerrado.<br><br>'
-    cHtml += 'Qualquer duvida, entre em contato: <b>pericles@apia.com.br</b>'
-    cHtml += '</div>'
-    cHtml += '<div style="background-color:#0d5a8a;padding:12px;text-align:center">'
-    cHtml += '<p style="color:#ffffff;margin:0;font-size:12px">Apia Consultoria e Sistemas - TOTVS Business Partner</p>'
-    cHtml += '</div>'
-    cHtml += '</div>'
+    Local aLinhas := {}
+
+    AAdd(aLinhas, {"N&uacute;mero", '<span style="color:#1a7fc1">' + cIdCh + '</span>'})
+    AAdd(aLinhas, {"Assunto", cAssunto})
+
+    cHtml := CH_HTMLEMAIL(cIdCh, "Seu chamado foi encerrado", "", ;
+        "Seu chamado foi encerrado.", ;
+        aLinhas, "", "", "Qualquer d&uacute;vida, entre em contato: <b>pericles@apia.com.br</b>")
+
 Return cHtml
 
 
