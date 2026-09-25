@@ -765,8 +765,8 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
         oModelSZ1:SetValue("Z1_FIM",     OS_LERJSONNUM(jQuery,"horaFinalDec"))
         // Z1_HRINI/Z1_HRFIM ("HH:MM") - na tela classica vem por gatilho, que
         // nao roda no REST; sem isso o Editar abria Hora Inicial/Final vazias.
-        oModelSZ1:SetValue("Z1_HRINI",   OS_DECPARAHORA(OS_LERJSONNUM(jQuery,"horaInicialDec")))
-        oModelSZ1:SetValue("Z1_HRFIM",   OS_DECPARAHORA(OS_LERJSONNUM(jQuery,"horaFinalDec")))
+        oModelSZ1:SetValue("Z1_HRINI",   OS_DECPARAHORA(OS_LERJSONNUM(jQuery,"horaInicialDec"), "Z1_HRINI"))
+        oModelSZ1:SetValue("Z1_HRFIM",   OS_DECPARAHORA(OS_LERJSONNUM(jQuery,"horaFinalDec"), "Z1_HRFIM"))
         oModelSZ1:SetValue("Z1_TOTAL",   OS_LERJSONNUM(jQuery,"horasTiDec"))
         oModelSZ1:SetValue("Z1_TEC",     AllTrim(OS_LERJSONTXT(jQuery,"codAnalista")))
         oModelSZ1:SetValue("Z1_APROVAD", "N")
@@ -958,11 +958,11 @@ Static Function OS_NUCLEOALTERAR(jQuery)
         If !Empty(cVal) ; oModelSZ1:SetValue("Z1_DTOS", STOD(StrTran(cVal,"-",""))) ; EndIf
         If OS_LERJSONNUM(jQuery,"horaInicialDec") <> 0
             oModelSZ1:SetValue("Z1_INI", OS_LERJSONNUM(jQuery,"horaInicialDec"))
-            oModelSZ1:SetValue("Z1_HRINI", OS_DECPARAHORA(OS_LERJSONNUM(jQuery,"horaInicialDec")))
+            oModelSZ1:SetValue("Z1_HRINI", OS_DECPARAHORA(OS_LERJSONNUM(jQuery,"horaInicialDec"), "Z1_HRINI"))
         EndIf
         If OS_LERJSONNUM(jQuery,"horaFinalDec") <> 0
             oModelSZ1:SetValue("Z1_FIM", OS_LERJSONNUM(jQuery,"horaFinalDec"))
-            oModelSZ1:SetValue("Z1_HRFIM", OS_DECPARAHORA(OS_LERJSONNUM(jQuery,"horaFinalDec")))
+            oModelSZ1:SetValue("Z1_HRFIM", OS_DECPARAHORA(OS_LERJSONNUM(jQuery,"horaFinalDec"), "Z1_HRFIM"))
         EndIf
         If OS_LERJSONNUM(jQuery,"horasTranDec") <> 0
             oModelSZ1:SetValue("Z1_TRANS", OS_LERJSONNUM(jQuery,"horasTranDec"))
@@ -1123,25 +1123,35 @@ Return
 
 //-------------------------------------------------------------------
 /*/{Protheus.doc} OS_DECPARAHORA
-Converte hora decimal (Z1_INI/Z1_FIM, ex: 8.5) no texto "HH:MM" dos
-campos Z1_HRINI/Z1_HRFIM (ex: "08:30").
+Converte hora decimal (Z1_INI/Z1_FIM, ex: 8.5) no texto dos campos
+Z1_HRINI/Z1_HRFIM, no tamanho do campo no dicionario: "08:30" se couber
+5 caracteres, "0830" se o campo tiver 4 (sem os dois pontos). Tamanho
+diferente dava FWNOWIDTH ("Valor atribuido difere do tamanho do campo").
 @param  nDec    Hora em decimal
-@return cHora   Hora no formato "HH:MM"
+@param  cCampo  Campo de destino (Z1_HRINI/Z1_HRFIM) - define o formato
+@return cHora   Hora no tamanho do campo
 @author Henrique
 @since 24/09/2026
 @version P12
 /*/
 //-------------------------------------------------------------------
-Static Function OS_DECPARAHORA(nDec)
+Static Function OS_DECPARAHORA(nDec, cCampo)
     Local nHoras := Int(nDec)
     Local nMin   := Round((nDec - nHoras) * 60, 0)
+    Local nTam   := TamSX3(cCampo)[1]
+    Local cHora  := ""
 
     If nMin >= 60
         nHoras++
         nMin -= 60
     EndIf
 
-Return StrZero(nHoras, 2) + ":" + StrZero(nMin, 2)
+    cHora := StrZero(nHoras, 2) + ":" + StrZero(nMin, 2)
+    If nTam < 5
+        cHora := StrTran(cHora, ":", "")
+    EndIf
+
+Return PadR(Left(cHora, nTam), nTam)
 
 //-------------------------------------------------------------------
 /*/{Protheus.doc} OS_SETNUM
