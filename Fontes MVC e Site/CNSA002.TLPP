@@ -733,6 +733,8 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
     Local oErroExcpt := Nil
     Local cOs        := ""
     Local cDtDigit   := AllTrim(OS_LERJSONTXT(jQuery, "dtDigitacao"))
+    Local aHrIni     := OS_LERHORA(jQuery, "horaInicial", "horaInicialDec")
+    Local aHrFim     := OS_LERHORA(jQuery, "horaFinal", "horaFinalDec")
 
     // Campo obrigatorio nao valida mais aqui - front-end valida antes de
     // chamar, e OS_PREVALIDA (Model) cobre via SetErrorMessage.
@@ -761,13 +763,11 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
         oModelSZ1:SetValue("Z1_SERV",    AllTrim(OS_LERJSONTXT(jQuery,"descricao")))
         oModelSZ1:SetValue("Z1_TIPO",    AllTrim(OS_LERJSONTXT(jQuery,"codServico")))
         oModelSZ1:SetValue("Z1_DTOS",    STOD(StrTran(AllTrim(OS_LERJSONTXT(jQuery,"dataOs")), "-", "")))
-        oModelSZ1:SetValue("Z1_INI",     OS_LERJSONNUM(jQuery,"horaInicialDec"))
-        oModelSZ1:SetValue("Z1_FIM",     OS_LERJSONNUM(jQuery,"horaFinalDec"))
-        // Z1_HRINI/Z1_HRFIM ("HH:MM") - na tela classica vem por gatilho, que
-        // nao roda no REST; sem isso o Editar abria Hora Inicial/Final vazias.
-        oModelSZ1:SetValue("Z1_HRINI",   OS_DECPARAHORA(OS_LERJSONNUM(jQuery,"horaInicialDec"), "Z1_HRINI"))
-        oModelSZ1:SetValue("Z1_HRFIM",   OS_DECPARAHORA(OS_LERJSONNUM(jQuery,"horaFinalDec"), "Z1_HRFIM"))
-        oModelSZ1:SetValue("Z1_TOTAL",   OS_LERJSONNUM(jQuery,"horasTiDec"))
+        oModelSZ1:SetValue("Z1_INI",     aHrIni[1])
+        oModelSZ1:SetValue("Z1_FIM",     aHrFim[1])
+        oModelSZ1:LoadValue("Z1_HRINI",  OS_HORACAMPO(aHrIni[2], "Z1_HRINI"))
+        oModelSZ1:LoadValue("Z1_HRFIM",  OS_HORACAMPO(aHrFim[2], "Z1_HRFIM"))
+        oModelSZ1:SetValue("Z1_TOTAL",   If(OS_LERJSONNUM(jQuery,"horasTiDec") <> 0, OS_LERJSONNUM(jQuery,"horasTiDec"), Round(aHrFim[1] - aHrIni[1], 2)))
         oModelSZ1:SetValue("Z1_TEC",     AllTrim(OS_LERJSONTXT(jQuery,"codAnalista")))
         oModelSZ1:SetValue("Z1_APROVAD", "N")
         oModelSZ1:SetValue("Z1_FATURAR", "N")
@@ -917,6 +917,8 @@ Static Function OS_NUCLEOALTERAR(jQuery)
     Local oErroExcpt := Nil
     Local cOs        := AllTrim(OS_LERJSONTXT(jQuery,"os"))
     Local cVal       := ""
+    Local aHrIni     := OS_LERHORA(jQuery, "horaInicial", "horaInicialDec")
+    Local aHrFim     := OS_LERHORA(jQuery, "horaFinal", "horaFinalDec")
 
     If Empty(cOs)
         Return {.F., "Informe o numero da OS (?os=000001).", ""}
@@ -956,13 +958,17 @@ Static Function OS_NUCLEOALTERAR(jQuery)
         If !Empty(cVal) ; oModelSZ1:SetValue("Z1_TIPO", cVal) ; EndIf
         cVal := AllTrim(OS_LERJSONTXT(jQuery,"dataOs"))
         If !Empty(cVal) ; oModelSZ1:SetValue("Z1_DTOS", STOD(StrTran(cVal,"-",""))) ; EndIf
-        If OS_LERJSONNUM(jQuery,"horaInicialDec") <> 0
-            oModelSZ1:SetValue("Z1_INI", OS_LERJSONNUM(jQuery,"horaInicialDec"))
-            oModelSZ1:SetValue("Z1_HRINI", OS_DECPARAHORA(OS_LERJSONNUM(jQuery,"horaInicialDec"), "Z1_HRINI"))
+        // Hora "pura" (HH:MM) vale; decimais calculados a partir dela (OS_LERHORA).
+        If !Empty(aHrIni[2])
+            oModelSZ1:SetValue("Z1_INI", aHrIni[1])
+            oModelSZ1:LoadValue("Z1_HRINI", OS_HORACAMPO(aHrIni[2], "Z1_HRINI"))
         EndIf
-        If OS_LERJSONNUM(jQuery,"horaFinalDec") <> 0
-            oModelSZ1:SetValue("Z1_FIM", OS_LERJSONNUM(jQuery,"horaFinalDec"))
-            oModelSZ1:SetValue("Z1_HRFIM", OS_DECPARAHORA(OS_LERJSONNUM(jQuery,"horaFinalDec"), "Z1_HRFIM"))
+        If !Empty(aHrFim[2])
+            oModelSZ1:SetValue("Z1_FIM", aHrFim[1])
+            oModelSZ1:LoadValue("Z1_HRFIM", OS_HORACAMPO(aHrFim[2], "Z1_HRFIM"))
+        EndIf
+        If OS_LERJSONNUM(jQuery,"horasTiDec") == 0 .And. !Empty(aHrIni[2]) .And. !Empty(aHrFim[2])
+            oModelSZ1:SetValue("Z1_TOTAL", Round(aHrFim[1] - aHrIni[1], 2))
         EndIf
         If OS_LERJSONNUM(jQuery,"horasTranDec") <> 0
             oModelSZ1:SetValue("Z1_TRANS", OS_LERJSONNUM(jQuery,"horasTranDec"))
@@ -1122,36 +1128,70 @@ Static Function OS_SETTEXTOUTF8(oModelSZ1, jBody, cCampo)
 Return
 
 //-------------------------------------------------------------------
-/*/{Protheus.doc} OS_DECPARAHORA
-Converte hora decimal (Z1_INI/Z1_FIM, ex: 8.5) no texto dos campos
-Z1_HRINI/Z1_HRFIM, no tamanho do campo no dicionario: "08:30" se couber
-5 caracteres, "0830" se o campo tiver 4 (sem os dois pontos). Tamanho
-diferente dava FWNOWIDTH ("Valor atribuido difere do tamanho do campo").
-@param  nDec    Hora em decimal
-@param  cCampo  Campo de destino (Z1_HRINI/Z1_HRFIM) - define o formato
-@return cHora   Hora no tamanho do campo
+/*/{Protheus.doc} OS_LERHORA
+Le a hora "pura" do parametro de texto (ex: horaInicial = "08:30" ou
+"0830") e devolve tambem o decimal equivalente (8.5) pros campos
+Z1_INI/Z1_FIM. Se o texto nao vier, aceita o decimal antigo (ex:
+horaInicialDec) e monta o texto a partir dele.
+@param  jQuery   Parametros da requisicao
+@param  cTexto   Nome do parametro com a hora "HH:MM"
+@param  cDec     Nome do parametro com a hora decimal (compatibilidade)
+@return aRet     {nDecimal, cHoraHHMM} - {0, ""} se nada veio
 @author Henrique
-@since 24/09/2026
+@since 25/09/2026
 @version P12
 /*/
 //-------------------------------------------------------------------
-Static Function OS_DECPARAHORA(nDec, cCampo)
-    Local nHoras := Int(nDec)
-    Local nMin   := Round((nDec - nHoras) * 60, 0)
-    Local nTam   := TamSX3(cCampo)[1]
-    Local cHora  := ""
+Static Function OS_LERHORA(jQuery, cTexto, cDec)
+    Local cDig  := StrTran(StrTran(AllTrim(OS_LERJSONTXT(jQuery, cTexto)), ":", ""), ".", "")
+    Local nDec  := 0
+    Local nHora := 0
+    Local nMin  := 0
 
+    If !Empty(cDig)
+        cDig  := PadL(Right(cDig, 4), 4, "0")
+        nHora := Val(Left(cDig, 2))
+        nMin  := Val(Right(cDig, 2))
+        Return {Round(nHora + nMin / 60, 2), StrZero(nHora, 2) + ":" + StrZero(nMin, 2)}
+    EndIf
+
+    nDec := OS_LERJSONNUM(jQuery, cDec)
+    If nDec == 0
+        Return {0, ""}
+    EndIf
+
+    nHora := Int(nDec)
+    nMin  := Round((nDec - nHora) * 60, 0)
     If nMin >= 60
-        nHoras++
+        nHora++
         nMin -= 60
     EndIf
 
-    cHora := StrZero(nHoras, 2) + ":" + StrZero(nMin, 2)
+Return {nDec, StrZero(nHora, 2) + ":" + StrZero(nMin, 2)}
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_HORACAMPO
+Ajusta a hora "HH:MM" ao tamanho do campo no dicionario (Z1_HRINI/
+Z1_HRFIM): "08:30" se couber 5 caracteres, "0830" se o campo for menor.
+Tamanho diferente dava FWNOWIDTH ("Valor atribuido difere do tamanho
+do campo").
+@param  cHora   Hora no formato "HH:MM"
+@param  cCampo  Campo de destino
+@return cRet    Hora no tamanho exato do campo
+@author Henrique
+@since 25/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+Static Function OS_HORACAMPO(cHora, cCampo)
+    Local nTam := TamSX3(cCampo)[1]
+    Local cRet := cHora
+
     If nTam < 5
-        cHora := StrTran(cHora, ":", "")
+        cRet := StrTran(cRet, ":", "")
     EndIf
 
-Return PadR(Left(cHora, nTam), nTam)
+Return PadR(Left(cRet, nTam), nTam)
 
 //-------------------------------------------------------------------
 /*/{Protheus.doc} OS_SETNUM
