@@ -64,9 +64,12 @@ User Function MenuDef()
 Local aRotina  := {}
 
     ADD OPTION aRotina TITLE "Pesquisar"    ACTION "AxPesqui"                        OPERATION 1 ACCESS 0
-    ADD OPTION aRotina TITLE "Visualizar"   ACTION "apia.cnsa002.ViewDef.CNS002"     OPERATION 2 ACCESS 0
-    ADD OPTION aRotina TITLE "Incluir"      ACTION "apia.cnsa002.ViewDef.CNS002"     OPERATION 3 ACCESS 0
-    ADD OPTION aRotina TITLE "Alterar"      ACTION "apia.cnsa002.ViewDef.CNS002"     OPERATION 4 ACCESS 0
+    // Mesmo padrao do CNSA001 (Chamado): ACTION "ViewDef.<fonte>" nao dispara
+    // nada dentro do Namespace - cada opcao chama uma User Function que abre a
+    // View via FWExecView com o identificador do namespace.
+    ADD OPTION aRotina TITLE "Visualizar"   ACTION "apia.cnsa002.U_OS_VISUALIZARTELA" OPERATION 2 ACCESS 0
+    ADD OPTION aRotina TITLE "Incluir"      ACTION "apia.cnsa002.U_OS_INCLUIRTELA"    OPERATION 3 ACCESS 0
+    ADD OPTION aRotina TITLE "Alterar"      ACTION "apia.cnsa002.U_OS_ALTERARTELA"    OPERATION 4 ACCESS 0
     ADD OPTION aRotina TITLE "Excluir"      ACTION "apia.cnsa002.ViewDef.CNS002"     OPERATION 5 ACCESS 0
     ADD OPTION aRotina TITLE "Copiar"       ACTION "apia.cnsa002.U_OS_COPIARTELA"    OPERATION 0 ACCESS 0
     ADD OPTION aRotina TITLE "Legenda"      ACTION "apia.cnsa002.U_OS_LEGENDA"       OPERATION 0 ACCESS 0
@@ -87,13 +90,16 @@ classico, so troca o modelo carregado por "CNS002".
 User Function ViewDef()
 
     Local l_oView    := Nil
-    Local l_oModel   := FWLoadModel("CNS002")
+    // Model ativo (montado pelo FWExecView / OS_MONTARMODEL) - FWLoadModel("CNS002")
+    // nao acha o modelo dentro do Namespace. Mesmo padrao do ViewDef do CNSA001.
+    Local l_oModel   := FWModelActive()
     Local l_oStruSZ1 := FWFormStruct(2, "SZ1")
     Local l_oStruSZ2 := FWFormStruct(2, "SZ2")
 
+    // Sem Model ativo (FWExecView sem oModel): monta aqui em vez de devolver
+    // Nil - Nil vira "Undefined View for apia.cnsa002.u_cns002".
     If l_oModel == Nil
-        MsgStop("Erro: O Modelo (ModelDef) nao foi carregado.", "Erro")
-        Return Nil
+        l_oModel := OS_MONTARMODEL()
     EndIf
 
     l_oView := FWFormView():New()
@@ -129,10 +135,32 @@ tabelas/relacoes).
 //-------------------------------------------------------------------
 User Function ModelDef()
 
+Return OS_MONTARMODEL()
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_MONTARMODEL
+Monta o Model da tela CNS002 (SZ1 + grid SZ2). Com nOperAtivar
+informado tambem define a operacao e ativa, NA MESMA funcao - mesmo
+motivo do CH_MONTARMODEL (CNSA001): FWInitCpo prende o "owner private
+environment" ao frame que montou o Model; ativar em outro frame quebra o
+INITVALUE do Insert com "_SetNamedPrvt: owner private environment not
+found". Vale pra Incluir, Visualizar e Alterar: o INITVALUE dos campos
+virtuais da SZ1 (ex: FDESC do nome do cliente) roda no Activate.
+@param  nOperAtivar    Operacao pra ja ativar (MODEL_OPERATION_*) - vazio = so monta
+@return l_oModel       Objeto MPFormModel montado
+@author Henrique
+@since 28/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+Static Function OS_MONTARMODEL(nOperAtivar)
+
     Local l_oModel  := Nil
     Local l_oStrSZ1 := FWFormStruct(1, "SZ1")
     Local l_oStrSZ2 := FWFormStruct(1, "SZ2")
     Local aRelSZ2   := {}
+
+    Default nOperAtivar := 0
 
     l_oModel := MPFormModel():New(;
         "FCNS002",;
@@ -155,6 +183,11 @@ User Function ModelDef()
     l_oModel:SetRelation("SZ2DETAIL", aRelSZ2, SZ2->(IndexKey(2)))
 
     l_oModel:SetPrimaryKey({"Z1_FILIAL","Z1_OS"})
+
+    If nOperAtivar > 0
+        l_oModel:SetOperation(nOperAtivar)
+        l_oModel:Activate()
+    EndIf
 
 Return l_oModel
 
@@ -472,6 +505,58 @@ Static Function OS_NUCLEOCOPIAR(cOsOrigem)
     ConfirmSX8()
 
 Return {.T., "", cOsNova}
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_VISUALIZARTELA
+Opcao de menu "Visualizar" da tela classica: abre a View em modo consulta.
+Mesmo padrao do CH_VISUALIZARTELA (CNSA001).
+@author Henrique
+@since 28/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+User Function OS_VISUALIZARTELA()
+    // MODEL_OPERATION_VIEW e 1, nao 2 - "2" e so o codigo do botao no ADD
+    // OPTION (Browse), FWFormModel:SetOperation so aceita {1,3,4,5,6}.
+    // Model montado e ativado AQUI (ver OS_MONTARMODEL) - sem isso o INITVALUE
+    // dos campos virtuais quebra com "owner private environment not found".
+    Local oModel := OS_MONTARMODEL(MODEL_OPERATION_VIEW)
+
+    FWExecView("Ordem de Servico", "apia.cnsa002.u_cns002", MODEL_OPERATION_VIEW, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel)
+Return
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_INCLUIRTELA
+Opcao de menu "Incluir" da tela classica: monta e ativa o Model em
+inclusao aqui (OS_MONTARMODEL(MODEL_OPERATION_INSERT)) e abre a View com ele. Mesmo padrao
+do CH_INCLUIRTELA (CNSA001).
+@author Henrique
+@since 28/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+User Function OS_INCLUIRTELA()
+    Local oModel := OS_MONTARMODEL(MODEL_OPERATION_INSERT)
+
+    FWExecView("Ordem de Servico", "apia.cnsa002.u_cns002", MODEL_OPERATION_INSERT, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel)
+Return
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_ALTERARTELA
+Opcao de menu "Alterar" da tela classica: abre a View em modo alteracao
+da OS posicionada. Mesmo padrao do CH_ALTERARTELA (CNSA001), sem o gate
+de administrador (a OS nao tem essa regra).
+@author Henrique
+@since 28/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+User Function OS_ALTERARTELA()
+    // Model montado e ativado AQUI (ver OS_MONTARMODEL / OS_VISUALIZARTELA).
+    Local oModel := OS_MONTARMODEL(MODEL_OPERATION_UPDATE)
+
+    FWExecView("Ordem de Servico", "apia.cnsa002.u_cns002", MODEL_OPERATION_UPDATE, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel)
+Return
 
 //-------------------------------------------------------------------
 /*/{Protheus.doc} OS_COPIARTELA
