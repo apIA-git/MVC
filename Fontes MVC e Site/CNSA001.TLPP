@@ -49,6 +49,12 @@ User Function CNS001()
         l_oBrowse:SetDescription("Registro de Chamados - OS")
         l_oBrowse:SetAlias("ZA1")
 
+        // Quem nao e admin (AA1_RSPMNT) so ve os chamados dele e os que ainda
+        // estao sem tecnico (pra poder assumir).
+        If !CH_TEMACESSOGRUPO()
+            l_oBrowse:SetFilterDefault("Empty(ZA1->ZA1_CONSUL) .Or. AllTrim(ZA1->ZA1_CONSUL) == '" + AllTrim(cConsultor) + "'")
+        EndIf
+
         // Mesmas cores do portal (shared/paleta-status.ts): azul=aberto,
         // amarelo=aguardando, rosa=pendencia, verde=concluido, cinza=incompleto.
         l_oBrowse:AddLegend( "ZA1->ZA1_STATUS == '1'", "BLUE",   "Aberto" )
@@ -77,6 +83,9 @@ User Function MenuDef()
     ADD OPTION aRotina TITLE "Pesquisar"        ACTION "AxPesqui"                            OPERATION 1 ACCESS 0
     ADD OPTION aRotina TITLE "Visualizar"       ACTION "apia.cnsa001.U_CH_VISUALIZARTELA"    OPERATION 2 ACCESS 0
     ADD OPTION aRotina TITLE "Incluir"          ACTION "apia.cnsa001.U_CH_INCLUIRTELA"       OPERATION 3 ACCESS 0
+    // Alterar pra todos - admin altera qualquer chamado; quem nao e admin so os
+    // proprios (CH_ALTERARTELA + CH_PREVALIDA). Quem nao e admin so ve os seus
+    // e os sem tecnico (filtro do browse em CNS001).
     ADD OPTION aRotina TITLE "Alterar"          ACTION "apia.cnsa001.U_CH_ALTERARTELA"       OPERATION 4 ACCESS 0
     ADD OPTION aRotina TITLE "Excluir"          ACTION "apia.cnsa001.U_CH_EXCLUIRTELA"       OPERATION 0 ACCESS 0
     ADD OPTION aRotina TITLE "Ver Agendas"      ACTION "apia.cnsa001.U_PROTHEUS_ABREAGENDA"  OPERATION 0 ACCESS 0
@@ -160,10 +169,15 @@ Static Function CH_MONTARMODEL(lAtivarInsert)
     l_oStrZA1:SetProperty("ZA1_LOJA",   MODEL_FIELD_OBRIGAT, .F.)
     l_oStrZA1:SetProperty("ZA1_CONSUL", MODEL_FIELD_OBRIGAT, .F.)
 
+    // CH_PREVALIDA NAO e mais o bPre (pre-validacao): o bPre roda a cada
+    // SetValue na tela, ANTES do valor entrar, e as regras dele (ex: "Informe
+    // o assunto") recusavam o proprio campo sendo preenchido - "Valor nao pode
+    // ser atribuido (ZA1_ASSUNT)". Agora roda na pos-validacao (VldData, uma
+    // vez ao salvar), antes do CH_POSGRAVACAO, que depende do snapshot dela.
     l_oModel := MPFormModel():New(;
         "FCNS001",;
-        {|oModel| CH_PREVALIDA(oModel)},;
-        {|oModel| CH_POSGRAVACAO(oModel)},;
+        NIL,;
+        {|oModel| CH_PREVALIDA(oModel) .And. CH_POSGRAVACAO(oModel)},;
         NIL,;
         {|oModel| CH_VALIDACANCELA(oModel)})
 
@@ -220,7 +234,8 @@ Return l_bOk
 
 
 /*/{Protheus.doc} CH_PREVALIDA
-Pre-validacao do Model (Incluir/Alterar): exige assunto/tipo/projeto/
+Validacao de negocio do Model (Incluir/Alterar), chamada na pos-validacao
+(VldData) antes do CH_POSGRAVACAO - nao no bPre. Exige assunto/tipo/projeto/
 tarefa na Inclusao, bloqueia Alterar sem grupo de acesso ou em chamado
 fechado, e valida a elegibilidade especifica do fluxo Assumir (gatilho
 lCnsaAssumindo) via SetErrorMessage.
@@ -242,24 +257,24 @@ Static Function CH_PREVALIDA(p_oModel)
         If oModelZA1 <> Nil
 
             If Empty(AllTrim(oModelZA1:GetValue("ZA1_ASSUNT")))
-                p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_ASSUNT", "ZA1", "ZA1_ASSUNT", "Informe o assunto do chamado.")
+                p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_ASSUNT", "ZA1", "ZA1_ASSUNT", "CNSA001", "Informe o assunto do chamado.")
                 Return .F.
             EndIf
 
             If !(Type("lCnsaIncluirIncompleto") == "L" .And. lCnsaIncluirIncompleto)
 
                 If Empty(AllTrim(oModelZA1:GetValue("ZA1_TIPO")))
-                    p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_TIPO", "ZA1", "ZA1_TIPO", "Informe o tipo do chamado.")
+                    p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_TIPO", "ZA1", "ZA1_TIPO", "CNSA001", "Informe o tipo do chamado.")
                     Return .F.
                 EndIf
 
                 If Empty(AllTrim(oModelZA1:GetValue("ZA1_PROJ")))
-                    p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_PROJ", "ZA1", "ZA1_PROJ", "Informe o projeto.")
+                    p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_PROJ", "ZA1", "ZA1_PROJ", "CNSA001", "Informe o projeto.")
                     Return .F.
                 EndIf
 
                 If Empty(AllTrim(oModelZA1:GetValue("ZA1_TAREFA")))
-                    p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_TAREFA", "ZA1", "ZA1_TAREFA", "Informe a tarefa.")
+                    p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_TAREFA", "ZA1", "ZA1_TAREFA", "CNSA001", "Informe a tarefa.")
                     Return .F.
                 EndIf
 
@@ -267,9 +282,31 @@ Static Function CH_PREVALIDA(p_oModel)
         EndIf
     EndIf
 
-    If nOper == 4 .And. !CH_TEMACESSOGRUPO()
-        p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_STATUS", "ZA1", "ZA1_STATUS", "Voce nao tem permissao para alterar chamados. Utilize a opcao Interagir.")
-        Return .F.
+    // Quem nao e admin (AA1_RSPMNT) so altera o PROPRIO chamado (ZA1_CONSUL =
+    // ele) e, mesmo nele, nao troca status, descricao nem tecnico. Assumir
+    // (lCnsaAssumindo) fica de fora: chamado sem tecnico qualquer tecnico
+    // assume ("ja atribuido" e barrado mais abaixo). ZA1-> ainda tem o valor
+    // gravado em disco aqui (antes do CommitData).
+    If nOper == 4 .And. !CH_TEMACESSOGRUPO() .And. !(Type("lCnsaAssumindo") == "L" .And. lCnsaAssumindo)
+        oModelZA1 := p_oModel:GetModel("ZA1MASTER")
+        If AllTrim(ZA1->ZA1_CONSUL) <> AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC")) .Or. Empty(AllTrim(ZA1->ZA1_CONSUL))
+            p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_CONSUL", "ZA1", "ZA1_CONSUL", "CNSA001", "Voce so pode alterar os seus chamados.")
+            Return .F.
+        EndIf
+        If oModelZA1 <> Nil
+            If AllTrim(oModelZA1:GetValue("ZA1_STATUS")) <> AllTrim(ZA1->ZA1_STATUS)
+                p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_STATUS", "ZA1", "ZA1_STATUS", "CNSA001", "Somente administradores podem alterar o status do chamado.")
+                Return .F.
+            EndIf
+            If AllTrim(oModelZA1:GetValue("ZA1_ANOT")) <> AllTrim(ZA1->ZA1_ANOT)
+                p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_ANOT", "ZA1", "ZA1_ANOT", "CNSA001", "Somente administradores podem alterar a descricao do chamado.")
+                Return .F.
+            EndIf
+            If AllTrim(oModelZA1:GetValue("ZA1_CONSUL")) <> AllTrim(ZA1->ZA1_CONSUL)
+                p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_CONSUL", "ZA1", "ZA1_CONSUL", "CNSA001", "Somente administradores podem trocar o tecnico do chamado.")
+                Return .F.
+            EndIf
+        EndIf
     EndIf
 
     If nOper == 4
@@ -282,7 +319,7 @@ Static Function CH_PREVALIDA(p_oModel)
         // chamado ja fechado.
         If oModelZA1 <> Nil .And. AllTrim(oModelZA1:GetValue("ZA1_STATUS")) == "4" .And. ;
             !(Type("lCnsaAlterandoStatus") == "L" .And. lCnsaAlterandoStatus)
-            p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_STATUS", "ZA1", "ZA1_STATUS", "Chamado fechado nao pode ser alterado.")
+            p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_STATUS", "ZA1", "ZA1_STATUS", "CNSA001", "Chamado fechado nao pode ser alterado.")
             Return .F.
         EndIf
 
@@ -290,32 +327,32 @@ Static Function CH_PREVALIDA(p_oModel)
         If Type("lCnsaAssumindo") == "L" .And. lCnsaAssumindo .And. oModelZA1 <> Nil
 
             If !Empty(cAssumirConsulAnt)
-                p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_CONSUL", "ZA1", "ZA1_CONSUL", "Este chamado ja esta atribuido. Para redesignar use a opcao Alterar.")
+                p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_CONSUL", "ZA1", "ZA1_CONSUL", "CNSA001", "Este chamado ja esta atribuido. Para redesignar use a opcao Alterar.")
                 Return .F.
             EndIf
 
             If cAssumirStatusAnt == "4"
-                p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_STATUS", "ZA1", "ZA1_STATUS", "Chamado fechado nao pode ser assumido.")
+                p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_STATUS", "ZA1", "ZA1_STATUS", "CNSA001", "Chamado fechado nao pode ser assumido.")
                 Return .F.
             EndIf
 
             If cAssumirStatusAnt == "2" .Or. cAssumirStatusAnt == "3"
-                p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_STATUS", "ZA1", "ZA1_STATUS", "Chamado pendente nao pode ser assumido.")
+                p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_STATUS", "ZA1", "ZA1_STATUS", "CNSA001", "Chamado pendente nao pode ser assumido.")
                 Return .F.
             EndIf
 
             If Empty(AllTrim(oModelZA1:GetValue("ZA1_PROJ")))
-                p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_PROJ", "ZA1", "ZA1_PROJ", "O chamado precisa ter um projeto definido antes de ser assumido.")
+                p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_PROJ", "ZA1", "ZA1_PROJ", "CNSA001", "O chamado precisa ter um projeto definido antes de ser assumido.")
                 Return .F.
             EndIf
 
             If AllTrim(Posicione("AF8", 1, xFilial("AF8") + AllTrim(oModelZA1:GetValue("ZA1_PROJ")), "AF8_FASE")) <> "03"
-                p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_PROJ", "ZA1", "ZA1_PROJ", "O chamado so pode ser assumido com projeto em execucao (fase 03).")
+                p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_PROJ", "ZA1", "ZA1_PROJ", "CNSA001", "O chamado so pode ser assumido com projeto em execucao (fase 03).")
                 Return .F.
             EndIf
 
             If Empty(AllTrim(oModelZA1:GetValue("ZA1_TAREFA")))
-                p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_TAREFA", "ZA1", "ZA1_TAREFA", "O chamado precisa ter uma tarefa definida antes de ser assumido.")
+                p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_TAREFA", "ZA1", "ZA1_TAREFA", "CNSA001", "O chamado precisa ter uma tarefa definida antes de ser assumido.")
                 Return .F.
             EndIf
 
@@ -437,6 +474,9 @@ Static Function CH_POSGRAVACAO(p_oModel)
     Local aMudancas   := {}
     Local lNotificarCliente := .F.
     Local lNotificarTecnico := .T.
+    Local lOfereceCli := .F.
+    Local lOfereceTec := .F.
+    Local aEnvio      := {}
 
     If Type("cConsulAnterior") <> "C"
         Public cConsulAnterior := ""
@@ -523,23 +563,23 @@ Static Function CH_POSGRAVACAO(p_oModel)
         // a partir do parametro "notificarCliente"). So pergunta se ha
         // mesmo alguma mudanca relevante (campo ou tecnico) e cliente tem
         // e-mail cadastrado.
-        If !Empty(cEmailCli) .And. (Len(aMudancas) > 0 .Or. (!Empty(cConsulNovo) .And. cConsulNovo <> cConsulAnterior))
-            If lViaRest
+        // Analista: vale pro e-mail de Remocao (anterior) e Designacao (novo).
+        // Tela classica: janela com checkbox (CH_PERGUNTAEMAIL); REST: flags
+        // notificarCliente/notificarTecnico vindas do portal.
+        lOfereceCli := !Empty(cEmailCli) .And. (Len(aMudancas) > 0 .Or. (!Empty(cConsulNovo) .And. cConsulNovo <> cConsulAnterior))
+        lOfereceTec := cConsulNovo <> cConsulAnterior
+        If lViaRest
+            If lOfereceCli
                 lNotificarCliente := lCnsaNotificarCliente
-            Else
-                lNotificarCliente := MsgYesNo("Deseja informar o cliente sobre esta alteracao?", "Notificar Cliente")
             EndIf
-        EndIf
-
-        // "Enviar e-mail ao analista?" - mesma regra do cliente: tela classica
-        // pergunta, REST usa lCnsaNotificarTecnico (parametro notificarTecnico,
-        // default envia). Vale pro e-mail de Remocao (analista anterior) e de
-        // Designacao (analista novo).
-        If cConsulNovo <> cConsulAnterior
-            If lViaRest
+            If lOfereceTec
                 lNotificarTecnico := (Type("lCnsaNotificarTecnico") <> "L" .Or. lCnsaNotificarTecnico)
-            Else
-                lNotificarTecnico := MsgYesNo("Deseja enviar e-mail ao analista sobre esta designacao?", "Notificar Analista")
+            EndIf
+        ElseIf lOfereceCli .Or. lOfereceTec
+            aEnvio := CH_PERGUNTAEMAIL("Alteracao do Chamado " + cIdCh, lOfereceCli, lOfereceTec)
+            lNotificarCliente := aEnvio[1]
+            If lOfereceTec
+                lNotificarTecnico := aEnvio[2]
             EndIf
         EndIf
 
@@ -629,6 +669,60 @@ Static Function CH_TEMACESSOGRUPO()
 
 Return cRspMnt == "1"
 
+/*/{Protheus.doc} CH_PERGUNTAEMAIL
+Janela unica da tela classica pra escolher, por checkbox, se envia o e-mail
+ao analista e/ou ao cliente (substitui os MsgYesNo separados). So mostra as
+opcoes que se aplicam a acao. Padrao igual ao portal: analista marcado,
+cliente desmarcado. Fechar a janela sem confirmar = nao envia nenhum.
+@param  cTitulo      Titulo da janela (ex: "Alteracao do Chamado 000250")
+@param  lOfereceCli  .T. mostra a opcao "Cliente"
+@param  lOfereceTec  .T. mostra a opcao "Analista (tecnico)"
+@return aRet         {lEnviarCliente, lEnviarTecnico}
+@author Henrique
+@since 28/09/2026
+@version P12
+/*/
+Static Function CH_PERGUNTAEMAIL(cTitulo, lOfereceCli, lOfereceTec)
+    Local oDlg     := Nil
+    Local oChkTec  := Nil
+    Local oChkCli  := Nil
+    Local oBtnOk   := Nil
+    Local nLin     := 28
+
+    Private lChkTec  := .T.
+    Private lChkCli  := .F.
+    Private lConfEml := .F.
+
+    Default lOfereceCli := .F.
+    Default lOfereceTec := .F.
+
+    If !lOfereceCli .And. !lOfereceTec
+        Return {.F., .F.}
+    EndIf
+
+    DEFINE MSDIALOG oDlg TITLE cTitulo FROM 0,0 TO 200,420 PIXEL
+
+        @ 10,10 SAY "Notificações por e-mail:" SIZE 200,10 PIXEL OF oDlg
+
+        If lOfereceTec
+            @ nLin,14 CHECKBOX oChkTec VAR lChkTec PROMPT "Enviar e-mail para o técnico" SIZE 180,10 PIXEL OF oDlg
+            nLin += 16
+        EndIf
+        If lOfereceCli
+            @ nLin,14 CHECKBOX oChkCli VAR lChkCli PROMPT "Enviar e-mail para o cliente" SIZE 180,10 PIXEL OF oDlg
+            nLin += 16
+        EndIf
+
+        oBtnOk := TButton():New(nLin + 12, 80, "Confirmar", oDlg, {|| lConfEml := .T., oDlg:End()}, 60,14,,,.F.,.T.,.F.,,.F.,,,.F.)
+
+    ACTIVATE MSDIALOG oDlg CENTERED
+
+    If !lConfEml
+        Return {.F., .F.}
+    EndIf
+
+Return {lOfereceCli .And. lChkCli, lOfereceTec .And. lChkTec}
+
 /*/{Protheus.doc} CH_ALTERARTELA
 Opcao de menu "Alterar" da tela classica: abre a View de edicao completa
 se o usuario tem acesso de grupo, senao redireciona para Interagir
@@ -640,14 +734,21 @@ Alterar - gate de grupo (identico a CNSA_ALT, so aponta pra VIEWDEF001.CNS001)
 /*/
 User Function CH_ALTERARTELA()
 
-    If CH_TEMACESSOGRUPO()
+    // Admin altera qualquer chamado; quem nao e admin so o proprio (ZA1_CONSUL
+    // = ele) - chamado sem tecnico precisa ser assumido antes.
+    If CH_TEMACESSOGRUPO() .Or. ;
+        (!Empty(AllTrim(ZA1->ZA1_CONSUL)) .And. AllTrim(ZA1->ZA1_CONSUL) == AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC")))
         // Identificador e so o namespace (sem sufixo) - ModelDef/ViewDef sao
         // bare dentro do Namespace (doc oficial TOTVS).
         FWExecView("Registro de Chamados", "apia.cnsa001.u_cns001", 4)
         Return
     EndIf
 
-    CNSA_INTERAGIR()
+    If Empty(AllTrim(ZA1->ZA1_CONSUL))
+        MsgAlert("Este chamado ainda nao tem tecnico. Use a opcao Assumir para atende-lo.", "Alterar")
+    Else
+        MsgAlert("Voce so pode alterar os seus chamados.", "Alterar")
+    EndIf
 
 Return
 
@@ -680,9 +781,22 @@ User Function CH_INCLUIRTELA()
     // (fluxo padrao ModelDef->FWExecView), INITVALUE quebra com
     // "_SetNamedPrvt: owner private environment not found" (so no Insert,
     // Update/View carregam valor existente e nao chamam INITVALUE).
+    // Variaveis de memoria (M->ZA1_*) criadas AQUI, no frame que fica vivo
+    // enquanto a tela esta aberta - o Model e montado em outra funcao
+    // (CH_MONTARMODEL), e sem isso a lupa (F3) do cliente quebrava ao fechar:
+    // FWCloseCpo fazia LoadValue(ZA1_FILIAL, M->ZA1_FILIAL = Nil).
+    RegToMemory("ZA1", .T., .F.)
+
     oModel := CH_MONTARMODEL(.T.)
 
-    FWExecView("Registro de Chamados", "apia.cnsa001.u_cns001", MODEL_OPERATION_INSERT, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel)
+    // FWExecView devolve 0 quando o usuario confirma e grava.
+    If FWExecView("Registro de Chamados", "apia.cnsa001.u_cns001", MODEL_OPERATION_INSERT, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel) == 0
+        // Ja nasceu com tecnico: mesma escolha do portal (e-mail de designacao).
+        // Depois do commit a ZA1 fica posicionada no chamado gravado.
+        If !Empty(AllTrim(ZA1->ZA1_CONSUL)) .And. CH_PERGUNTAEMAIL("Inclusao do Chamado " + AllTrim(ZA1->ZA1_IDCH), .F., .T.)[2]
+            CH_NOTIFICARDESIGNA(AllTrim(ZA1->ZA1_IDCH), AllTrim(ZA1->ZA1_CONSUL), .F., .T.)
+        EndIf
+    EndIf
 Return
 
 /*/{Protheus.doc} GETIDGRID
@@ -773,7 +887,7 @@ User Function CNSA_CRIAAGENDA()
         AllTrim(ZA1->ZA1_ASSUNT), AllTrim(ZA1->ZA1_PROJ), ;
         AllTrim(ZA1->ZA1_TAREFA), cIdCh)
 
-    If aAgenda[1] .And. MsgYesNo("Deseja enviar e-mail ao analista sobre o agendamento?", "Notificar Analista")
+    If aAgenda[1] .And. CH_PERGUNTAEMAIL("Agendamento - Chamado " + cIdCh, .F., .T.)[2]
         CH_NOTIFICARAGENDAMENTO(cIdCh, cTecnico, DToC(aAgenda[2]), aAgenda[3], aAgenda[4], AllTrim(ZA1->ZA1_ASSUNT))
     EndIf
 
@@ -877,7 +991,7 @@ User Function CNSA_INTERAGIR()
     (cAlias)->(DbCloseArea())
 
     If !Empty(cTextoInteracao) .And. !Empty(cEmailCli)
-        If MsgYesNo("Deseja informar o cliente sobre esta interacao?", "Notificar Cliente")
+        If CH_PERGUNTAEMAIL("Nova Interacao - Chamado " + cIdCh, .T., .F.)[1]
             CH_NOTIFICARINTERACAO(cEmailCli, cIdCh, cTextoInteracao, "incluida", "Nova Interacao")
         EndIf
     EndIf
@@ -1097,6 +1211,7 @@ User Function CH_ASSUMIRTELA()
     Local aResultado      := {}
     Local lNotificarCliente := .F.
     Local lNotificarTecnico := .F.
+    Local aEnvio            := {}
 
     If ZA1->(Eof()) .Or. ZA1->(Bof())
         MsgAlert("Nenhum chamado selecionado.", "Assumir")
@@ -1107,8 +1222,9 @@ User Function CH_ASSUMIRTELA()
         Return
     EndIf
 
-    lNotificarCliente := MsgYesNo("Deseja informar o cliente sobre esta alteracao?", "Notificar Cliente")
-    lNotificarTecnico := MsgYesNo("Deseja enviar e-mail ao analista sobre esta designacao?", "Notificar Analista")
+    aEnvio := CH_PERGUNTAEMAIL("Assumir Chamado " + AllTrim(ZA1->ZA1_IDCH), !Empty(AllTrim(ZA1->ZA1_EMAIL)), .T.)
+    lNotificarCliente := aEnvio[1]
+    lNotificarTecnico := aEnvio[2]
 
     aResultado := CH_NUCLEOASSUMIR(AllTrim(ZA1->ZA1_IDCH), lNotificarCliente, lNotificarTecnico)
 
@@ -1138,6 +1254,8 @@ User Function CH_EXCLUIRTELA()
     Local cMotivo        := ""
     Local aResultado     := {}
     Local lNotificarCliente := .F.
+    Local lNotificarTecnico := .F.
+    Local aEnvio            := {}
 
     If ZA1->(Eof()) .Or. ZA1->(Bof())
         MsgAlert("Nenhum chamado selecionado.", "Excluir")
@@ -1146,9 +1264,9 @@ User Function CH_EXCLUIRTELA()
 
     cIdCh := AllTrim(ZA1->ZA1_IDCH)
 
-    If !Empty(AllTrim(ZA1->ZA1_EMAIL))
-        lNotificarCliente := MsgYesNo("Deseja informar o cliente sobre o encerramento?", "Notificar Cliente")
-    EndIf
+    aEnvio := CH_PERGUNTAEMAIL("Excluir Chamado " + cIdCh, !Empty(AllTrim(ZA1->ZA1_EMAIL)), !Empty(AllTrim(ZA1->ZA1_CONSUL)))
+    lNotificarCliente := aEnvio[1]
+    lNotificarTecnico := aEnvio[2]
 
     If Empty(AllTrim(ZA1->ZA1_CONSUL))
         aResultado := CH_NUCLEOEXCLUIR(cIdCh, "", lNotificarCliente, .F.)
@@ -1193,8 +1311,7 @@ User Function CH_EXCLUIRTELA()
             cMotivo := AllTrim(cOutroMotivo)
     EndCase
 
-    aResultado := CH_NUCLEOEXCLUIR(cIdCh, cMotivo, lNotificarCliente, ;
-        MsgYesNo("Deseja enviar e-mail ao analista sobre o encerramento?", "Notificar Analista"))
+    aResultado := CH_NUCLEOEXCLUIR(cIdCh, cMotivo, lNotificarCliente, lNotificarTecnico)
     If aResultado[1] != 200
         MsgAlert(aResultado[2], "Excluir")
     EndIf
@@ -1255,7 +1372,7 @@ User Function CH_EXCLUIRINTERACAOTELA()
         Return
     EndIf
 
-    lNotificar := MsgYesNo("Deseja informar o cliente sobre esta alteracao?", "Notificar Cliente")
+    lNotificar := CH_PERGUNTAEMAIL("Excluir Interacao - Chamado " + cIdCh, .T., .F.)[1]
 
     aResultado := CH_NUCLEOEXCLUIRINTERACAO(cIdCh, aSeqs[nOpcao], lNotificar)
 
@@ -2815,6 +2932,20 @@ Static Function CH_INCLUIRINTERACAO(cIdCh, cTexto, lNotificarCliente, cOs)
         ZA1->(DbSetOrder(1))
         If !ZA1->(DbSeek(xFilial("ZA1") + cIdCh))
             Return {404, '{"erro":"Chamado nao encontrado."}'}
+        EndIf
+
+        // Mesmas travas da tela classica (CNSA_INTERAGIR)
+        If AllTrim(ZA1->ZA1_STATUS) == "4"
+            Return {400, '{"erro":"Chamado fechado nao pode receber interacoes."}'}
+        EndIf
+        If Empty(AllTrim(ZA1->ZA1_CONSUL))
+            Return {400, '{"erro":"O chamado precisa ter um tecnico designado para receber interacoes."}'}
+        EndIf
+        If Empty(AllTrim(ZA1->ZA1_CLIENT))
+            Return {400, '{"erro":"O chamado precisa ter um cliente designado para receber interacoes."}'}
+        EndIf
+        If AllTrim(ZA1->ZA1_CONSUL) <> AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC")) .And. !CH_TEMACESSOGRUPO()
+            Return {403, '{"erro":"Voce nao tem permissao para interagir neste chamado."}'}
         EndIf
 
         cEmailCli := AllTrim(ZA1->ZA1_EMAIL)

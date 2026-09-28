@@ -557,3 +557,36 @@ Static Function CNS001_LUPA_JSONESC(cTexto)
     cRet := StrTran(cRet, Chr(13), '\n')
     cRet := StrTran(cRet, Chr(9),  '\t')
 Return cRet
+
+////////////////////////////////////////////////////////////////////////////////
+// GATILHOS DO DICIONARIO (SX7) - funcoes globais
+//
+// Os gatilhos guardam a regra como texto sem namespace (U_CNSA_CLIENTE(),
+// U_CNSA_TECNICO()). As funcoes de verdade ficam no CNSA001.TLPP, dentro do
+// Namespace apia.cnsa001 (no RPO: apia.cnsa001.U_...), e o gatilho dava
+// "cannot find function U_CNSA_CLIENTE in AppMap". Aqui (fonte sem Namespace)
+// elas existem com o nome global e so repassam a chamada - no proprio
+// CNSA001.TLPP o compilador acusava "Redefinition of function".
+////////////////////////////////////////////////////////////////////////////////
+
+/*/{Protheus.doc} CNSA_CLIENTE
+Gatilho SX7 do ZA1_CLIENT (seq 001, contra-dominio ZA1_NOME) - repassa pra
+apia.cnsa001.U_CNSA_CLIENTE (CNSA001.TLPP).
+@return cNome   Nome reduzido do cliente
+@author Henrique
+@since 28/09/2026
+@version P12
+/*/
+User Function CNSA_CLIENTE()
+Return apia.cnsa001.U_CNSA_CLIENTE()
+
+/*/{Protheus.doc} CNSA_TECNICO
+Gatilho SX7 do ZA1_CONSUL (seq 001, contra-dominio ZA1_NOMTEC) - repassa pra
+apia.cnsa001.U_CNSA_TECNICO (CNSA001.TLPP).
+@return cNome   Nome do tecnico
+@author Henrique
+@since 28/09/2026
+@version P12
+/*/
+User Function CNSA_TECNICO()
+Return apia.cnsa001.U_CNSA_TECNICO()
