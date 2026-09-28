@@ -2368,11 +2368,6 @@ User Function OS_APINOVAINTERACAO() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local cOs        := AllTrim(OS_LERJSONTXT(jQuery,"os"))
     Local cTexto     := OS_TEXTOPURO(OS_LERJSONTXT(jQuery,"texto"))
-    Local cCRLF      := Chr(13) + Chr(10)
-    Local cHoje      := DToS(Date())
-    Local cConsultor := ""
-    Local cNome      := ""
-    Local cBloco     := ""
     Local oJson      := JsonObject():New()
     Local oErro      := Nil
 

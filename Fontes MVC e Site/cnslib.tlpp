@@ -67,6 +67,11 @@ User Function CNS001_COMPONENTES_LISTAR() As Logical
         // antes de montar o LIKE - mesmo tratamento ANSI/UTF-8 do restante do app.
         cTipoParam    := Lower(AllTrim(CNS001_LUPA_JSONSTR(jQuery,"tipo")))
         cFiltroParam  := CNS001_LUPA_DECODESAFE(AllTrim(CNS001_LUPA_JSONSTR(jQuery,"filtro")))
+        // "?" (acento que chegou mal decodificado), acento ou apostrofo no filtro
+        // quebrava o %Exp% do BeginSql: o "?" vira placeholder de bind e a query
+        // sai corrompida (ORA-00907, ex: motivo "COORDENAC?O"). Vira "_" (curinga
+        // de 1 caractere no LIKE), que continua achando com ou sem acento.
+        cFiltroParam  := CNS001_LUPA_FILTROSQL(cFiltroParam)
         cProjetoParam := AllTrim(CNS001_LUPA_JSONSTR(jQuery,"projeto"))
         cClienteParam := AllTrim(CNS001_LUPA_JSONSTR(jQuery,"cliente"))
         cLojaParam    := AllTrim(CNS001_LUPA_JSONSTR(jQuery,"lojaCliente"))
@@ -545,6 +550,22 @@ Static Function CNS001_LUPA_DECODESAFE(cTexto)
         cRet += SubStr(cTexto, nI, 1)
         nI++
     EndDo
+
+Return cRet
+
+Static Function CNS001_LUPA_FILTROSQL(cTexto)
+    Local cRet := ""
+    Local cCar := ""
+    Local nI   := 0
+
+    For nI := 1 To Len(cTexto)
+        cCar := SubStr(cTexto, nI, 1)
+        If Asc(cCar) > 127 .Or. cCar $ "'?"
+            cRet += "_"
+        Else
+            cRet += cCar
+        EndIf
+    Next nI
 
 Return cRet
 
