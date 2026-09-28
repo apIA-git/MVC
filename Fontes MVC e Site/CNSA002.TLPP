@@ -896,6 +896,10 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
         Else
             oModelSZ1:SetValue("Z1_INTERNO", "N")
         EndIf
+        // Z1_LOCAL (1-Remoto, 2-Presencial, 3-Apia) - opcional
+        If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"local")))
+            oModelSZ1:SetValue("Z1_LOCAL", AllTrim(OS_LERJSONTXT(jQuery,"local")))
+        EndIf
         If OS_LERJSONNUM(jQuery,"horasTranDec") <> 0
             oModelSZ1:SetValue("Z1_TRANS", OS_LERJSONNUM(jQuery,"horasTranDec"))
         EndIf
@@ -1097,6 +1101,9 @@ Static Function OS_NUCLEOALTERAR(jQuery)
         If !Empty(cVal) ; oModelSZ1:SetValue("Z1_TEC", cVal) ; EndIf
         cVal := AllTrim(OS_LERJSONTXT(jQuery,"osInterna"))
         If !Empty(cVal) ; oModelSZ1:SetValue("Z1_INTERNO", cVal) ; EndIf
+        // Z1_LOCAL (1-Remoto, 2-Presencial, 3-Apia)
+        cVal := AllTrim(OS_LERJSONTXT(jQuery,"local"))
+        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_LOCAL", cVal) ; EndIf
         cVal := AllTrim(OS_LERJSONTXT(jQuery,"prevPmt"))
         If !Empty(cVal) ; oModelSZ1:SetValue("Z1_PREVIST", cVal) ; EndIf
         cVal := AllTrim(OS_LERJSONTXT(jQuery,"numProposta"))
@@ -1728,7 +1735,7 @@ User Function OS_APILISTAR() As Logical
                 SELECT SZ1Q.*, ROWNUM AS SZ1_RNUM
                 FROM (
                     SELECT Z1_OS, Z1_DTDIGIT, Z1_CLI, Z1_LOJA, Z1_USR, Z1_MODULO, Z1_MOTIV, Z1_TIPO, ;
-                        Z1_DTOS, Z1_INTERNO, Z1_HRINI, Z1_INI, Z1_HRFIM, Z1_FIM, Z1_TRANS, Z1_PREVIST, ;
+                        Z1_DTOS, Z1_INTERNO, Z1_LOCAL, Z1_HRINI, Z1_INI, Z1_HRFIM, Z1_FIM, Z1_TRANS, Z1_PREVIST, ;
                         Z1_HRTOT, Z1_TOTAL, Z1_TEC, Z1_NUMPRO, Z1_PV, Z1_ALMOCO, Z1_PROJET, Z1_REVISA, ;
                         Z1_TAREFA, Z1_CHPSD, Z1_CHHDK, Z1_IDCH, Z1_OSDESE, Z1_OSENVCL, Z1_LIN, Z1_VLRHR, Z1_APROVAD, Z1_FATURAR, ;
                         COUNT(*) OVER() AS SZ1_TOTAL
@@ -1784,6 +1791,7 @@ User Function OS_APILISTAR() As Logical
             oLinha['nomeServico']    := OS_NOMESERV(AllTrim((cAlias)->Z1_TIPO))
             oLinha['dataOs']         := OS_DATAISO((cAlias)->Z1_DTOS)
             oLinha['osInterna']      := AllTrim((cAlias)->Z1_INTERNO)
+            oLinha['local']          := AllTrim((cAlias)->Z1_LOCAL)
             oLinha['horaInicial']    := AllTrim((cAlias)->Z1_HRINI)
             oLinha['horaInicialDec'] := (cAlias)->Z1_INI
             oLinha['horaFinal']      := AllTrim((cAlias)->Z1_HRFIM)
