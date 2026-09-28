@@ -165,6 +165,7 @@ Static Function OS_MONTARMODEL(nOperAtivar)
     // Representante opcional mesmo se o dicionario marcar obrigatorio (X3_OBRIGAT).
     l_oStrSZ1:SetProperty("Z1_USR", MODEL_FIELD_OBRIGAT, .F.)
     l_oStrSZ1:SetProperty("Z1_SERV", MODEL_FIELD_OBRIGAT, .F.)
+    l_oStrSZ1:SetProperty("Z1_TEC", MODEL_FIELD_OBRIGAT, .F.)
 
     l_oModel := MPFormModel():New(;
         "FCNS002",;
@@ -215,8 +216,9 @@ Static Function OS_VALIDACAMPO(p_oField, p_sAcao, p_sCampo, p_vValor)
     // Z1_USR (Representante) nao e mais obrigatorio - saiu da tela do portal e
     // vem do contato do cliente (A1_CONTATO), que pode estar vazio.
     // Z1_SERV (Descricao) tambem nao - OS sem chamado usa ela pra interacao.
+    // Z1_TEC (Analista) tambem nao - OS pode ser criada sem tecnico.
     Local aObrigatorios := {"Z1_CLI", "Z1_LOJA", "Z1_MODULO", "Z1_MOTIV", ;
-        "Z1_TIPO", "Z1_DTOS", "Z1_INI", "Z1_FIM", "Z1_TOTAL", "Z1_TEC"}
+        "Z1_TIPO", "Z1_DTOS", "Z1_INI", "Z1_FIM", "Z1_TOTAL"}
 
     If AScan(aObrigatorios, p_sCampo) > 0 .And. Empty(p_vValor)
         l_bOk := .F.
@@ -355,6 +357,7 @@ Static Function OS_STRUCTHEADLESS(oStrSZ1)
     // Representante opcional (REST) mesmo se o dicionario marcar obrigatorio.
     oStrSZ1:SetProperty("Z1_USR", MODEL_FIELD_OBRIGAT, .F.)
     oStrSZ1:SetProperty("Z1_SERV", MODEL_FIELD_OBRIGAT, .F.)
+    oStrSZ1:SetProperty("Z1_TEC", MODEL_FIELD_OBRIGAT, .F.)
 
     For nI := 1 To Len(aCampos)
         If aCampos[nI][MODEL_FIELD_VIRTUAL]
@@ -885,7 +888,10 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
         oModelSZ1:LoadValue("Z1_HRINI",  OS_HORACAMPO(aHrIni[2], "Z1_HRINI"))
         oModelSZ1:LoadValue("Z1_HRFIM",  OS_HORACAMPO(aHrFim[2], "Z1_HRFIM"))
         oModelSZ1:SetValue("Z1_TOTAL",   If(OS_LERJSONNUM(jQuery,"horasTiDec") <> 0, OS_LERJSONNUM(jQuery,"horasTiDec"), Round(aHrFim[1] - aHrIni[1], 2)))
-        oModelSZ1:SetValue("Z1_TEC",     AllTrim(OS_LERJSONTXT(jQuery,"codAnalista")))
+        // Analista opcional - so seta se veio (vazio no SetValue pode cair no VALID do dicionario).
+        If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"codAnalista")))
+            oModelSZ1:SetValue("Z1_TEC", AllTrim(OS_LERJSONTXT(jQuery,"codAnalista")))
+        EndIf
         oModelSZ1:SetValue("Z1_APROVAD", "N")
         oModelSZ1:SetValue("Z1_FATURAR", "N")
 
