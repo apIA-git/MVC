@@ -70,7 +70,7 @@ Local aRotina  := {}
     ADD OPTION aRotina TITLE "Visualizar"   ACTION "apia.cnsa002.U_OS_VISUALIZARTELA" OPERATION 2 ACCESS 0
     ADD OPTION aRotina TITLE "Incluir"      ACTION "apia.cnsa002.U_OS_INCLUIRTELA"    OPERATION 3 ACCESS 0
     ADD OPTION aRotina TITLE "Alterar"      ACTION "apia.cnsa002.U_OS_ALTERARTELA"    OPERATION 4 ACCESS 0
-    ADD OPTION aRotina TITLE "Excluir"      ACTION "apia.cnsa002.ViewDef.CNS002"     OPERATION 5 ACCESS 0
+    ADD OPTION aRotina TITLE "Excluir"      ACTION "apia.cnsa002.U_OS_EXCLUIRTELA"    OPERATION 5 ACCESS 0
     ADD OPTION aRotina TITLE "Copiar"       ACTION "apia.cnsa002.U_OS_COPIARTELA"    OPERATION 0 ACCESS 0
     ADD OPTION aRotina TITLE "Legenda"      ACTION "apia.cnsa002.U_OS_LEGENDA"       OPERATION 0 ACCESS 0
 
@@ -162,6 +162,9 @@ Static Function OS_MONTARMODEL(nOperAtivar)
 
     Default nOperAtivar := 0
 
+    // Representante opcional mesmo se o dicionario marcar obrigatorio (X3_OBRIGAT).
+    l_oStrSZ1:SetProperty("Z1_USR", MODEL_FIELD_OBRIGAT, .F.)
+
     l_oModel := MPFormModel():New(;
         "FCNS002",;
         {|oModel| OS_PREVALIDA(oModel)},;
@@ -208,7 +211,9 @@ vazio.
 //-------------------------------------------------------------------
 Static Function OS_VALIDACAMPO(p_oField, p_sAcao, p_sCampo, p_vValor)
     Local l_bOk := .T.
-    Local aObrigatorios := {"Z1_CLI", "Z1_LOJA", "Z1_USR", "Z1_MODULO", "Z1_MOTIV", ;
+    // Z1_USR (Representante) nao e mais obrigatorio - saiu da tela do portal e
+    // vem do contato do cliente (A1_CONTATO), que pode estar vazio.
+    Local aObrigatorios := {"Z1_CLI", "Z1_LOJA", "Z1_MODULO", "Z1_MOTIV", ;
         "Z1_SERV", "Z1_TIPO", "Z1_DTOS", "Z1_INI", "Z1_FIM", "Z1_TOTAL", "Z1_TEC"}
 
     If AScan(aObrigatorios, p_sCampo) > 0 .And. Empty(p_vValor)
@@ -241,37 +246,34 @@ Static Function OS_PREVALIDA(p_oModel)
         If oModelSZ1 <> Nil
 
             If Empty(AllTrim(oModelSZ1:GetValue("Z1_CLI"))) .Or. Empty(AllTrim(oModelSZ1:GetValue("Z1_LOJA")))
-                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_CLI", "SZ1", "Z1_CLI", "Informe o cliente e o site do cliente.")
+                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_CLI", "SZ1", "Z1_CLI", "CNSA002", "Informe o cliente e o site do cliente.")
                 Return .F.
             EndIf
 
-            If Empty(AllTrim(oModelSZ1:GetValue("Z1_USR")))
-                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_USR", "SZ1", "Z1_USR", "Informe o representante.")
-                Return .F.
-            EndIf
+            // Representante (Z1_USR) nao e mais obrigatorio (ver aObrigatorios em OS_VALIDACAMPO).
 
             If Empty(AllTrim(oModelSZ1:GetValue("Z1_MODULO")))
-                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_MODULO", "SZ1", "Z1_MODULO", "Informe o modulo.")
+                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_MODULO", "SZ1", "Z1_MODULO", "CNSA002", "Informe o modulo.")
                 Return .F.
             EndIf
 
             If Empty(AllTrim(oModelSZ1:GetValue("Z1_MOTIV")))
-                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_MOTIV", "SZ1", "Z1_MOTIV", "Informe o motivo.")
+                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_MOTIV", "SZ1", "Z1_MOTIV", "CNSA002", "Informe o motivo.")
                 Return .F.
             EndIf
 
             If Empty(AllTrim(oModelSZ1:GetValue("Z1_SERV")))
-                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_SERV", "SZ1", "Z1_SERV", "Informe a descricao.")
+                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_SERV", "SZ1", "Z1_SERV", "CNSA002", "Informe a descricao.")
                 Return .F.
             EndIf
 
             If Empty(AllTrim(oModelSZ1:GetValue("Z1_TIPO")))
-                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_TIPO", "SZ1", "Z1_TIPO", "Informe o codigo do servico.")
+                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_TIPO", "SZ1", "Z1_TIPO", "CNSA002", "Informe o codigo do servico.")
                 Return .F.
             EndIf
 
             If Empty(oModelSZ1:GetValue("Z1_DTOS"))
-                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_DTOS", "SZ1", "Z1_DTOS", "Informe a data da OS.")
+                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_DTOS", "SZ1", "Z1_DTOS", "CNSA002", "Informe a data da OS.")
                 Return .F.
             EndIf
 
@@ -351,6 +353,9 @@ Static Function OS_STRUCTHEADLESS(oStrSZ1)
     Local aVirtuais := {}
     Local nI        := 0
 
+    // Representante opcional (REST) mesmo se o dicionario marcar obrigatorio.
+    oStrSZ1:SetProperty("Z1_USR", MODEL_FIELD_OBRIGAT, .F.)
+
     For nI := 1 To Len(aCampos)
         If aCampos[nI][MODEL_FIELD_VIRTUAL]
             AAdd(aVirtuais, aCampos[nI][MODEL_FIELD_IDFIELD])
@@ -384,7 +389,9 @@ Static Function OS_MODELINSERT()
 
     OS_STRUCTHEADLESS(oStrSZ1)
 
-    oModel := MPFormModel():New("FCNS002REST", NIL, NIL, NIL, NIL)
+    // Pos-validacao com os mesmos obrigatorios da tela classica (OS_PREVALIDA,
+    // bloco nOper == 3) - antes o REST so dependia do formulario do front.
+    oModel := MPFormModel():New("FCNS002REST", NIL, {|o| OS_PREVALIDA(o)}, NIL, NIL)
     oModel:AddFields("SZ1MASTER", NIL, oStrSZ1, {|_f,_a,_c,_v| OS_VALIDACAMPO(_f,_a,_c,_v)}, NIL)
     oModel:SetPrimaryKey({"Z1_FILIAL", "Z1_OS"})
 
@@ -536,7 +543,12 @@ do CH_INCLUIRTELA (CNSA001).
 /*/
 //-------------------------------------------------------------------
 User Function OS_INCLUIRTELA()
-    Local oModel := OS_MONTARMODEL(MODEL_OPERATION_INSERT)
+    Local oModel := Nil
+
+    // M->Z1_* no frame que fica vivo com a tela aberta (lupas/F3 - ver
+    // CH_INCLUIRTELA no CNSA001, mesmo problema).
+    RegToMemory("SZ1", .T., .F.)
+    oModel := OS_MONTARMODEL(MODEL_OPERATION_INSERT)
 
     FWExecView("Ordem de Servico", "apia.cnsa002.u_cns002", MODEL_OPERATION_INSERT, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel)
 Return
@@ -553,9 +565,29 @@ de administrador (a OS nao tem essa regra).
 //-------------------------------------------------------------------
 User Function OS_ALTERARTELA()
     // Model montado e ativado AQUI (ver OS_MONTARMODEL / OS_VISUALIZARTELA).
-    Local oModel := OS_MONTARMODEL(MODEL_OPERATION_UPDATE)
+    Local oModel := Nil
+
+    // M->Z1_* no frame que fica vivo com a tela aberta (lupas/F3).
+    RegToMemory("SZ1", .F., .F.)
+    oModel := OS_MONTARMODEL(MODEL_OPERATION_UPDATE)
 
     FWExecView("Ordem de Servico", "apia.cnsa002.u_cns002", MODEL_OPERATION_UPDATE, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel)
+Return
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_EXCLUIRTELA
+Opcao de menu "Excluir" da tela classica: abre a View em modo exclusao da
+OS posicionada, com o Model montado e ativado aqui (ver OS_MONTARMODEL) -
+mesmo padrao do OS_VISUALIZARTELA/OS_ALTERARTELA.
+@author Henrique
+@since 28/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+User Function OS_EXCLUIRTELA()
+    Local oModel := OS_MONTARMODEL(MODEL_OPERATION_DELETE)
+
+    FWExecView("Ordem de Servico", "apia.cnsa002.u_cns002", MODEL_OPERATION_DELETE, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel)
 Return
 
 //-------------------------------------------------------------------
@@ -2323,6 +2355,12 @@ User Function OS_APINOVAINTERACAO() As Logical
 
         If !Empty(AllTrim(SZ1->Z1_IDCH))
             Return oRest:setStatusResponse(400, '{"erro":"OS vinculada ao chamado ' + AllTrim(SZ1->Z1_IDCH) + ' - a interacao deve ser gravada no chamado."}')
+        EndIf
+
+        // OS sem chamado aceita UMA interacao so (gravada no campo descricao,
+        // Z1_SERV). Com chamado continua ilimitado (ZA2 do chamado).
+        If Len(OS_SEPARAINTERACOES(SZ1->Z1_SERV)[2]) > 0
+            Return oRest:setStatusResponse(400, '{"erro":"OS sem chamado aceita apenas uma interacao, e ela ja foi registrada."}')
         EndIf
 
         cConsultor := AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC"))
