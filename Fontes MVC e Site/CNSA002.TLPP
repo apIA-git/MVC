@@ -1392,10 +1392,23 @@ codigo e loja - mesmo nome usado no chamado (ZA1_NOME) e na agenda (Z6_NOMCLI).
 /*/
 //-------------------------------------------------------------------
 Static Function OS_NOMECLI(cCodCliente, cLoja)
+    Local cChave := ""
+    Local cNome  := ""
+
     If Empty(cCodCliente)
         Return ""
     EndIf
-Return AllTrim(Posicione("SA1", 1, xFilial("SA1") + cCodCliente + cLoja, "A1_NREDUZ"))
+
+    // Chave no tamanho exato dos campos - codigo/loja chegam com AllTrim e,
+    // mais curtos que A1_COD/A1_LOJA, desalinhavam a chave (nome vinha vazio).
+    cChave := xFilial("SA1") + PadR(cCodCliente, TamSX3("A1_COD")[1]) + PadR(cLoja, TamSX3("A1_LOJA")[1])
+    cNome  := AllTrim(Posicione("SA1", 1, cChave, "A1_NREDUZ"))
+    // Cadastro sem nome reduzido: usa o nome completo.
+    If Empty(cNome)
+        cNome := AllTrim(Posicione("SA1", 1, cChave, "A1_NOME"))
+    EndIf
+
+Return cNome
 
 //-------------------------------------------------------------------
 /*/{Protheus.doc} OS_NOMEGEN
@@ -1481,7 +1494,8 @@ Static Function OS_NOMETEC(cCodAnalista)
     If Empty(cCodAnalista)
         Return ""
     EndIf
-Return AllTrim(Posicione("AA1", 1, xFilial("AA1") + cCodAnalista, "AA1_NOMTEC"))
+    // Chave no tamanho exato do AA1_CODTEC (mesmo motivo do OS_NOMECLI).
+Return AllTrim(Posicione("AA1", 1, xFilial("AA1") + PadR(cCodAnalista, TamSX3("AA1_CODTEC")[1]), "AA1_NOMTEC"))
 
 //-------------------------------------------------------------------
 /*/{Protheus.doc} OS_STATUSCALC
@@ -2252,6 +2266,24 @@ User Function OS_APILISTAINTERACOES() As Logical
         // 1) Memo da OS (interacoes de quando ela nao tinha chamado)
         aSep := OS_SEPARAINTERACOES(SZ1->Z1_SERV)
 
+        // OS sem chamado: a Descricao e a propria interacao (unica) - aparece
+        // no historico (e o front sabe que nao pode incluir outra).
+        If Empty(AllTrim(SZ1->Z1_IDCH)) .And. !Empty(aSep[1])
+            cData  := DToS(SZ1->Z1_DTOS)
+            If Len(cData) == 8
+                cData := SubStr(cData, 1, 4) + "-" + SubStr(cData, 5, 2) + "-" + SubStr(cData, 7, 2)
+            EndIf
+            oLinha := JsonObject():New()
+            oLinha['seq']       := "OS-DESC"
+            oLinha['consultor'] := OS_NOMETEC(AllTrim(SZ1->Z1_TEC))
+            oLinha['data']      := cData
+            oLinha['hora']      := ""
+            oLinha['texto']     := aSep[1]
+            oLinha['os']        := cOs
+            oLinha['idCh']      := ""
+            AAdd(aOrdem, {cData + "99:99", oLinha})
+        EndIf
+
         For nI := 1 To Len(aSep[2])
             aBloco := aSep[2][nI]
             cData  := SubStr(aBloco[1], 7, 4) + "-" + SubStr(aBloco[1], 4, 2) + "-" + SubStr(aBloco[1], 1, 2)
@@ -2365,22 +2397,15 @@ User Function OS_APINOVAINTERACAO() As Logical
             Return oRest:setStatusResponse(400, '{"erro":"OS vinculada ao chamado ' + AllTrim(SZ1->Z1_IDCH) + ' - a interacao deve ser gravada no chamado."}')
         EndIf
 
-        // OS sem chamado aceita UMA interacao so (gravada no campo descricao,
-        // Z1_SERV). Com chamado continua ilimitado (ZA2 do chamado).
-        If Len(OS_SEPARAINTERACOES(SZ1->Z1_SERV)[2]) > 0
-            Return oRest:setStatusResponse(400, '{"erro":"OS sem chamado aceita apenas uma interacao, e ela ja foi registrada."}')
+        // OS sem chamado: a interacao E a Descricao (Z1_SERV) e so pode ser
+        // feita uma vez - se a descricao ja tem texto (ou tem bloco antigo de
+        // interacao), recusa. Com chamado continua ilimitado (ZA2 do chamado).
+        If !Empty(OS_SEPARAINTERACOES(SZ1->Z1_SERV)[1]) .Or. Len(OS_SEPARAINTERACOES(SZ1->Z1_SERV)[2]) > 0
+            Return oRest:setStatusResponse(400, '{"erro":"OS sem chamado aceita apenas uma interacao, que fica na descricao - ela ja foi preenchida."}')
         EndIf
 
-        cConsultor := AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC"))
-        cNome      := If(Empty(cConsultor), "", AllTrim(Posicione("AA1", 1, xFilial("AA1") + cConsultor, "AA1_NOMTEC")))
-
-        // Data montada na mao (DD/MM/AAAA) - DToC depende do SET DATE e pode sair com ano de 2 digitos.
-        cBloco := OS_MARCAINTERACAO() + ;
-                  SubStr(cHoje, 7, 2) + "/" + SubStr(cHoje, 5, 2) + "/" + Left(cHoje, 4) + " " + Left(Time(), 5) + ;
-                  " | " + cConsultor + " | " + cNome + " ===" + cCRLF + cTexto
-
         RecLock("SZ1", .F.)
-            SZ1->Z1_SERV := OS_LIMPABORDAS(SZ1->Z1_SERV) + cCRLF + cCRLF + cBloco
+            SZ1->Z1_SERV := cTexto
         SZ1->(MsUnlock())
 
         oJson['sucesso']  := .T.
