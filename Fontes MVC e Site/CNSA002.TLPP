@@ -164,6 +164,7 @@ Static Function OS_MONTARMODEL(nOperAtivar)
 
     // Representante opcional mesmo se o dicionario marcar obrigatorio (X3_OBRIGAT).
     l_oStrSZ1:SetProperty("Z1_USR", MODEL_FIELD_OBRIGAT, .F.)
+    l_oStrSZ1:SetProperty("Z1_SERV", MODEL_FIELD_OBRIGAT, .F.)
 
     l_oModel := MPFormModel():New(;
         "FCNS002",;
@@ -213,8 +214,9 @@ Static Function OS_VALIDACAMPO(p_oField, p_sAcao, p_sCampo, p_vValor)
     Local l_bOk := .T.
     // Z1_USR (Representante) nao e mais obrigatorio - saiu da tela do portal e
     // vem do contato do cliente (A1_CONTATO), que pode estar vazio.
+    // Z1_SERV (Descricao) tambem nao - OS sem chamado usa ela pra interacao.
     Local aObrigatorios := {"Z1_CLI", "Z1_LOJA", "Z1_MODULO", "Z1_MOTIV", ;
-        "Z1_SERV", "Z1_TIPO", "Z1_DTOS", "Z1_INI", "Z1_FIM", "Z1_TOTAL", "Z1_TEC"}
+        "Z1_TIPO", "Z1_DTOS", "Z1_INI", "Z1_FIM", "Z1_TOTAL", "Z1_TEC"}
 
     If AScan(aObrigatorios, p_sCampo) > 0 .And. Empty(p_vValor)
         l_bOk := .F.
@@ -262,10 +264,7 @@ Static Function OS_PREVALIDA(p_oModel)
                 Return .F.
             EndIf
 
-            If Empty(AllTrim(oModelSZ1:GetValue("Z1_SERV")))
-                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_SERV", "SZ1", "Z1_SERV", "CNSA002", "Informe a descricao.")
-                Return .F.
-            EndIf
+            // Descricao (Z1_SERV) nao e mais obrigatoria (ver aObrigatorios em OS_VALIDACAMPO).
 
             If Empty(AllTrim(oModelSZ1:GetValue("Z1_TIPO")))
                 p_oModel:SetErrorMessage("SZ1MASTER", "Z1_TIPO", "SZ1", "Z1_TIPO", "CNSA002", "Informe o codigo do servico.")
@@ -355,6 +354,7 @@ Static Function OS_STRUCTHEADLESS(oStrSZ1)
 
     // Representante opcional (REST) mesmo se o dicionario marcar obrigatorio.
     oStrSZ1:SetProperty("Z1_USR", MODEL_FIELD_OBRIGAT, .F.)
+    oStrSZ1:SetProperty("Z1_SERV", MODEL_FIELD_OBRIGAT, .F.)
 
     For nI := 1 To Len(aCampos)
         If aCampos[nI][MODEL_FIELD_VIRTUAL]
