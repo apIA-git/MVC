@@ -5,12 +5,33 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 // CNSLOGIN.tlpp
-// Henrique - 30/09/2026 - Endpoint proprio de login do portal apia-po-cnshub.
-//   Antes o portal validava usuario/senha chamando GET /rest/FwModel/agenda
-//   (modelo do CNSA003, Agenda) - sem o CNSA003 no RPO ninguem entrava, mesmo
-//   com a senha certa. Este fonte nao depende de nenhum outro: o REST do
-//   Protheus ja valida o Basic auth antes de chegar aqui (senha errada = 401
-//   do proprio framework), entao chegar na funcao = credencial valida.
+// Henrique - 30/09/2026 - Endpoint PROPRIO de login do portal apia-po-cnshub.
+//
+// POR QUE ESTE FONTE EXISTE (LEIA ANTES DE MEXER):
+//   Ate 30/09/2026 o portal validava usuario/senha chamando
+//   GET /rest/FwModel/agenda - o modelo MVC da Agenda (CNSA003.prw). Ou seja,
+//   o LOGIN dependia de uma TELA DE NEGOCIO. Quando o CNSA003 saiu do RPO,
+//   NINGUEM conseguia entrar no portal, mesmo com a senha certa: qualquer
+//   falha da Agenda (fonte fora do RPO, erro no modelo, restart) aparecia
+//   pro usuario como "Usuario ou senha invalidos". Problema real, em producao.
+//
+// MELHOR PRATICA ADOTADA:
+//   - Autenticacao isolada: login tem endpoint proprio, sem regra de
+//     negocio e sem depender de nenhum outro fonte (Agenda, Chamado, OS...).
+//     Uma tela quebrada nao derruba mais o acesso ao portal inteiro.
+//   - Quem valida a senha e o proprio framework REST do Protheus (Basic
+//     auth): senha errada = 401 antes de chegar aqui. Chegar na funcao =
+//     credencial valida. Nada de conferir senha na mao.
+//   - Endpoint leve: nao abre tabela, nao roda query - so devolve quem esta
+//     logado. Rapido e sem efeito colateral.
+//
+// NAO FACA: voltar a validar o login em endpoint de tela (FwModel/agenda,
+//   /CNSAOS, /CNSLIBCOMPONENTES...). Se precisar restringir quem entra
+//   (ex.: so quem tem cadastro de atendente AA1), coloque a regra AQUI.
+//
+// Consumido por: apia-po-cnshub/src/app/services/autenticacao-serv.ts
+// Endpoint novo exige restart do servico REST pra rota ser registrada
+//   (so compilar devolve 404 ate reiniciar).
 ////////////////////////////////////////////////////////////////////////////////
 
 //-------------------------------------------------------------------
