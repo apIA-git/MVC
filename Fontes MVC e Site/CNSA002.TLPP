@@ -2156,6 +2156,28 @@ Static Function OS_SEPARAINTERACOES(cMemo)
 Return {cDesc, aBlocos}
 
 //-------------------------------------------------------------------
+/*/{Protheus.doc} OS_MONTABLOCO
+Monta um bloco de interacao do Memo Z1_SERV no formato lido por
+OS_SEPARAINTERACOES: "=== INTERACAO DD/MM/AAAA HH:MM | cod | nome ===".
+Data montada na mao (DToC depende do SET DATE).
+@param  dData    Data da interacao
+@param  cHora    Hora HH:MM (pode ser vazia)
+@param  cCod     Codigo do tecnico (AA1)
+@param  cNome    Nome do tecnico
+@param  cTexto   Texto da interacao
+@return cBloco   Bloco pronto (sem quebra de linha antes)
+@author Henrique
+@since 30/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+Static Function OS_MONTABLOCO(dData, cHora, cCod, cNome, cTexto)
+    Local cData := DToS(dData)
+    Local cCRLF := Chr(13) + Chr(10)
+Return OS_MARCAINTERACAO() + SubStr(cData, 7, 2) + "/" + SubStr(cData, 5, 2) + "/" + Left(cData, 4) + ;
+    If(Empty(cHora), "", " " + cHora) + " | " + cCod + " | " + cNome + " ===" + cCRLF + cTexto
+
+//-------------------------------------------------------------------
 /*/{Protheus.doc} OS_BLOCOSINTERACAO
 Devolve so a parte de blocos de interacao do Memo (do primeiro marcador
 ate o fim), ja com a quebra de linha que separa da descricao - usado no
@@ -2281,6 +2303,7 @@ User Function OS_APILISTAINTERACOES() As Logical
     Local cAlias  := ""
     Local cData   := ""
     Local cConsul := ""
+    Local nPosDesc := 0
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -2299,13 +2322,24 @@ User Function OS_APILISTAINTERACOES() As Logical
         // 1) Memo da OS (interacoes de quando ela nao tinha chamado)
         aSep := OS_SEPARAINTERACOES(SZ1->Z1_SERV)
 
-        // OS sem chamado: a Descricao e a propria interacao (unica) - aparece
-        // no historico (e o front sabe que nao pode incluir outra).
-        If Empty(AllTrim(SZ1->Z1_IDCH)) .And. !Empty(aSep[1])
-            cData  := DToS(SZ1->Z1_DTOS)
-            If Len(cData) == 8
-                cData := SubStr(cData, 1, 4) + "-" + SubStr(cData, 5, 2) + "-" + SubStr(cData, 7, 2)
+        // OS sem chamado: historico SO existe depois que a Descricao foi
+        // trocada por uma interacao (blocos no Memo, ver OS_APINOVAINTERACAO).
+        // Descricao nunca trocada = sem blocos = lista vazia (o front nao
+        // mostra nada). O bloco igual a Descricao atual vai marcado
+        // (descricao = .T.) - o front poe o adendo "Descricao".
+        nPosDesc := 0
+        For nI := Len(aSep[2]) To 1 Step -1
+            If aSep[2][nI][5] == aSep[1]
+                nPosDesc := nI
+                Exit
             EndIf
+        Next nI
+
+        // Descricao editada direto no campo depois da ultima interacao - ela
+        // tambem entra no historico, marcada como a Descricao atual.
+        If Empty(AllTrim(SZ1->Z1_IDCH)) .And. Len(aSep[2]) > 0 .And. nPosDesc == 0 .And. !Empty(aSep[1])
+            cData  := DToS(dDataBase)
+            cData  := SubStr(cData, 1, 4) + "-" + SubStr(cData, 5, 2) + "-" + SubStr(cData, 7, 2)
             oLinha := JsonObject():New()
             oLinha['seq']       := "OS-DESC"
             oLinha['consultor'] := OS_NOMETEC(AllTrim(SZ1->Z1_TEC))
@@ -2314,6 +2348,7 @@ User Function OS_APILISTAINTERACOES() As Logical
             oLinha['texto']     := aSep[1]
             oLinha['os']        := cOs
             oLinha['idCh']      := ""
+            oLinha['descricao'] := .T.
             AAdd(aOrdem, {cData + "99:99", oLinha})
         EndIf
 
@@ -2329,6 +2364,7 @@ User Function OS_APILISTAINTERACOES() As Logical
             oLinha['texto']     := aBloco[5]
             oLinha['os']        := cOs
             oLinha['idCh']      := ""
+            oLinha['descricao'] := (nI == nPosDesc)
             AAdd(aOrdem, {cData + aBloco[2], oLinha})
         Next nI
 
@@ -2387,9 +2423,12 @@ Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
 
 //-------------------------------------------------------------------
 /*/{Protheus.doc} OS_APINOVAINTERACAO
-Endpoint REST POST /CNSAOSINTERACOESINCLUIR: acrescenta uma interacao
-(os/texto via query) no fim do Memo Z1_SERV de uma OS SEM chamado. OS
-com chamado grava na ZA2 (CNSACHAMADOSINTERACOESINCLUIR) - devolve 400.
+Endpoint REST POST /CNSAOSINTERACOESINCLUIR: interacao (os/texto via
+query) de uma OS SEM chamado. A interacao SUBSTITUI a Descricao (Z1_SERV).
+Descricao vazia: so grava o texto, sem historico. Descricao ja preenchida
+(troca): guarda no historico (blocos no Memo) a descricao anterior - se
+ainda nao tinha historico - e a nova interacao. OS com chamado grava na
+ZA2 (CNSACHAMADOSINTERACOESINCLUIR) - devolve 400.
 @return Logical - resposta HTTP com o resultado da inclusao
 @author Henrique
 @since 24/09/2026
@@ -2403,6 +2442,11 @@ User Function OS_APINOVAINTERACAO() As Logical
     Local cTexto     := OS_TEXTOPURO(OS_LERJSONTXT(jQuery,"texto"))
     Local oJson      := JsonObject():New()
     Local oErro      := Nil
+    Local cCRLF      := Chr(13) + Chr(10)
+    Local aSep       := {}
+    Local cBlocos    := ""
+    Local cConsultor := ""
+    Local cNome      := ""
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -2425,19 +2469,39 @@ User Function OS_APINOVAINTERACAO() As Logical
             Return oRest:setStatusResponse(400, '{"erro":"OS vinculada ao chamado ' + AllTrim(SZ1->Z1_IDCH) + ' - a interacao deve ser gravada no chamado."}')
         EndIf
 
-        // OS sem chamado: a interacao E a Descricao (Z1_SERV) e so pode ser
-        // feita uma vez - se a descricao ja tem texto (ou tem bloco antigo de
-        // interacao), recusa. Com chamado continua ilimitado (ZA2 do chamado).
-        If !Empty(OS_SEPARAINTERACOES(SZ1->Z1_SERV)[1]) .Or. Len(OS_SEPARAINTERACOES(SZ1->Z1_SERV)[2]) > 0
-            Return oRest:setStatusResponse(400, '{"erro":"OS sem chamado aceita apenas uma interacao, que fica na descricao - ela ja foi preenchida."}')
+        // OS sem chamado: a interacao SUBSTITUI a Descricao. Historico (blocos
+        // no Memo, lidos por OS_SEPARAINTERACOES/OS_APILISTAINTERACOES) so
+        // nasce quando a descricao e TROCADA - a primeira, com descricao
+        // vazia, nao gera historico.
+        aSep := OS_SEPARAINTERACOES(SZ1->Z1_SERV)
+
+        If Empty(aSep[1]) .And. Len(aSep[2]) == 0
+            RecLock("SZ1", .F.)
+                SZ1->Z1_SERV := cTexto
+            SZ1->(MsUnlock())
+        Else
+            cBlocos := OS_BLOCOSINTERACAO(SZ1->Z1_SERV)
+            // Primeira troca: a descricao anterior entra no historico, com a
+            // data da OS e o tecnico da OS (nao ha registro de quem escreveu).
+            // Tambem guarda a descricao editada direto no campo depois da
+            // ultima interacao, pra nao perder texto na troca.
+            If Len(aSep[2]) == 0 .Or. (!Empty(aSep[1]) .And. ATail(aSep[2])[5] != aSep[1])
+                cBlocos += cCRLF + cCRLF + OS_MONTABLOCO(If(Len(aSep[2]) == 0, SZ1->Z1_DTOS, dDataBase), ;
+                    If(Len(aSep[2]) == 0, "", Left(Time(), 5)), AllTrim(SZ1->Z1_TEC), OS_NOMETEC(AllTrim(SZ1->Z1_TEC)), aSep[1])
+            EndIf
+
+            cConsultor := AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC"))
+            cNome      := If(Empty(cConsultor), "", AllTrim(Posicione("AA1", 1, xFilial("AA1") + cConsultor, "AA1_NOMTEC")))
+            cBlocos    += cCRLF + cCRLF + OS_MONTABLOCO(dDataBase, Left(Time(), 5), cConsultor, cNome, cTexto)
+
+            RecLock("SZ1", .F.)
+                SZ1->Z1_SERV := cTexto + cCRLF + cCRLF + OS_LIMPABORDAS(cBlocos)
+            SZ1->(MsUnlock())
         EndIf
 
-        RecLock("SZ1", .F.)
-            SZ1->Z1_SERV := cTexto
-        SZ1->(MsUnlock())
-
-        oJson['sucesso']  := .T.
-        oJson['os']       := cOs
+        oJson['sucesso']   := .T.
+        oJson['os']        := cOs
+        oJson['descricao'] := cTexto
         oJson['mensagem'] := "Interacao adicionada com sucesso."
 
         Return oRest:setStatusResponse(200, oJson:ToJson())
