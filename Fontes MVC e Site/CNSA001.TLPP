@@ -2150,6 +2150,10 @@ User Function CH_APICHAMADOS() As Logical
     Local cIdChParam := ""
     Local cTextoParam := ""
     Local lIncluirLinha := .T.
+    Local cFTec      := ""
+    Local cFCli      := ""
+    Local dFDataDe   := CToD("")
+    Local dFDataAte  := CToD("")
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -2177,6 +2181,16 @@ User Function CH_APICHAMADOS() As Logical
         // linhas varridas, e so quando o parametro vem preenchido.
         cTextoParam := Upper(AllTrim(CH_LERJSONTXT(jQuery, "texto")))
 
+        // Filtros da Busca avancada (tecnico/cliente/periodo da Data) - mesmos
+        // da OS (OS_APILISTAR). No backend porque a lista e paginada: filtrar
+        // so o carregado escondia chamados das paginas seguintes. Vazio = nao
+        // filtra. Tambem atende a lupa de chamado da Agenda (cns009), que ja
+        // mandava tecnico/cliente e ate aqui era ignorado.
+        cFTec     := AllTrim(CH_LERJSONTXT(jQuery, "tecnico"))
+        cFCli     := AllTrim(CH_LERJSONTXT(jQuery, "cliente"))
+        dFDataDe  := SToD(StrTran(AllTrim(CH_LERJSONTXT(jQuery, "dataDe")), "-", ""))
+        dFDataAte := SToD(StrTran(AllTrim(CH_LERJSONTXT(jQuery, "dataAte")), "-", ""))
+
         dbSelectArea("ZA1")
         ZA1->(DbSetOrder(1))
         If !Empty(cIdChParam)
@@ -2198,9 +2212,14 @@ User Function CH_APICHAMADOS() As Logical
             EndIf
         ElseIf ZA1->(DbSeek(cFilAtu))
             While !ZA1->(Eof()) .And. ZA1->ZA1_FILIAL == cFilAtu
-                lIncluirLinha := .T.
+                // Filtros baratos (campo direto) antes da busca livre, que
+                // resolve nome de cliente/tecnico via Posicione.
+                lIncluirLinha := (Empty(cFTec) .Or. AllTrim(ZA1->ZA1_CONSUL) == cFTec) .And. ;
+                    (Empty(cFCli) .Or. AllTrim(ZA1->ZA1_CLIENT) == cFCli) .And. ;
+                    (Empty(dFDataDe) .Or. ZA1->ZA1_DATA >= dFDataDe) .And. ;
+                    (Empty(dFDataAte) .Or. ZA1->ZA1_DATA <= dFDataAte)
 
-                If !Empty(cTextoParam)
+                If lIncluirLinha .And. !Empty(cTextoParam)
                     cCodConsul := AllTrim(ZA1->ZA1_CONSUL)
                     cCodCli    := AllTrim(ZA1->ZA1_CLIENT)
                     cNomeTec   := If(Empty(cCodConsul), "", AllTrim(Posicione("AA1", 1, xFilial("AA1") + cCodConsul, "AA1_NOMTEC")))
