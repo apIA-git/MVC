@@ -1,0 +1,37 @@
+#include "PROTHEUS.CH"
+#include "TOTVS.CH"
+#include "tlpp-core.th"
+#INCLUDE 'tlpp-rest.th'
+
+////////////////////////////////////////////////////////////////////////////////
+// CNSLOGIN.tlpp
+// Henrique - 30/09/2026 - Endpoint proprio de login do portal apia-po-cnshub.
+//   Antes o portal validava usuario/senha chamando GET /rest/FwModel/agenda
+//   (modelo do CNSA003, Agenda) - sem o CNSA003 no RPO ninguem entrava, mesmo
+//   com a senha certa. Este fonte nao depende de nenhum outro: o REST do
+//   Protheus ja valida o Basic auth antes de chegar aqui (senha errada = 401
+//   do proprio framework), entao chegar na funcao = credencial valida.
+////////////////////////////////////////////////////////////////////////////////
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CNSLOGIN_VALIDAR
+Endpoint REST (GET /CNSLOGIN) usado pelo login do portal. Se o
+framework deixou a requisicao chegar aqui, usuario e senha do Basic
+auth sao validos - so devolve os dados do usuario logado.
+@return lOk   JSON via oRest:setStatusResponse (200 com {codigo,usuario,nome})
+@author Henrique
+@since 30/09/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+@Get(endpoint="/CNSLOGIN")
+User Function CNSLOGIN_VALIDAR() As Logical
+    Local oJson := JsonObject():New()
+
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
+
+    oJson['codigo']  := __cUserId
+    oJson['usuario'] := AllTrim(UsrRetName(__cUserId))
+    oJson['nome']    := AllTrim(UsrFullName(__cUserId))
+
+Return oRest:setStatusResponse(200, oJson:ToJson())
