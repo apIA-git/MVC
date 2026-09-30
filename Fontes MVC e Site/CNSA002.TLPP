@@ -1732,6 +1732,10 @@ User Function OS_APILISTAR() As Logical
     Local cFCli      := ""
     Local cFDataDe   := ""
     Local cFDataAte  := ""
+    Local cSemTec    := ""
+    Local cSemCli    := ""
+    Local cSemDe     := ""
+    Local cSemAte    := ""
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -1761,6 +1765,13 @@ User Function OS_APILISTAR() As Logical
         cFCli     := AllTrim(OS_LERJSONTXT(jQuery, "cliente"))
         cFDataDe  := StrTran(AllTrim(OS_LERJSONTXT(jQuery, "dataDe")), "-", "")
         cFDataAte := StrTran(AllTrim(OS_LERJSONTXT(jQuery, "dataAte")), "-", "")
+        // Oracle trata '' como NULL: "'' = ''" NAO e verdadeiro e o filtro vazio
+        // excluia TODAS as OS. Flag S/N ("S" = sem filtro) no lugar do teste
+        // de string vazia.
+        cSemTec := If(Empty(cFTec),     "S", "N")
+        cSemCli := If(Empty(cFCli),     "S", "N")
+        cSemDe  := If(Empty(cFDataDe),  "S", "N")
+        cSemAte := If(Empty(cFDataAte), "S", "N")
 
         BeginSql Alias cAlias
             SELECT * FROM (
@@ -1774,10 +1785,10 @@ User Function OS_APILISTAR() As Logical
                     FROM %Table:SZ1% SZ1
                     WHERE Z1_FILIAL = %xFilial:SZ1%
                       AND %NotDel%
-                      AND (%Exp:cFTec% = '' OR Z1_TEC = %Exp:cFTec%)
-                      AND (%Exp:cFCli% = '' OR Z1_CLI = %Exp:cFCli%)
-                      AND (%Exp:cFDataDe% = '' OR Z1_DTOS >= %Exp:cFDataDe%)
-                      AND (%Exp:cFDataAte% = '' OR Z1_DTOS <= %Exp:cFDataAte%)
+                      AND (%Exp:cSemTec% = 'S' OR Z1_TEC = %Exp:cFTec%)
+                      AND (%Exp:cSemCli% = 'S' OR Z1_CLI = %Exp:cFCli%)
+                      AND (%Exp:cSemDe% = 'S' OR Z1_DTOS >= %Exp:cFDataDe%)
+                      AND (%Exp:cSemAte% = 'S' OR Z1_DTOS <= %Exp:cFDataAte%)
                       AND (
                             %Exp:cTextoUp% = ''
                             OR UPPER(Z1_OS) LIKE '%'||%Exp:cTextoUp%||'%'
