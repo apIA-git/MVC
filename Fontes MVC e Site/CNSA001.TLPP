@@ -632,7 +632,11 @@ Static Function CH_POSGRAVACAO(p_oModel)
                 "Este chamado nao possui agendamento. Deseja criar uma agenda para ele agora?", ;
                 "Este chamado ja possui " + cValToChar(nQtdAgenda) + " agendamento(s). Deseja criar mais um agora?")
 
-            If lViaRest .Or. MsgYesNo(cPergAgenda, "Agendar Chamado")
+            // Via REST (portal) NUNCA cria agenda sozinho: antes era
+            // "lViaRest .Or. MsgYesNo" e todo Incluir/Alterar do portal com
+            // tecnico criava um agendamento com a hora atual ate +1h sem
+            // ninguem pedir. No portal agenda so pela acao "Criar Agenda".
+            If !lViaRest .And. MsgYesNo(cPergAgenda, "Agendar Chamado")
 
                 cClienteAp := AllTrim(p_oModel:GetValue("ZA1MASTER", "ZA1_CLIENT"))
                 cLojaAp    := AllTrim(p_oModel:GetValue("ZA1MASTER", "ZA1_LOJA"))
@@ -2712,6 +2716,11 @@ User Function CH_APIMEUCONSULTOR() As Logical
 
     oJson['codConsultor'] := AllTrim(cConsultor)
     oJson['nomeTecnico']  := cNomeTec
+    // Admin (AA1_RSPMNT) pelo usuario da SESSAO - mesma regra do backend
+    // (CH_TEMACESSOGRUPO). O front casava o login digitado com USR_CODIGO da
+    // lupa de tecnico e errava pra quem nao batia (ex.: admin tratado como
+    // nao-admin e sem ver os proprios chamados).
+    oJson['rspmnt']       := If(CH_TEMACESSOGRUPO(), "1", "2")
 
 Return oRest:setStatusResponse(200, oJson:ToJson())
 
