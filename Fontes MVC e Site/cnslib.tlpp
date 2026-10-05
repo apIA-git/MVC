@@ -13,6 +13,7 @@ User Function CNS001_COMPONENTES_LISTAR() As Logical
     Local cProjetoParam := ""
     Local cClienteParam := ""
     Local cLojaParam    := ""
+    Local aAgendaParam  := {}
     Local aItens        := {}
     Local cItensJson    := ""
     Local cResposta     := ""
@@ -35,6 +36,11 @@ User Function CNS001_COMPONENTES_LISTAR() As Logical
         cProjetoParam := AllTrim(CNS001_LUPA_JSONSTR(jQuery,"projeto"))
         cClienteParam := AllTrim(CNS001_LUPA_JSONSTR(jQuery,"cliente"))
         cLojaParam    := AllTrim(CNS001_LUPA_JSONSTR(jQuery,"lojaCliente"))
+        // Lupa de Cod Servico: dados da OS pra achar o agendamento (Nao Cobrar).
+        aAgendaParam  := {AllTrim(CNS001_LUPA_JSONSTR(jQuery,"tecnico")), ;
+                          StrTran(AllTrim(CNS001_LUPA_JSONSTR(jQuery,"data")), "-", ""), ;
+                          AllTrim(CNS001_LUPA_JSONSTR(jQuery,"horaInicial")), ;
+                          AllTrim(CNS001_LUPA_JSONSTR(jQuery,"horaFinal"))}
 
         Do Case
             Case cTipoParam == "tecnico"
@@ -57,7 +63,7 @@ User Function CNS001_COMPONENTES_LISTAR() As Logical
                 aItens := CNS001_MOTIVLUPA(cFiltroParam)
             Case cTipoParam == "servico"
                 // Cliente/loja: so os servicos do cliente (SA7 - Produto x Cliente).
-                aItens := CNS001_SERVLUPA(cFiltroParam, cClienteParam, cLojaParam)
+                aItens := CNS001_SERVLUPA(cFiltroParam, cClienteParam, cLojaParam, aAgendaParam)
             Case cTipoParam == "proposta"
                 If Empty(cClienteParam)
                     Return oRest:setStatusResponse(400, '{"resultado":false,"erro":"Informe o cliente (?cliente=000001) antes de buscar a proposta."}')
@@ -344,16 +350,25 @@ Return aRet
 //   Selects passados pelo usuario, adaptados ao BeginSql (filial, %NotDel%,
 //   filtro da caixa de pesquisa).
 ////////////////////////////////////////////////////////////////////////////////
-Static Function CNS001_SERVLUPA(cFiltro, cCliente, cLoja)
+Static Function CNS001_SERVLUPA(cFiltro, cCliente, cLoja, aAgenda)
     Local aRet    := {}
     Local oLinha  := Nil
     Local cAlias  := GetNextAlias()
     Local cFiltroUp  := Upper(cFiltro)
     Local cFiltroUp2 := cFiltroUp
     Local cSemLoja   := ""
+    Local cSoNaoCob  := "N"
 
     Default cCliente := ""
     Default cLoja    := ""
+    Default aAgenda  := {"", "", "", ""}
+
+    // Agendamento da OS marcado "Nao Cobrar" (Z6_COBRAR): so servico nao
+    // cobravel - grupo com BM_TIPGRU = '2'. O Protheus tambem recusa gravar
+    // (OS_VALIDACOBRAR no CNSA002).
+    If CNS001_AGENDANAOCOBRA(aAgenda[1], cCliente, cLoja, aAgenda[2], aAgenda[3], aAgenda[4])
+        cSoNaoCob := "S"
+    EndIf
 
     // Oracle trata '' como NULL ("'' = ''" nao e verdadeiro) - flag S/N pra
     // "loja nao informada" em vez de comparar string vazia no SQL.
@@ -392,6 +407,7 @@ Static Function CNS001_SERVLUPA(cFiltro, cCliente, cLoja)
               AND A7_CLIENTE = %Exp:cCliente%
               AND (%Exp:cSemLoja% = 'S' OR A7_LOJA = %Exp:cLoja%)
               AND BM_CODMAR  = '005'
+              AND (%Exp:cSoNaoCob% = 'N' OR BM_TIPGRU = '2')
               AND (UPPER(A7_PRODUTO) LIKE '%' || %Exp:cFiltroUp% || '%' OR UPPER(B1_DESC) LIKE '%' || %Exp:cFiltroUp2% || '%')
             ORDER BY A7_CLIENTE, A7_LOJA, VE1_DESMAR
         EndSql
@@ -426,6 +442,85 @@ Static Function CNS001_SERVLUPA(cFiltro, cCliente, cLoja)
     (cAlias)->(DbCloseArea())
 
 Return aRet
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CNS001_AGENDANAOCOBRA
+Diz se o agendamento (SZ6) que corresponde a uma OS esta marcado como
+"Nao Cobrar" (Z6_COBRAR = "NAO"). Casa OS x agendamento pelo mesmo criterio
+do Z6_TEMOS / localizarPorAgendamento do portal: tecnico + cliente (+ loja,
+se informada) + data + horario inicial e final com tolerancia de 15 min.
+Mesma regra de OS_AGENDANAOCOBRA (CNSA002, validacao ao gravar a OS).
+@param  cTec     Tecnico (AA1_CODTEC)
+@param  cCli     Cliente (A1_COD)
+@param  cLoja    Loja do cliente (vazia = qualquer loja)
+@param  cData    Data AAAAMMDD
+@param  cHrIni   Hora inicial (HH:MM ou HHMM)
+@param  cHrFim   Hora final (HH:MM ou HHMM)
+@return lNaoCob  .T. se achou agendamento correspondente com Z6_COBRAR = "NAO"
+@author Henrique
+@since 05/10/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+Static Function CNS001_AGENDANAOCOBRA(cTec, cCli, cLoja, cData, cHrIni, cHrFim)
+    Local cAlias  := ""
+    Local lNaoCob := .F.
+    Local nIni    := 0
+    Local nFim    := 0
+
+    cTec   := AllTrim(cTec)
+    cCli   := AllTrim(cCli)
+    cLoja  := AllTrim(cLoja)
+    cData  := AllTrim(cData)
+    nIni   := CNS001_AGENDANAOCOBRA_MIN(cHrIni)
+    nFim   := CNS001_AGENDANAOCOBRA_MIN(cHrFim)
+
+    If Empty(cTec) .Or. Empty(cCli) .Or. Len(cData) != 8 .Or. nIni < 0 .Or. nFim < 0
+        Return .F.
+    EndIf
+
+    cAlias := GetNextAlias()
+    BeginSql Alias cAlias
+        SELECT Z6_LOJA, Z6_HMINI, Z6_HMFIM, Z6_COBRAR
+        FROM %Table:SZ6% SZ6
+        WHERE Z6_FILIAL  = %xFilial:SZ6%
+          AND Z6_TECNICO = %Exp:cTec%
+          AND Z6_CLIENTE = %Exp:cCli%
+          AND Z6_DTAGE   = %Exp:cData%
+          AND %NotDel%
+    EndSql
+    While !(cAlias)->(Eof())
+        If (Empty(cLoja) .Or. Empty(AllTrim((cAlias)->Z6_LOJA)) .Or. AllTrim((cAlias)->Z6_LOJA) == cLoja) .And. ;
+                Abs(CNS001_AGENDANAOCOBRA_MIN((cAlias)->Z6_HMINI) - nIni) <= 15 .And. ;
+                Abs(CNS001_AGENDANAOCOBRA_MIN((cAlias)->Z6_HMFIM) - nFim) <= 15
+            If Upper(AllTrim((cAlias)->Z6_COBRAR)) == "NAO"
+                lNaoCob := .T.
+                Exit
+            EndIf
+        EndIf
+        (cAlias)->(DbSkip())
+    EndDo
+    (cAlias)->(DbCloseArea())
+
+Return lNaoCob
+
+// "HH:MM"/"HHMM" -> minutos do dia (-1 se invalido)
+Static Function CNS001_AGENDANAOCOBRA_MIN(cHora)
+    Local cDig := ""
+    Local nI   := 0
+
+    cHora := AllTrim(cHora)
+    For nI := 1 To Len(cHora)
+        If IsDigit(SubStr(cHora, nI, 1))
+            cDig += SubStr(cHora, nI, 1)
+        EndIf
+    Next nI
+    If Len(cDig) < 3
+        Return -1
+    EndIf
+    cDig := PadL(cDig, 4, "0")
+
+Return Val(Left(cDig, 2)) * 60 + Val(SubStr(cDig, 3, 2))
 
 ////////////////////////////////////////////////////////////////////////////////
 // Lupa de Proposta (SZ3 - Cabecalho de Propostas) - usada no campo
