@@ -31,11 +31,11 @@ CNSA003, código do Luiz).
 Funções globais (o `cnslib.tlpp` não tem namespace), sem regra de negócio —
 decisão do usuário em 05/10/2026: nada de fonte novo.
 
-- `U_CNSOUTL_SALVAR(cEmailTec, cIdEvento, dData, cHrIni, cHrFim, cAssunto, cCorpoHtml) -> cIdEvento`
+- `U_CNSOUTGR(cEmailTec, cIdEvento, dData, cHrIni, cHrFim, cAssunto, cCorpoHtml) -> cIdEvento`
   - `cIdEvento` vazio: `POST /users/{cEmailTec}/events`; preenchido: `PATCH /users/{cEmailTec}/events/{cIdEvento}`.
   - PATCH com 404 (evento apagado à mão no Outlook): cria de novo (POST).
   - Devolve o id do evento (`id` da resposta) ou `""` em falha.
-- `U_CNSOUTL_EXCLUIR(cEmailTec, cIdEvento) -> lOk`
+- `U_CNSOUTEX(cEmailTec, cIdEvento) -> lOk`
   - `DELETE /users/{cEmailTec}/events/{cIdEvento}`; 404 conta como sucesso.
 - Token próprio no cnslib (client credentials) com `MV_CNSATEN` / `MV_CNSACLI` / `MV_CNSASEC` — não depende do CNSA001 (que está em namespace e tem o token como Static).
 - Toda falha (token, e-mail vazio, HTTP != 2xx) faz `ConOut("CNSOUTLOOK: ...")` (prefixo do log) e devolve vazio/.F. — nunca lança erro.
@@ -44,20 +44,20 @@ decisão do usuário em 05/10/2026: nada de fonte novo.
 
 - Classe de evento do modelo (`FWModelEvent`), instalada no `ModelDef` com `oModel:InstallEvent(...)`.
 - Método pós-gravação (fora da transação do banco, depois do commit — `AfterTTS`), por operação:
-  - **Incluir**: monta assunto/corpo, `U_CNSOUTL_SALVAR` com `cIdEvento` vazio, grava o id retornado em `SZ6->Z6_IDOUTL` (RecLock no registro recém-gravado).
-  - **Alterar**: se o técnico mudou, `U_CNSOUTL_EXCLUIR` no e-mail do técnico antigo e cria no novo; senão `U_CNSOUTL_SALVAR` com o id atual (atualiza). Grava o id retornado.
-  - **Excluir**: `U_CNSOUTL_EXCLUIR` com o id gravado.
+  - **Incluir**: monta assunto/corpo, `U_CNSOUTGR` com `cIdEvento` vazio, grava o id retornado em `SZ6->Z6_IDOUTL` (RecLock no registro recém-gravado).
+  - **Alterar**: se o técnico mudou, `U_CNSOUTEX` no e-mail do técnico antigo e cria no novo; senão `U_CNSOUTGR` com o id atual (atualiza). Grava o id retornado.
+  - **Excluir**: `U_CNSOUTEX` com o id gravado.
 - Técnico antigo/id antigo: lidos antes do commit (valores originais do registro SZ6) e guardados no objeto do evento.
 
 ### CNSA001 (exclusão do chamado)
 
 A exclusão do chamado apaga os SZ6 com `RecLock`/`DbDelete` direto (não passa
-pelo modelo). Antes de cada `DbDelete`, chama `U_CNSOUTL_EXCLUIR` com o
+pelo modelo). Antes de cada `DbDelete`, chama `U_CNSOUTEX` com o
 `AA1_EMAIL` do `Z6_TECNICO` e o `Z6_IDOUTL` do registro.
 
 Risco: o CNSA001 está no namespace `apia.cnsa001`. A chamada à função global
-`U_CNSOUTL_EXCLUIR` deve resolver no escopo global; se não resolver, criar
-chamar por macro (`&("U_CNSOUTL_EXCLUIR")(...)`), que resolve no escopo global.
+`U_CNSOUTEX` deve resolver no escopo global; se não resolver, criar
+chamar por macro (`&("U_CNSOUTEX")(...)`), que resolve no escopo global.
 
 ## Conteúdo do evento
 

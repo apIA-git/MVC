@@ -28,8 +28,8 @@
 
 **Interfaces:**
 - Produces:
-  - `U_CNSOUTL_SALVAR(cEmailTec As Character, cIdEvento As Character, dData As Date, cHrIni As Character, cHrFim As Character, cAssunto As Character, cCorpo As Character) -> cIdEvento As Character` — cria (id vazio) ou atualiza (PATCH; 404 recria) o evento; `""` em falha de criação.
-  - `U_CNSOUTL_EXCLUIR(cEmailTec As Character, cIdEvento As Character) -> lOk As Logical` — DELETE; 204/404 = `.T.`; id vazio = `.T.` (nada a fazer).
+  - `U_CNSOUTGR(cEmailTec As Character, cIdEvento As Character, dData As Date, cHrIni As Character, cHrFim As Character, cAssunto As Character, cCorpo As Character) -> cIdEvento As Character` — cria (id vazio) ou atualiza (PATCH; 404 recria) o evento; `""` em falha de criação.
+  - `U_CNSOUTEX(cEmailTec As Character, cIdEvento As Character) -> lOk As Logical` — DELETE; 204/404 = `.T.`; id vazio = `.T.` (nada a fazer).
 
 - [ ] **Step 1: Acrescentar o bloco abaixo no final de `cnslib.tlpp`** (CRLF, CP1252)
 
@@ -47,7 +47,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 //-------------------------------------------------------------------
-/*/{Protheus.doc} CNSOUTL_SALVAR
+/*/{Protheus.doc} CNSOUTGR
 Cria ou atualiza o evento do agendamento no calendario do tecnico.
 @param  cEmailTec  E-mail do tecnico (AA1_EMAIL) - calendario de destino
 @param  cIdEvento  Id do evento ja criado (Z6_IDOUTL) - vazio = criar
@@ -62,7 +62,7 @@ Cria ou atualiza o evento do agendamento no calendario do tecnico.
 @version P12
 /*/
 //-------------------------------------------------------------------
-User Function CNSOUTL_SALVAR(cEmailTec, cIdEvento, dData, cHrIni, cHrFim, cAssunto, cCorpo)
+User Function CNSOUTGR(cEmailTec, cIdEvento, dData, cHrIni, cHrFim, cAssunto, cCorpo)
     Local cToken := ""
     Local cJson  := ""
     Local aResp  := {}
@@ -105,7 +105,7 @@ User Function CNSOUTL_SALVAR(cEmailTec, cIdEvento, dData, cHrIni, cHrFim, cAssun
 Return cId
 
 //-------------------------------------------------------------------
-/*/{Protheus.doc} CNSOUTL_EXCLUIR
+/*/{Protheus.doc} CNSOUTEX
 Apaga o evento do agendamento do calendario do tecnico.
 @param  cEmailTec  E-mail do tecnico (AA1_EMAIL)
 @param  cIdEvento  Id do evento (Z6_IDOUTL)
@@ -115,7 +115,7 @@ Apaga o evento do agendamento do calendario do tecnico.
 @version P12
 /*/
 //-------------------------------------------------------------------
-User Function CNSOUTL_EXCLUIR(cEmailTec, cIdEvento)
+User Function CNSOUTEX(cEmailTec, cIdEvento)
     Local cToken := ""
     Local aResp  := {}
     Local lOk    := .F.
@@ -335,7 +335,7 @@ git commit -m "feat: funcoes de calendario do Outlook (Graph) no cnslib"
 - Modify: `Fontes MVC e Site/cnsa003.prw` — `ModelDef` (linha ~62, depois do `MPFormModel():New`) e novo bloco antes de `Static Function ViewDef()` (linha ~79)
 
 **Interfaces:**
-- Consumes: `U_CNSOUTL_SALVAR(cEmailTec, cIdEvento, dData, cHrIni, cHrFim, cAssunto, cCorpo) -> cId`, `U_CNSOUTL_EXCLUIR(cEmailTec, cIdEvento) -> lOk` (Task 1).
+- Consumes: `U_CNSOUTGR(cEmailTec, cIdEvento, dData, cHrIni, cHrFim, cAssunto, cCorpo) -> cId`, `U_CNSOUTEX(cEmailTec, cIdEvento) -> lOk` (Task 1).
 - Produces: classe `CNS003OUTL` (evento do modelo `ModelSZ6`), campo `Z6_IDOUTL` preenchido.
 
 - [ ] **Step 1: Instalar o evento no `ModelDef`** — logo depois da linha `oModel:=MPFormModel():New('ModelSZ6', ...)`:
@@ -355,7 +355,7 @@ Evento do modelo da Agenda: mantem o agendamento no calendario do Outlook
 do tecnico (spec docs/superpowers/specs/2026-10-05-agenda-outlook-design.md).
 BeforeTTS guarda tecnico/id do evento ANTES de gravar (alterar/excluir);
 AfterTTS (depois do commit) cria, atualiza, troca de calendario ou apaga
-via U_CNSOUTL_SALVAR / U_CNSOUTL_EXCLUIR (cnslib.tlpp). Falha do Outlook
+via U_CNSOUTGR / U_CNSOUTEX (cnslib.tlpp). Falha do Outlook
 nunca impede a gravacao.
 @author Henrique
 @since 05/10/2026
@@ -398,7 +398,7 @@ Method AfterTTS(oModel, cModelId) Class CNS003OUTL
 
     Begin Sequence
         If nOper == MODEL_OPERATION_DELETE
-            U_CNSOUTL_EXCLUIR(CNS003EmTec(::cTecAnt), ::cIdAnt)
+            U_CNSOUTEX(CNS003EmTec(::cTecAnt), ::cIdAnt)
             Break
         EndIf
         If nOper != MODEL_OPERATION_INSERT .And. nOper != MODEL_OPERATION_UPDATE
@@ -410,12 +410,12 @@ Method AfterTTS(oModel, cModelId) Class CNS003OUTL
 
         // Trocou o tecnico: sai do calendario do antigo, entra no do novo.
         If nOper == MODEL_OPERATION_UPDATE .And. !Empty(cId) .And. ::cTecAnt != cTec
-            U_CNSOUTL_EXCLUIR(CNS003EmTec(::cTecAnt), cId)
+            U_CNSOUTEX(CNS003EmTec(::cTecAnt), cId)
             cId := ""
         EndIf
 
         aTexto := CNS003OutTx(oSZ6)
-        cId    := U_CNSOUTL_SALVAR(CNS003EmTec(cTec), cId, oSZ6:GetValue('Z6_DTAGE'), ;
+        cId    := U_CNSOUTGR(CNS003EmTec(cTec), cId, oSZ6:GetValue('Z6_DTAGE'), ;
                     oSZ6:GetValue('Z6_HMINI'), oSZ6:GetValue('Z6_HMFIM'), aTexto[1], aTexto[2])
 
         If AllTrim(cId) != ::cIdAnt
@@ -532,7 +532,7 @@ git commit -m "feat: agendamento sincroniza com o calendario do Outlook do tecni
 - Modify: `Fontes MVC e Site/CNSA001.TLPP:2016-2021` (loop que apaga SZ6 do chamado, `RecLock("SZ6", .F.)` / `DbDelete()`)
 
 **Interfaces:**
-- Consumes: `U_CNSOUTL_EXCLUIR(cEmailTec, cIdEvento) -> lOk` (Task 1).
+- Consumes: `U_CNSOUTEX(cEmailTec, cIdEvento) -> lOk` (Task 1).
 
 - [ ] **Step 1: Antes do `RecLock("SZ6", .F.)` desse loop, inserir:**
 
@@ -541,14 +541,14 @@ git commit -m "feat: agendamento sincroniza com o calendario do Outlook do tecni
                 // evento antes do registro - esta exclusao nao passa pelo modelo
                 // do CNSA003 (evento CNS003OUTL).
                 If !Empty(AllTrim(SZ6->Z6_IDOUTL))
-                    U_CNSOUTL_EXCLUIR(AllTrim(Posicione("AA1", 1, xFilial("AA1") + SZ6->Z6_TECNICO, "AA1_EMAIL")), SZ6->Z6_IDOUTL)
+                    U_CNSOUTEX(AllTrim(Posicione("AA1", 1, xFilial("AA1") + SZ6->Z6_TECNICO, "AA1_EMAIL")), SZ6->Z6_IDOUTL)
                 EndIf
 ```
 
 - [ ] **Step 2: Compilar (usuário)** `CNSA001.TLPP`. Se der erro de função não encontrada por causa do `Namespace apia.cnsa001` (a chamada resolver só no namespace), trocar a linha da chamada por macro, que resolve no escopo global em tempo de execução:
 
 ```
-                    &("U_CNSOUTL_EXCLUIR")(AllTrim(Posicione("AA1", 1, xFilial("AA1") + SZ6->Z6_TECNICO, "AA1_EMAIL")), SZ6->Z6_IDOUTL)
+                    &("U_CNSOUTEX")(AllTrim(Posicione("AA1", 1, xFilial("AA1") + SZ6->Z6_TECNICO, "AA1_EMAIL")), SZ6->Z6_IDOUTL)
 ```
 
 - [ ] **Step 3: Teste manual** — chamado com agendamento já no Outlook → excluir/encerrar o chamado (portal ou tela). Expected: eventos somem do calendário do técnico.

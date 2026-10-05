@@ -736,6 +736,10 @@ Return apia.cnsa001.U_CNSA_TECNICO()
 ////////////////////////////////////////////////////////////////////////////////
 // Calendario do Outlook do tecnico (Microsoft Graph) - spec
 // docs/superpowers/specs/2026-10-05-agenda-outlook-design.md
+// ATENCAO: nomes com no maximo 10 caracteres contando o "U_" (U_CNSOUTGR /
+//   U_CNSOUTEX) - o CNSA003 e .prw (ADVPL) e so enxerga 10 caracteres: os
+//   nomes longos antigos (U_CNSOUTL_SALVAR/U_CNSOUTL_EXCLUIR) viravam os dois
+//   "U_CNSOUTL_" e um chamava o outro.
 // Henrique - 05/10/2026 - funcoes globais (sem namespace), chamadas pelo
 //   evento de modelo do CNSA003 (incluir/alterar/excluir agendamento) e pela
 //   exclusao do chamado (CNSA001). Grava o evento DIRETO no calendario do
@@ -746,7 +750,7 @@ Return apia.cnsa001.U_CNSA_TECNICO()
 ////////////////////////////////////////////////////////////////////////////////
 
 //-------------------------------------------------------------------
-/*/{Protheus.doc} CNSOUTL_SALVAR
+/*/{Protheus.doc} CNSOUTGR
 Cria ou atualiza o evento do agendamento no calendario do tecnico.
 @param  cEmailTec  E-mail do tecnico (AA1_EMAIL) - calendario de destino
 @param  cIdEvento  Id do evento ja criado (Z6_IDOUTL) - vazio = criar
@@ -761,7 +765,7 @@ Cria ou atualiza o evento do agendamento no calendario do tecnico.
 @version P12
 /*/
 //-------------------------------------------------------------------
-User Function CNSOUTL_SALVAR(cEmailTec, cIdEvento, dData, cHrIni, cHrFim, cAssunto, cCorpo)
+User Function CNSOUTGR(cEmailTec, cIdEvento, dData, cHrIni, cHrFim, cAssunto, cCorpo)
     Local cToken := ""
     Local cJson  := ""
     Local aResp  := {}
@@ -804,7 +808,7 @@ User Function CNSOUTL_SALVAR(cEmailTec, cIdEvento, dData, cHrIni, cHrFim, cAssun
 Return cId
 
 //-------------------------------------------------------------------
-/*/{Protheus.doc} CNSOUTL_EXCLUIR
+/*/{Protheus.doc} CNSOUTEX
 Apaga o evento do agendamento do calendario do tecnico.
 @param  cEmailTec  E-mail do tecnico (AA1_EMAIL)
 @param  cIdEvento  Id do evento (Z6_IDOUTL)
@@ -814,7 +818,7 @@ Apaga o evento do agendamento do calendario do tecnico.
 @version P12
 /*/
 //-------------------------------------------------------------------
-User Function CNSOUTL_EXCLUIR(cEmailTec, cIdEvento)
+User Function CNSOUTEX(cEmailTec, cIdEvento)
     Local cToken := ""
     Local aResp  := {}
     Local lOk    := .F.
