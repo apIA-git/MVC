@@ -167,10 +167,12 @@ Static Function OS_MONTARMODEL(nOperAtivar)
     l_oStrSZ1:SetProperty("Z1_SERV", MODEL_FIELD_OBRIGAT, .F.)
     l_oStrSZ1:SetProperty("Z1_TEC", MODEL_FIELD_OBRIGAT, .F.)
 
+    // Pos-validacao: + OS_VALIDACOBRAR (agendamento "Nao Cobrar" so aceita
+    // servico nao cobravel) - roda so ao confirmar, nao a cada campo.
     l_oModel := MPFormModel():New(;
         "FCNS002",;
         {|oModel| OS_PREVALIDA(oModel)},;
-        {|oModel| OS_VALIDACANCELA(oModel)})
+        {|oModel| OS_VALIDACANCELA(oModel) .And. OS_VALIDACOBRAR(oModel)})
 
     // Tabela pai: SZ1 (OS)
     l_oModel:AddFields(;
@@ -289,6 +291,135 @@ Static Function OS_PREVALIDA(p_oModel)
 Return l_bOk
 
 //-------------------------------------------------------------------
+/*/{Protheus.doc} OS_VALIDACOBRAR
+Pos-validacao (Incluir/Alterar, tela e REST): se o agendamento da OS esta
+marcado como "Nao Cobrar" (Z6_COBRAR, ver OS_AGENDANAOCOBRA), o Cod Servico
+(Z1_TIPO) tem que ser de hora NAO cobravel - grupo do produto com
+BM_TIPGRU = "2". Senao recusa com mensagem.
+@param  p_oModel   Objeto do Model
+@return lOk        .T. se pode gravar
+@author Henrique
+@since 05/10/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+Static Function OS_VALIDACOBRAR(p_oModel)
+    Local nOper     := p_oModel:GetOperation()
+    Local oModelSZ1 := Nil
+    Local cTipo     := ""
+    Local cGrupo    := ""
+    Local cTipGru   := ""
+
+    If nOper != 3 .And. nOper != 4
+        Return .T.
+    EndIf
+
+    oModelSZ1 := p_oModel:GetModel("SZ1MASTER")
+    If oModelSZ1 == Nil
+        Return .T.
+    EndIf
+
+    cTipo := AllTrim(oModelSZ1:GetValue("Z1_TIPO"))
+    If Empty(cTipo)
+        Return .T.
+    EndIf
+
+    If !OS_AGENDANAOCOBRA(oModelSZ1:GetValue("Z1_TEC"), oModelSZ1:GetValue("Z1_CLI"), oModelSZ1:GetValue("Z1_LOJA"), ;
+            DToS(oModelSZ1:GetValue("Z1_DTOS")), oModelSZ1:GetValue("Z1_HRINI"), oModelSZ1:GetValue("Z1_HRFIM"))
+        Return .T.
+    EndIf
+
+    cGrupo  := Posicione("SB1", 1, xFilial("SB1") + cTipo, "B1_GRUPO")
+    cTipGru := AllTrim(Posicione("SBM", 1, xFilial("SBM") + cGrupo, "BM_TIPGRU"))
+    If cTipGru != "2"
+        p_oModel:SetErrorMessage("SZ1MASTER", "Z1_TIPO", "SZ1", "Z1_TIPO", "CNSA002", ;
+            "O agendamento desta OS esta marcado como Nao Cobrar - o Cod Servico precisa ser de hora nao cobravel.", ;
+            "Escolha um servico nao cobravel (grupo com tipo 2).")
+        Return .F.
+    EndIf
+
+Return .T.
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_AGENDANAOCOBRA
+Diz se o agendamento (SZ6) que corresponde a uma OS esta marcado como
+"Nao Cobrar" (Z6_COBRAR = "NAO"). Casa OS x agendamento pelo mesmo criterio
+do Z6_TEMOS / localizarPorAgendamento do portal: tecnico + cliente (+ loja,
+se informada) + data + horario inicial e final com tolerancia de 15 min.
+Mesma regra de CNS001_AGENDANAOCOBRA (cnslib.tlpp, lupa de Cod Servico).
+@param  cTec     Tecnico (AA1_CODTEC)
+@param  cCli     Cliente (A1_COD)
+@param  cLoja    Loja do cliente (vazia = qualquer loja)
+@param  cData    Data AAAAMMDD
+@param  cHrIni   Hora inicial (HH:MM ou HHMM)
+@param  cHrFim   Hora final (HH:MM ou HHMM)
+@return lNaoCob  .T. se achou agendamento correspondente com Z6_COBRAR = "NAO"
+@author Henrique
+@since 05/10/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+Static Function OS_AGENDANAOCOBRA(cTec, cCli, cLoja, cData, cHrIni, cHrFim)
+    Local cAlias  := ""
+    Local lNaoCob := .F.
+    Local nIni    := 0
+    Local nFim    := 0
+
+    cTec   := AllTrim(cTec)
+    cCli   := AllTrim(cCli)
+    cLoja  := AllTrim(cLoja)
+    cData  := AllTrim(cData)
+    nIni   := OS_AGENDANAOCOBRA_MIN(cHrIni)
+    nFim   := OS_AGENDANAOCOBRA_MIN(cHrFim)
+
+    If Empty(cTec) .Or. Empty(cCli) .Or. Len(cData) != 8 .Or. nIni < 0 .Or. nFim < 0
+        Return .F.
+    EndIf
+
+    cAlias := GetNextAlias()
+    BeginSql Alias cAlias
+        SELECT Z6_LOJA, Z6_HMINI, Z6_HMFIM, Z6_COBRAR
+        FROM %Table:SZ6% SZ6
+        WHERE Z6_FILIAL  = %xFilial:SZ6%
+          AND Z6_TECNICO = %Exp:cTec%
+          AND Z6_CLIENTE = %Exp:cCli%
+          AND Z6_DTAGE   = %Exp:cData%
+          AND %NotDel%
+    EndSql
+    While !(cAlias)->(Eof())
+        If (Empty(cLoja) .Or. Empty(AllTrim((cAlias)->Z6_LOJA)) .Or. AllTrim((cAlias)->Z6_LOJA) == cLoja) .And. ;
+                Abs(OS_AGENDANAOCOBRA_MIN((cAlias)->Z6_HMINI) - nIni) <= 15 .And. ;
+                Abs(OS_AGENDANAOCOBRA_MIN((cAlias)->Z6_HMFIM) - nFim) <= 15
+            If Upper(AllTrim((cAlias)->Z6_COBRAR)) == "NAO"
+                lNaoCob := .T.
+                Exit
+            EndIf
+        EndIf
+        (cAlias)->(DbSkip())
+    EndDo
+    (cAlias)->(DbCloseArea())
+
+Return lNaoCob
+
+// "HH:MM"/"HHMM" -> minutos do dia (-1 se invalido)
+Static Function OS_AGENDANAOCOBRA_MIN(cHora)
+    Local cDig := ""
+    Local nI   := 0
+
+    cHora := AllTrim(cHora)
+    For nI := 1 To Len(cHora)
+        If IsDigit(SubStr(cHora, nI, 1))
+            cDig += SubStr(cHora, nI, 1)
+        EndIf
+    Next nI
+    If Len(cDig) < 3
+        Return -1
+    EndIf
+    cDig := PadL(cDig, 4, "0")
+
+Return Val(Left(cDig, 2)) * 60 + Val(SubStr(cDig, 3, 2))
+
+//-------------------------------------------------------------------
 /*/{Protheus.doc} OS_VALIDACANCELA
 Validacao de cancelamento do Model - sempre permite cancelar (nao ha
 regra de bloqueio de cancelamento na tela CNS002).
@@ -327,7 +458,8 @@ Static Function OS_MODELLEVE()
 
     OS_STRUCTHEADLESS(oStrSZ1)
 
-    oModel := MPFormModel():New("FCNS002REST", NIL, NIL, NIL, NIL)
+    // Pos-validacao: agendamento "Nao Cobrar" so aceita servico nao cobravel.
+    oModel := MPFormModel():New("FCNS002REST", NIL, {|o| OS_VALIDACOBRAR(o)}, NIL, NIL)
     // FIX: faltava plugar OS_VALIDACAMPO como PosValidacao (4o parametro) -
     // sem isso, Incluir/Alterar via Class oRestOS aceitava OS sem cliente/
     // tecnico/nada, sem erro (a validacao dos 12 campos obrigatorios so
@@ -399,7 +531,7 @@ Static Function OS_MODELINSERT()
 
     // Pos-validacao com os mesmos obrigatorios da tela classica (OS_PREVALIDA,
     // bloco nOper == 3) - antes o REST so dependia do formulario do front.
-    oModel := MPFormModel():New("FCNS002REST", NIL, {|o| OS_PREVALIDA(o)}, NIL, NIL)
+    oModel := MPFormModel():New("FCNS002REST", NIL, {|o| OS_PREVALIDA(o) .And. OS_VALIDACOBRAR(o)}, NIL, NIL)
     oModel:AddFields("SZ1MASTER", NIL, oStrSZ1, {|_f,_a,_c,_v| OS_VALIDACAMPO(_f,_a,_c,_v)}, NIL)
     oModel:SetPrimaryKey({"Z1_FILIAL", "Z1_OS"})
 
