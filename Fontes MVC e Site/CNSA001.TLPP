@@ -3480,26 +3480,6 @@ Static Function CH_ENVIAREMAIL(cPara, cAssunto, cCorpo, cDe)
 
 Return lOk
 
-/*/{Protheus.doc} CH_HTMLPUB
-Expoe o layout de e-mail (CH_HTMLEMAIL, Static) pra fora do namespace -
-usado pelo aviso de agendamento (U_CNSOUTL, cnslib.tlpp).
-@author Henrique
-@since 05/10/2026
-@version P12
-/*/
-User Function CH_HTMLPUB(cIdCh, cAlerta, cNome, cIntro, aLinhas, cTituloTexto, cTexto, cObs)
-Return CH_HTMLEMAIL(cIdCh, cAlerta, cNome, cIntro, aLinhas, cTituloTexto, cTexto, cObs)
-
-/*/{Protheus.doc} CH_MAILPUB
-Expoe o envio via Graph (CH_ENVIAREMAIL, Static) pra fora do namespace -
-mesma caixa remetente dos demais e-mails do chamado.
-@author Henrique
-@since 05/10/2026
-@version P12
-/*/
-User Function CH_MAILPUB(cPara, cAssunto, cCorpo)
-Return CH_ENVIAREMAIL(cPara, cAssunto, cCorpo, "apia@apia.com.br")
-
 /*/{Protheus.doc} CH_HTMLEMAIL
 Layout unico dos e-mails do chamado (identidade da Apia): logo + selo com o
 numero do chamado, alerta em vermelho centralizado, saudacao, cartao com os
@@ -4687,3 +4667,29 @@ Return lRet
 //    CONFIRMADO contra o dicionario se e de fato nao-automatica.
 // 6) LockByName/UnLockByName (CH_GRAVARAGENDA): assinatura pode variar por build.
 
+////////////////////////////////////////////////////////////////////////////////
+// AGENDA NO CALENDARIO DO OUTLOOK (cnslib.tlpp - U_CNSOUTL)
+// Henrique - 05/10/2026 - expoe pra fora do namespace o layout e o envio de
+// e-mail (Static) usados no aviso de agendamento ao tecnico. A exclusao do
+// chamado tambem chama U_CNSOUTL("EXCLUIR", ...) no loop que apaga a SZ6.
+////////////////////////////////////////////////////////////////////////////////
+
+/*/{Protheus.doc} CH_HTMLPUB
+Expoe o layout de e-mail (CH_HTMLEMAIL, Static) pra fora do namespace -
+usado pelo aviso de agendamento (U_CNSOUTL, cnslib.tlpp).
+@author Henrique
+@since 05/10/2026
+@version P12
+/*/
+User Function CH_HTMLPUB(cIdCh, cAlerta, cNome, cIntro, aLinhas, cTituloTexto, cTexto, cObs)
+Return CH_HTMLEMAIL(cIdCh, cAlerta, cNome, cIntro, aLinhas, cTituloTexto, cTexto, cObs)
+
+/*/{Protheus.doc} CH_MAILPUB
+Expoe o envio via Graph (CH_ENVIAREMAIL, Static) pra fora do namespace -
+mesma caixa remetente dos demais e-mails do chamado.
+@author Henrique
+@since 05/10/2026
+@version P12
+/*/
+User Function CH_MAILPUB(cPara, cAssunto, cCorpo)
+Return CH_ENVIAREMAIL(cPara, cAssunto, cCorpo, "apia@apia.com.br")
