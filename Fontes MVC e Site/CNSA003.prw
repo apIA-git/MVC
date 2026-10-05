@@ -606,7 +606,7 @@ Method AfterTTS(oModel, cModelId) Class CNS003OUTL
         // Rastro no console (REST/tela) - confirma que o evento rodou.
         ConOut("CNSOUTLOOK: CNS003OUTL oper " + cValToChar(nOper) + " tecnico " + AllTrim(oSZ6:GetValue('Z6_TECNICO')) + ;
             " email [" + CNS003EmTec(AllTrim(oSZ6:GetValue('Z6_TECNICO'))) + "] id anterior [" + ::cIdAnt + "]")
-        // aTexto = {cTitulo (nome do cliente), cCorpoEvento, aLinhas, cIdCh}
+        // aTexto = {cTitulo (nome do cliente), cCorpoEvento, aLinhas, cIdCh, cQuando}
         aTexto := CNS003OutTx(oSZ6)
 
         If nOper == MODEL_OPERATION_DELETE
@@ -625,25 +625,30 @@ Method AfterTTS(oModel, cModelId) Class CNS003OUTL
         // Trocou o tecnico: sai do calendario do antigo, entra no do novo.
         If nOper == MODEL_OPERATION_UPDATE .And. ::cTecAnt != cTec
             U_CNSOUTEX(CNS003EmTec(::cTecAnt), cId)
-            CNS003Mail(::cTecAnt, aTexto, "Agendamento cancelado", ;
-                "Este agendamento foi transferido para outro t&eacute;cnico e removido do seu calend&aacute;rio.")
             cId := ""
         EndIf
 
         cId := U_CNSOUTGR(CNS003EmTec(cTec), cId, oSZ6:GetValue('Z6_DTAGE'), ;
                     oSZ6:GetValue('Z6_HMINI'), oSZ6:GetValue('Z6_HMFIM'), aTexto[1], aTexto[2])
 
+        // Grava o id ANTES do e-mail: se o e-mail falhar, o vinculo com o
+        // evento ja esta salvo (senao a proxima alteracao duplicaria o evento).
+        ConOut("CNSOUTLOOK: evento " + If(Empty(cId), "NAO gravado", "gravado - id " + Left(cId, 30) + "..."))
+        If AllTrim(cId) != ::cIdAnt
+            CNS003GrvId(oSZ6, cId)
+        EndIf
+
+        // E-mails depois de gravar o vinculo (falha de e-mail nao afeta o Outlook).
+        If nOper == MODEL_OPERATION_UPDATE .And. ::cTecAnt != cTec
+            CNS003Mail(::cTecAnt, aTexto, "Agendamento cancelado", ;
+                "Este agendamento foi transferido para outro t&eacute;cnico e removido do seu calend&aacute;rio.")
+        EndIf
         If nOper == MODEL_OPERATION_UPDATE .And. ::cTecAnt == cTec
             CNS003Mail(cTec, aTexto, "Agendamento alterado", ;
                 "Um agendamento seu foi alterado. Confira os dados atualizados abaixo - o seu calend&aacute;rio j&aacute; foi atualizado.")
         Else
             CNS003Mail(cTec, aTexto, "Novo agendamento", ;
                 "Um atendimento foi agendado para voc&ecirc; e j&aacute; est&aacute; no seu calend&aacute;rio do Outlook.")
-        EndIf
-
-        ConOut("CNSOUTLOOK: evento " + If(Empty(cId), "NAO gravado", "gravado - id " + Left(cId, 30) + "..."))
-        If AllTrim(cId) != ::cIdAnt
-            CNS003GrvId(oSZ6, cId)
         EndIf
     Recover Using oErro
         If oErro != Nil
