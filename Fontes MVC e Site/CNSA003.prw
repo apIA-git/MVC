@@ -121,8 +121,13 @@ Method AfterTTS(oModel, cModelId) Class CNS003OUTL
         // Rastro no console (REST/tela) - confirma que o evento rodou.
         ConOut("CNSOUTLOOK: CNS003OUTL oper " + cValToChar(nOper) + " tecnico " + AllTrim(oSZ6:GetValue('Z6_TECNICO')) + ;
             " email [" + CNS003EmTec(AllTrim(oSZ6:GetValue('Z6_TECNICO'))) + "] id anterior [" + ::cIdAnt + "]")
+        // aTexto = {cTitulo (nome do cliente), cCorpoEvento, aLinhas, cIdCh}
+        aTexto := CNS003OutTx(oSZ6)
+
         If nOper == MODEL_OPERATION_DELETE
             U_CNSOUTEX(CNS003EmTec(::cTecAnt), ::cIdAnt)
+            CNS003Mail(::cTecAnt, aTexto, "Agendamento cancelado", ;
+                "O agendamento abaixo foi cancelado e removido do seu calend&aacute;rio.")
             Break
         EndIf
         If nOper != MODEL_OPERATION_INSERT .And. nOper != MODEL_OPERATION_UPDATE
@@ -133,14 +138,23 @@ Method AfterTTS(oModel, cModelId) Class CNS003OUTL
         cId  := ::cIdAnt
 
         // Trocou o tecnico: sai do calendario do antigo, entra no do novo.
-        If nOper == MODEL_OPERATION_UPDATE .And. !Empty(cId) .And. ::cTecAnt != cTec
+        If nOper == MODEL_OPERATION_UPDATE .And. ::cTecAnt != cTec
             U_CNSOUTEX(CNS003EmTec(::cTecAnt), cId)
+            CNS003Mail(::cTecAnt, aTexto, "Agendamento cancelado", ;
+                "Este agendamento foi transferido para outro t&eacute;cnico e removido do seu calend&aacute;rio.")
             cId := ""
         EndIf
 
-        aTexto := CNS003OutTx(oSZ6)
-        cId    := U_CNSOUTGR(CNS003EmTec(cTec), cId, oSZ6:GetValue('Z6_DTAGE'), ;
+        cId := U_CNSOUTGR(CNS003EmTec(cTec), cId, oSZ6:GetValue('Z6_DTAGE'), ;
                     oSZ6:GetValue('Z6_HMINI'), oSZ6:GetValue('Z6_HMFIM'), aTexto[1], aTexto[2])
+
+        If nOper == MODEL_OPERATION_UPDATE .And. ::cTecAnt == cTec
+            CNS003Mail(cTec, aTexto, "Agendamento alterado", ;
+                "Um agendamento seu foi alterado. Confira os dados atualizados abaixo - o seu calend&aacute;rio j&aacute; foi atualizado.")
+        Else
+            CNS003Mail(cTec, aTexto, "Novo agendamento", ;
+                "Um atendimento foi agendado para voc&ecirc; e j&aacute; est&aacute; no seu calend&aacute;rio do Outlook.")
+        EndIf
 
         ConOut("CNSOUTLOOK: evento " + If(Empty(cId), "NAO gravado", "gravado - id " + Left(cId, 30) + "..."))
         If AllTrim(cId) != ::cIdAnt
@@ -162,37 +176,95 @@ Static Function CNS003EmTec(cTec)
     EndIf
 Return AllTrim(Posicione("AA1", 1, xFilial("AA1") + cTec, "AA1_EMAIL"))
 
-// {cAssunto, cCorpoHtml} do evento
+// Dados do agendamento pro Outlook e pro e-mail:
+// {cTitulo (nome do cliente), cCorpoEvento, aLinhas {rotulo, valor}, cIdCh, cQuando (texto puro pro assunto)}
 Static Function CNS003OutTx(oSZ6)
     Local cCli     := AllTrim(oSZ6:GetValue('Z6_CLIENTE'))
     Local cLoja    := AllTrim(oSZ6:GetValue('Z6_LOJA'))
+    Local cTec     := AllTrim(oSZ6:GetValue('Z6_TECNICO'))
+    Local cProj    := AllTrim(oSZ6:GetValue('Z6_PROJET'))
+    Local cTaf     := AllTrim(oSZ6:GetValue('Z6_TAREFA'))
     Local nCham    := oSZ6:GetValue('Z6_CHAMADO')
+    Local cIdCh    := AllTrim(oSZ6:GetValue('Z6_IDCH'))
     Local cNomCli  := ""
-    Local cAssunto := "Agendamento"
+    Local cAssunto := ""
+    Local cTitulo  := ""
     Local cCorpo   := ""
+    Local aLinhas  := {}
+    Local nI       := 0
 
+    If Empty(cIdCh) .And. ValType(nCham) == "N" .And. nCham > 0
+        cIdCh := StrZero(nCham, 6)
+    EndIf
     If !Empty(cCli)
         cNomCli := AllTrim(Posicione("SA1", 1, xFilial("SA1") + cCli + cLoja, "A1_NREDUZ"))
     EndIf
-    If !Empty(cNomCli)
-        cAssunto += " - " + cNomCli
+    // Assunto: o do chamado; sem chamado, o servico/descricao da agenda.
+    If !Empty(cIdCh)
+        cAssunto := AllTrim(Posicione("ZA1", 1, xFilial("ZA1") + cIdCh, "ZA1_ASSUNT"))
     EndIf
-    If ValType(nCham) == "N" .And. nCham > 0
-        cAssunto += " - Chamado #" + StrZero(nCham, 6)
+    If Empty(cAssunto)
+        cAssunto := AllTrim(oSZ6:GetValue('Z6_SERVICO'))
     EndIf
 
-    cCorpo := "<p><b>Cliente:</b> " + cNomCli + "</p>"
-    If !Empty(oSZ6:GetValue('Z6_PROJET'))
-        cCorpo += "<p><b>Projeto/Tarefa:</b> " + AllTrim(oSZ6:GetValue('Z6_PROJET')) + " / " + AllTrim(oSZ6:GetValue('Z6_TAREFA')) + "</p>"
+    // Titulo do evento = nome do cliente (pedido do usuario).
+    cTitulo := If(Empty(cNomCli), "Agendamento", cNomCli)
+
+    AAdd(aLinhas, {"Data", DToC(oSZ6:GetValue('Z6_DTAGE'))})
+    AAdd(aLinhas, {"Hor&aacute;rio", AllTrim(oSZ6:GetValue('Z6_HMINI')) + " &agrave;s " + AllTrim(oSZ6:GetValue('Z6_HMFIM'))})
+    AAdd(aLinhas, {"T&eacute;cnico", AllTrim(Posicione("AA1", 1, xFilial("AA1") + cTec, "AA1_NOMTEC"))})
+    AAdd(aLinhas, {"Cliente", cNomCli})
+    If !Empty(cProj)
+        AAdd(aLinhas, {"Projeto", cProj + " - " + AllTrim(Posicione("AF8", 1, xFilial("AF8") + cProj, "AF8_DESCRI"))})
     EndIf
-    If !Empty(oSZ6:GetValue('Z6_SERVICO'))
-        cCorpo += "<p><b>Servi&ccedil;o:</b> " + AllTrim(oSZ6:GetValue('Z6_SERVICO')) + "</p>"
+    If !Empty(cTaf)
+        AAdd(aLinhas, {"Tarefa", cTaf + " - " + AllTrim(Posicione("AF9", 1, xFilial("AF9") + cProj + cTaf, "AF9_DESCRI"))})
     EndIf
+    AAdd(aLinhas, {"Assunto", cAssunto})
+    If !Empty(cIdCh)
+        AAdd(aLinhas, {"Chamado", "#" + cIdCh})
+    EndIf
+    // Campos de lista da agenda: titulo e opcao do proprio dicionario.
+    CNS003Opc(aLinhas, oSZ6, "Z6_TIPOAG")
+    CNS003Opc(aLinhas, oSZ6, "Z6_LOCAL")
+    CNS003Opc(aLinhas, oSZ6, "Z6_CONFIRM")
+    CNS003Opc(aLinhas, oSZ6, "Z6_INTERNO")
+    CNS003Opc(aLinhas, oSZ6, "Z6_COBRAR")
     If !Empty(oSZ6:GetValue('Z6_QGRAVOU'))
-        cCorpo += "<p><b>Agendado por:</b> " + AllTrim(oSZ6:GetValue('Z6_QGRAVOU')) + "</p>"
+        AAdd(aLinhas, {"Agendado por", AllTrim(oSZ6:GetValue('Z6_QGRAVOU'))})
     EndIf
 
-Return {cAssunto, cCorpo}
+    cCorpo := ""
+    For nI := 1 To Len(aLinhas)
+        cCorpo += "<p><b>" + aLinhas[nI][1] + ":</b> " + aLinhas[nI][2] + "</p>"
+    Next nI
+
+Return {cTitulo, cCorpo, aLinhas, cIdCh, ;
+    DToC(oSZ6:GetValue('Z6_DTAGE')) + " " + AllTrim(oSZ6:GetValue('Z6_HMINI')) + "-" + AllTrim(oSZ6:GetValue('Z6_HMFIM'))}
+
+// Campo de lista (X3_CBOX): titulo do dicionario + descricao da opcao.
+Static Function CNS003Opc(aLinhas, oSZ6, cCampo)
+    Local cValor := AllTrim(cValToChar(oSZ6:GetValue(cCampo)))
+    Local cDesc  := ""
+
+    If Empty(cValor)
+        Return
+    EndIf
+    cDesc := AllTrim(X3Combo(cCampo, cValor))
+    AAdd(aLinhas, {AllTrim(RetTitle(cCampo)), If(Empty(cDesc), cValor, cDesc)})
+Return
+
+// E-mail de aviso ao tecnico (layout padrao Apia, via U_CNSOUTMA no cnslib).
+Static Function CNS003Mail(cTec, aTexto, cAlerta, cIntro)
+    Local cNomTec := ""
+
+    If Empty(cTec)
+        Return
+    EndIf
+    cNomTec := AllTrim(Posicione("AA1", 1, xFilial("AA1") + cTec, "AA1_NOMTEC"))
+    U_CNSOUTMA(CNS003EmTec(cTec), cAlerta + " - " + aTexto[1] + " - " + aTexto[5], ;
+        aTexto[4], cAlerta, cNomTec, cIntro, aTexto[3])
+Return
 
 // Grava o id do evento no SZ6 recem-gravado (localizado pela chave do modelo).
 Static Function CNS003GrvId(oSZ6, cId)

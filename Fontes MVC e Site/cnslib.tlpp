@@ -808,6 +808,38 @@ User Function CNSOUTGR(cEmailTec, cIdEvento, dData, cHrIni, cHrFim, cAssunto, cC
 Return cId
 
 //-------------------------------------------------------------------
+/*/{Protheus.doc} CNSOUTMA
+E-mail de aviso do agendamento ao tecnico (inclusao/alteracao/exclusao),
+no layout padrao dos e-mails do chamado (CH_HTMLEMAIL via
+apia.cnsa001.U_CH_HTMLPUB) e enviado pelo Graph (apia.cnsa001.U_CH_MAILPUB).
+Nome com 8 caracteres - chamado pelo CNSA003 (.prw, 10 caracteres com U_).
+@param  cEmail     E-mail do tecnico (AA1_EMAIL)
+@param  cAssunto   Assunto do e-mail
+@param  cIdCh      Numero do chamado (selo do e-mail; vazio = sem selo)
+@param  cAlerta    Frase de alerta (ex: "Novo agendamento")
+@param  cNome      Nome do tecnico (saudacao)
+@param  cIntro     Frase de introducao
+@param  aLinhas    {rotulo, valorHtml} com os dados do agendamento
+@return lOk        .T. se enviou
+@author Henrique
+@since 05/10/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+User Function CNSOUTMA(cEmail, cAssunto, cIdCh, cAlerta, cNome, cIntro, aLinhas)
+    Local cHtml := ""
+
+    cEmail := AllTrim(cEmail)
+    If Empty(cEmail)
+        ConOut("CNSOUTLOOK: tecnico sem e-mail (AA1_EMAIL) - aviso de agendamento nao enviado.")
+        Return .F.
+    EndIf
+
+    cHtml := apia.cnsa001.U_CH_HTMLPUB(cIdCh, cAlerta, cNome, cIntro, aLinhas, "", "", "")
+
+Return apia.cnsa001.U_CH_MAILPUB(cEmail, cAssunto, cHtml)
+
+//-------------------------------------------------------------------
 /*/{Protheus.doc} CNSOUTEX
 Apaga o evento do agendamento do calendario do tecnico.
 @param  cEmailTec  E-mail do tecnico (AA1_EMAIL)
