@@ -76,7 +76,7 @@ Evento do modelo da Agenda: mantem o agendamento no calendario do Outlook
 do tecnico (spec docs/superpowers/specs/2026-10-05-agenda-outlook-design.md).
 BeforeTTS guarda tecnico/id do evento ANTES de gravar (alterar/excluir);
 AfterTTS (depois do commit) cria, atualiza, troca de calendario ou apaga
-via U_CNSOUTL_SALVAR / U_CNSOUTL_EXCLUIR (cnslib.tlpp). Falha do Outlook
+via U_CNSOUTGR / U_CNSOUTEX (cnslib.tlpp). Falha do Outlook
 nunca impede a gravacao.
 @author Henrique
 @since 05/10/2026
@@ -122,7 +122,7 @@ Method AfterTTS(oModel, cModelId) Class CNS003OUTL
         ConOut("CNSOUTLOOK: CNS003OUTL oper " + cValToChar(nOper) + " tecnico " + AllTrim(oSZ6:GetValue('Z6_TECNICO')) + ;
             " email [" + CNS003EmTec(AllTrim(oSZ6:GetValue('Z6_TECNICO'))) + "] id anterior [" + ::cIdAnt + "]")
         If nOper == MODEL_OPERATION_DELETE
-            U_CNSOUTL_EXCLUIR(CNS003EmTec(::cTecAnt), ::cIdAnt)
+            U_CNSOUTEX(CNS003EmTec(::cTecAnt), ::cIdAnt)
             Break
         EndIf
         If nOper != MODEL_OPERATION_INSERT .And. nOper != MODEL_OPERATION_UPDATE
@@ -134,12 +134,12 @@ Method AfterTTS(oModel, cModelId) Class CNS003OUTL
 
         // Trocou o tecnico: sai do calendario do antigo, entra no do novo.
         If nOper == MODEL_OPERATION_UPDATE .And. !Empty(cId) .And. ::cTecAnt != cTec
-            U_CNSOUTL_EXCLUIR(CNS003EmTec(::cTecAnt), cId)
+            U_CNSOUTEX(CNS003EmTec(::cTecAnt), cId)
             cId := ""
         EndIf
 
         aTexto := CNS003OutTx(oSZ6)
-        cId    := U_CNSOUTL_SALVAR(CNS003EmTec(cTec), cId, oSZ6:GetValue('Z6_DTAGE'), ;
+        cId    := U_CNSOUTGR(CNS003EmTec(cTec), cId, oSZ6:GetValue('Z6_DTAGE'), ;
                     oSZ6:GetValue('Z6_HMINI'), oSZ6:GetValue('Z6_HMFIM'), aTexto[1], aTexto[2])
 
         ConOut("CNSOUTLOOK: evento " + If(Empty(cId), "NAO gravado", "gravado - id " + Left(cId, 30) + "..."))
