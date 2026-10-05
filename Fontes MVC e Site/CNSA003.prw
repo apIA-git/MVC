@@ -118,6 +118,9 @@ Method AfterTTS(oModel, cModelId) Class CNS003OUTL
     Local oErro  := Nil
 
     Begin Sequence
+        // Rastro no console (REST/tela) - confirma que o evento rodou.
+        ConOut("CNSOUTLOOK: CNS003OUTL oper " + cValToChar(nOper) + " tecnico " + AllTrim(oSZ6:GetValue('Z6_TECNICO')) + ;
+            " email [" + CNS003EmTec(AllTrim(oSZ6:GetValue('Z6_TECNICO'))) + "] id anterior [" + ::cIdAnt + "]")
         If nOper == MODEL_OPERATION_DELETE
             U_CNSOUTL_EXCLUIR(CNS003EmTec(::cTecAnt), ::cIdAnt)
             Break
@@ -139,6 +142,7 @@ Method AfterTTS(oModel, cModelId) Class CNS003OUTL
         cId    := U_CNSOUTL_SALVAR(CNS003EmTec(cTec), cId, oSZ6:GetValue('Z6_DTAGE'), ;
                     oSZ6:GetValue('Z6_HMINI'), oSZ6:GetValue('Z6_HMFIM'), aTexto[1], aTexto[2])
 
+        ConOut("CNSOUTLOOK: evento " + If(Empty(cId), "NAO gravado", "gravado - id " + Left(cId, 30) + "..."))
         If AllTrim(cId) != ::cIdAnt
             CNS003GrvId(oSZ6, cId)
         EndIf
