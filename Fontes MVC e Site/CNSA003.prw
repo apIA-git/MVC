@@ -541,33 +541,16 @@ Return (nHr * 60) + nMin
 ////////////////////////////////////////////////////////////////////////////////
 
 Class CNS003OUTL From FWModelEvent
-    Data cTecAnt
-    Data cIdAnt
     Method New() Constructor
-    Method BeforeTTS()
     Method AfterTTS()
 EndClass
 
 Method New() Class CNS003OUTL
-    ::cTecAnt := ""
-    ::cIdAnt  := ""
 Return Self
-
-// Antes de gravar: guarda tecnico e evento atuais (alterar/excluir - SZ6 posicionado).
-Method BeforeTTS(oModel, cModelId) Class CNS003OUTL
-    Local nOper := oModel:GetOperation()
-
-    ::cTecAnt := ""
-    ::cIdAnt  := ""
-    If nOper == MODEL_OPERATION_UPDATE .Or. nOper == MODEL_OPERATION_DELETE
-        ::cTecAnt := AllTrim(SZ6->Z6_TECNICO)
-        ::cIdAnt  := AllTrim(SZ6->Z6_IDOUTL)
-    EndIf
-Return
 
 // Depois de gravar: calendario do Outlook + e-mail ao tecnico (cnslib.tlpp).
 Method AfterTTS(oModel, cModelId) Class CNS003OUTL
-    U_CNSOUTL("AGENDA", oModel, ::cTecAnt, ::cIdAnt)
+    U_CNSOUTL("AGENDA", oModel)
 Return
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -739,7 +739,7 @@ Return apia.cnsa001.U_CNSA_TECNICO()
 //
 // Uma funcao so - U_CNSOUTL(cAcao, ...) - com uma opcao por acao (Do Case).
 // Nome curto (9 caracteres com U_): o CNSA003 e .prw e so enxerga 10.
-//   U_CNSOUTL("AGENDA", oModel, cTecAnt, cIdAnt)  evento do modelo da Agenda
+//   U_CNSOUTL("AGENDA", oModel)                   evento do modelo da Agenda
 //                                                 (CNS003OUTL, CNSA003)
 //   U_CNSOUTL("EXCLUIR", cEmailTec, cIdEvento)    exclusao do chamado (CNSA001)
 // As demais opcoes sao internas (a funcao chama ela mesma).
@@ -771,7 +771,7 @@ Return apia.cnsa001.U_CNSA_TECNICO()
 //-------------------------------------------------------------------
 /*/{Protheus.doc} CNSOUTL
 Agenda no Outlook do tecnico - uma funcao, varias opcoes:
-  AGENDA  (oModel, cTecAnt, cIdAnt)  sincroniza o agendamento gravado
+  AGENDA  (oModel)                   sincroniza o agendamento gravado
   EXCLUIR (cEmailTec, cIdEvento)     apaga o evento (cancela se tem convidado)
   SALVAR  (cEmailTec, cIdEvento, aAg) cria/atualiza o evento -> id
   DADOS   (oSZ6)                     dados da agenda (posicoes AG_*)
@@ -828,20 +828,20 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
             oSZ6   := x1:GetModel("ModelSZ6_Main")
             aAg    := U_CNSOUTL("DADOS", oSZ6)
             cTec   := aAg[AG_TECNICO]
-            x2     := AllTrim(x2)
-            x3     := AllTrim(x3)
+            // Id do evento ja vinculado - o modelo ainda tem o valor (agenda nao troca tecnico).
+            x2     := AllTrim(oSZ6:GetValue("Z6_IDOUTL"))
 
             If nOper == OUTL_EXCLUIR
-                U_CNSOUTL("EXCLUIR", U_CNSOUTL("EMAIL", x2), x3)
-                U_CNSOUTL("AVISO", x2, aAg, "Agendamento cancelado", ;
+                U_CNSOUTL("EXCLUIR", U_CNSOUTL("EMAIL", cTec), x2)
+                U_CNSOUTL("AVISO", cTec, aAg, "Agendamento cancelado", ;
                     "O agendamento abaixo foi cancelado e removido do seu calend&aacute;rio.")
                 Break
             EndIf
 
             // Incluir cria, Alterar atualiza o evento (agenda nao troca tecnico).
-            cId := U_CNSOUTL("SALVAR", U_CNSOUTL("EMAIL", cTec), x3, aAg)
+            cId := U_CNSOUTL("SALVAR", U_CNSOUTL("EMAIL", cTec), x2, aAg)
             // Vinculo gravado ANTES do e-mail: falha no e-mail nao duplica evento.
-            If cId != x3
+            If cId != x2
                 U_CNSOUTL("GRAVAID", oSZ6, cId)
             EndIf
 
