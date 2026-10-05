@@ -4,46 +4,6 @@
 #include "tlpp-core.th"
 #INCLUDE 'tlpp-rest.th'
 
-////////////////////////////////////////////////////////////////////////////////
-// HISTORICO DE ALTERACOES
-// Henrique - 01/09/2026 09:00 - CNS001_TECLUPA: join com SYS_USR
-//   (AA1_CODUSR = USR_ID) pra trazer AA1_RSPMNT e USR_CODIGO junto na lupa
-//   de tecnico (campos rspmnt/usrCodigo no JSON).
-////////////////////////////////////////////////////////////////////////////////
-
-////////////////////////////////////////////////////////////////////////////////
-// cnslib.tlpp
-// Henrique - 26/08/2026 - CNS001.TLPP (fonte correta/ativa do pouichamados)
-//   nao tinha as lupas de Tecnico/Cliente/Projeto/Tarefa - a tela dependia do
-//   endpoint /CNS001COMPONENTES de outro fonte (CNS001Rest.tlpp, MVC\Codigos
-//   ANTIGOS apia intraweb henrique - ja encerrado/fora de uso). Extraido
-//   todas as 8 lupas (tecnico/cliente/projeto/tarefa + modulo/motivo/
-//   servico/proposta) + utilitarios pra este fonte proprio. Mesma URL,
-//   mesmo contrato JSON, mesma logica interna (Static Function
-//   CNS001_XXXLUPA) - copia 1:1 do original, so o arquivo mudou.
-////////////////////////////////////////////////////////////////////////////////
-
-////////////////////////////////////////////////////////////////////////////////
-// Endpoint de apoio pras "lupas" (Consulta Padrao) do portal PO-UI - nao
-// existe F3 nativo em Angular, entao cada campo (Tecnico, Cliente, Projeto,
-// Tarefa) abre um modal que chama este REST e devolve o registro escolhido.
-//
-// Um endpoint so, despachando por "tipo" - mesmo padrao ja usado em
-// CNS001.TLPP (idCh/texto/status). NAO usa multiplas rotas pro mesmo
-// recurso - isso ja deu erro real de compilacao (C2051/C2006) em outro
-// arquivo deste projeto (WSRESTFUL classico), entao evitamos repetir o
-// mesmo risco aqui.
-//
-// FIX (500 com filtro vazio / lista sem resultado): o JSON de resposta NAO
-// e montado com JsonObject['items'] := aItens (array de JsonObject
-// aninhado dentro de outro JsonObject) - montamos a string do array "items"
-// na mao, chamando oLinha:ToJson() item a item e concatenando. Isso elimina
-// qualquer dependencia do comportamento do ToJson() com array vazio (0
-// resultados) ou aninhado, que era suspeito de estourar erro nao-capturavel
-// pelo Begin/Recover Sequence. Resposta sempre inclui "resultado" (true =
-// achou 1+ registro, false = filtro nao encontrou nada - NAO e erro, e
-// resposta 200 normal) pro front distinguir "lista vazia" de "erro real".
-////////////////////////////////////////////////////////////////////////////////
 
 @Get(endpoint="/CNSLIBCOMPONENTES")
 User Function CNS001_COMPONENTES_LISTAR() As Logical
@@ -96,7 +56,8 @@ User Function CNS001_COMPONENTES_LISTAR() As Logical
             Case cTipoParam == "motivo"
                 aItens := CNS001_MOTIVLUPA(cFiltroParam)
             Case cTipoParam == "servico"
-                aItens := CNS001_SERVLUPA(cFiltroParam)
+                // Cliente/loja: so os servicos do cliente (SA7 - Produto x Cliente).
+                aItens := CNS001_SERVLUPA(cFiltroParam, cClienteParam, cLojaParam)
             Case cTipoParam == "proposta"
                 If Empty(cClienteParam)
                     Return oRest:setStatusResponse(400, '{"resultado":false,"erro":"Informe o cliente (?cliente=000001) antes de buscar a proposta."}')
@@ -373,26 +334,91 @@ Return aRet
 // ("Cod Servico") da OS (pouios). Confirmado via "Visualizar Campo -
 // Z1_TIPO": Cons. Padrao "SB1 - Produto".
 ////////////////////////////////////////////////////////////////////////////////
-Static Function CNS001_SERVLUPA(cFiltro)
+////////////////////////////////////////////////////////////////////////////////
+// Lupa de Cod Servico (Z1_TIPO da OS).
+// Henrique - 05/10/2026 - antes trazia TODOS os produtos da SB1 (query antiga
+//   comentada abaixo). Agora:
+//   - com cliente: so os servicos do cliente selecionado - SA7 (Produto x
+//     Cliente) + SB1/SBM (grupo) + VE1 (marca), marca BM_CODMAR = '005';
+//   - sem cliente: catalogo SB1 + grupo (SBM) + marca (VE1).
+//   Selects passados pelo usuario, adaptados ao BeginSql (filial, %NotDel%,
+//   filtro da caixa de pesquisa).
+////////////////////////////////////////////////////////////////////////////////
+Static Function CNS001_SERVLUPA(cFiltro, cCliente, cLoja)
     Local aRet    := {}
     Local oLinha  := Nil
     Local cAlias  := GetNextAlias()
     Local cFiltroUp  := Upper(cFiltro)
     Local cFiltroUp2 := cFiltroUp
+    Local cSemLoja   := ""
 
-    BeginSql Alias cAlias
-        SELECT B1_COD, B1_DESC
-        FROM %Table:SB1% SB1
-        WHERE B1_FILIAL = %xFilial:SB1%
-          AND %NotDel%
-          AND (UPPER(B1_COD) LIKE '%' || %Exp:cFiltroUp% || '%' OR UPPER(B1_DESC) LIKE '%' || %Exp:cFiltroUp2% || '%')
-        ORDER BY B1_DESC
-    EndSql
+    Default cCliente := ""
+    Default cLoja    := ""
+
+    // Oracle trata '' como NULL ("'' = ''" nao e verdadeiro) - flag S/N pra
+    // "loja nao informada" em vez de comparar string vazia no SQL.
+    cSemLoja := If(Empty(cLoja), "S", "N")
+
+    // --- Query antiga (todos os produtos da SB1) - mantida comentada ---------
+    // BeginSql Alias cAlias
+    //     SELECT B1_COD, B1_DESC
+    //     FROM %Table:SB1% SB1
+    //     WHERE B1_FILIAL = %xFilial:SB1%
+    //       AND %NotDel%
+    //       AND (UPPER(B1_COD) LIKE '%' || %Exp:cFiltroUp% || '%' OR UPPER(B1_DESC) LIKE '%' || %Exp:cFiltroUp2% || '%')
+    //     ORDER BY B1_DESC
+    // EndSql
+
+    If !Empty(cCliente)
+        // Servicos do cliente (SA7). Loja so filtra se vier informada.
+        BeginSql Alias cAlias
+            SELECT A7_CLIENTE, A7_LOJA, A7_PRODUTO B1_COD, A7_DESCCLI, B1_DESC,
+                   BM_TIPGRU, BM_CODMAR, VE1_DESMAR, BM_GRUPO, BM_DESC
+            FROM %Table:SA7% SA7
+            INNER JOIN %Table:SB1% SB1
+                ON  B1_FILIAL = %xFilial:SB1%
+                AND B1_COD    = A7_PRODUTO
+                AND SB1.%NotDel%
+            INNER JOIN %Table:SBM% SBM
+                ON  BM_FILIAL = %xFilial:SBM%
+                AND BM_GRUPO  = B1_GRUPO
+                AND SBM.%NotDel%
+            LEFT JOIN %Table:VE1% VE1
+                ON  VE1_FILIAL = %xFilial:VE1%
+                AND VE1_CODMAR = BM_CODMAR
+                AND VE1.%NotDel%
+            WHERE A7_FILIAL  = %xFilial:SA7%
+              AND SA7.%NotDel%
+              AND A7_CLIENTE = %Exp:cCliente%
+              AND (%Exp:cSemLoja% = 'S' OR A7_LOJA = %Exp:cLoja%)
+              AND BM_CODMAR  = '005'
+              AND (UPPER(A7_PRODUTO) LIKE '%' || %Exp:cFiltroUp% || '%' OR UPPER(B1_DESC) LIKE '%' || %Exp:cFiltroUp2% || '%')
+            ORDER BY A7_CLIENTE, A7_LOJA, VE1_DESMAR
+        EndSql
+    Else
+        // Sem cliente: catalogo de produtos com grupo e marca.
+        BeginSql Alias cAlias
+            SELECT BM_CODMAR, VE1_DESMAR, BM_TIPGRU, BM_GRUPO, BM_DESC, B1_COD, B1_DESC
+            FROM %Table:SB1% SB1
+            INNER JOIN %Table:SBM% SBM
+                ON  BM_FILIAL = %xFilial:SBM%
+                AND BM_GRUPO  = B1_GRUPO
+                AND SBM.%NotDel%
+            LEFT JOIN %Table:VE1% VE1
+                ON  VE1_FILIAL = %xFilial:VE1%
+                AND VE1_CODMAR = BM_CODMAR
+                AND VE1.%NotDel%
+            WHERE B1_FILIAL = %xFilial:SB1%
+              AND SB1.%NotDel%
+              AND (UPPER(B1_COD) LIKE '%' || %Exp:cFiltroUp% || '%' OR UPPER(B1_DESC) LIKE '%' || %Exp:cFiltroUp2% || '%')
+            ORDER BY BM_CODMAR, BM_TIPGRU, B1_DESC
+        EndSql
+    EndIf
 
     While !(cAlias)->(Eof())
         oLinha := JsonObject():New()
         oLinha['codigo']      := CNS001_LUPA_COMPSTR((cAlias)->B1_COD)
-        oLinha['complemento'] := ""
+        oLinha['complemento'] := CNS001_LUPA_COMPSTR((cAlias)->BM_DESC)
         oLinha['descricao']   := CNS001_LUPA_COMPSTR((cAlias)->B1_DESC)
         AAdd(aRet, oLinha)
         (cAlias)->(DbSkip())
