@@ -874,7 +874,6 @@ User Function CNSA_CRIAAGENDA()
     Local cTecnico := AllTrim(ZA1->ZA1_CONSUL)
     Local cCliente := AllTrim(ZA1->ZA1_CLIENT)
     Local cLoja    := AllTrim(ZA1->ZA1_LOJA)
-    Local aAgenda  := {}
 
     If ZA1->(Eof()) .Or. ZA1->(Bof())
         MsgAlert("Nenhum chamado selecionado.", "Agendar")
@@ -886,7 +885,7 @@ User Function CNSA_CRIAAGENDA()
         Return
     EndIf
 
-    aAgenda := CH_MONTAAGENDA(cTecnico, Date(), "08:00", "09:00", ;
+    CH_MONTAAGENDA(cTecnico, Date(), "08:00", "09:00", ;
         cCliente, cLoja, ;
         AllTrim(ZA1->ZA1_ASSUNT), AllTrim(ZA1->ZA1_PROJ), ;
         AllTrim(ZA1->ZA1_TAREFA), cIdCh)
