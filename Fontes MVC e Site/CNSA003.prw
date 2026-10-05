@@ -241,6 +241,8 @@ oView:=FWFormView():New()
 oView:SetModel(oModel)
 
 oStruSZ6:=FWFormStruc(2,'SZ6')
+// Z6_IDOUTL (id do evento no Outlook) e so do sistema - fora da tela.
+oStruSZ6:RemoveField('Z6_IDOUTL')
 
 oView:AddField('ViewSZ6',oStruSZ6,'ModelSZ6_Main')
 
