@@ -2016,6 +2016,12 @@ Static Function CH_NUCLEOEXCLUIR(cIdCh, cMotivo, lNotificarCliente, lNotificarTe
         While !(cAlias)->(Eof())
             SZ6->(DbGoto((cAlias)->RECNO))
             If !SZ6->(Eof())
+                // Calendario do Outlook do tecnico (spec agenda-outlook): apaga o
+                // evento antes do registro - esta exclusao nao passa pelo modelo
+                // do CNSA003 (evento CNS003OUTL).
+                If !Empty(AllTrim(SZ6->Z6_IDOUTL))
+                    U_CNSOUTL_EXCLUIR(AllTrim(Posicione("AA1", 1, xFilial("AA1") + SZ6->Z6_TECNICO, "AA1_EMAIL")), SZ6->Z6_IDOUTL)
+                EndIf
                 RecLock("SZ6", .F.)
                     SZ6->(DbDelete())
                 SZ6->(MsUnlock())

@@ -60,12 +60,165 @@ Local ostruSZ6
 
 ostruSZ6:=FWFormStruc(1,'SZ6')
 oModel:=MPFormModel():New('ModelSZ6', , {|oModel| CNS003VldH(oModel)}, , ) //VOLTAR PARA MPFORMMODEL !!!!! R U_
+// Calendario do Outlook do tecnico: cria/atualiza/apaga o evento depois de
+// gravar (CNS003OUTL) - vale pra toda tela que grava SZ6 por este modelo.
+oModel:InstallEvent("CNS003OUTL", /*cOwner*/, CNS003OUTL():New())
 oModel:AddFields('ModelSZ6_Main',,oStruSZ6)
 oModel:SetPrimaryKey({'Z6_FILIAL','Z6_DTAGE','Z6_TECNICO','Z6_SEQ'})
 oModel:SetDescription('Model Agendas')
 oModel:GetModel('ModelSZ6_Main'):SetDescription('Model Agendas Main')
 
 Return oModel
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CNS003OUTL
+Evento do modelo da Agenda: mantem o agendamento no calendario do Outlook
+do tecnico (spec docs/superpowers/specs/2026-10-05-agenda-outlook-design.md).
+BeforeTTS guarda tecnico/id do evento ANTES de gravar (alterar/excluir);
+AfterTTS (depois do commit) cria, atualiza, troca de calendario ou apaga
+via U_CNSOUTL_SALVAR / U_CNSOUTL_EXCLUIR (cnslib.tlpp). Falha do Outlook
+nunca impede a gravacao.
+@author Henrique
+@since 05/10/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+Class CNS003OUTL From FWModelEvent
+    Data cTecAnt
+    Data cIdAnt
+    Method New() Constructor
+    Method BeforeTTS()
+    Method AfterTTS()
+EndClass
+
+Method New() Class CNS003OUTL
+    ::cTecAnt := ""
+    ::cIdAnt  := ""
+Return Self
+
+Method BeforeTTS(oModel, cModelId) Class CNS003OUTL
+    Local nOper := oModel:GetOperation()
+
+    ::cTecAnt := ""
+    ::cIdAnt  := ""
+    // Alterar/Excluir: SZ6 posicionado no registro que vai ser gravado.
+    If nOper == MODEL_OPERATION_UPDATE .Or. nOper == MODEL_OPERATION_DELETE
+        ::cTecAnt := AllTrim(SZ6->Z6_TECNICO)
+        ::cIdAnt  := AllTrim(SZ6->Z6_IDOUTL)
+    EndIf
+Return
+
+Method AfterTTS(oModel, cModelId) Class CNS003OUTL
+    Local nOper  := oModel:GetOperation()
+    Local oSZ6   := oModel:GetModel('ModelSZ6_Main')
+    Local bErro  := ErrorBlock({|e| Break(e)})
+    Local cTec   := ""
+    Local cId    := ""
+    Local aTexto := {}
+    Local oErro  := Nil
+
+    Begin Sequence
+        If nOper == MODEL_OPERATION_DELETE
+            U_CNSOUTL_EXCLUIR(CNS003EmTec(::cTecAnt), ::cIdAnt)
+            Break
+        EndIf
+        If nOper != MODEL_OPERATION_INSERT .And. nOper != MODEL_OPERATION_UPDATE
+            Break
+        EndIf
+
+        cTec := AllTrim(oSZ6:GetValue('Z6_TECNICO'))
+        cId  := ::cIdAnt
+
+        // Trocou o tecnico: sai do calendario do antigo, entra no do novo.
+        If nOper == MODEL_OPERATION_UPDATE .And. !Empty(cId) .And. ::cTecAnt != cTec
+            U_CNSOUTL_EXCLUIR(CNS003EmTec(::cTecAnt), cId)
+            cId := ""
+        EndIf
+
+        aTexto := CNS003OutTx(oSZ6)
+        cId    := U_CNSOUTL_SALVAR(CNS003EmTec(cTec), cId, oSZ6:GetValue('Z6_DTAGE'), ;
+                    oSZ6:GetValue('Z6_HMINI'), oSZ6:GetValue('Z6_HMFIM'), aTexto[1], aTexto[2])
+
+        If AllTrim(cId) != ::cIdAnt
+            CNS003GrvId(oSZ6, cId)
+        EndIf
+    Recover Using oErro
+        If oErro != Nil
+            ConOut("CNSOUTLOOK: erro no evento do CNSA003: " + oErro:Description)
+        EndIf
+    End Sequence
+
+    ErrorBlock(bErro)
+Return
+
+// E-mail do tecnico (AA1_EMAIL) - calendario do Outlook
+Static Function CNS003EmTec(cTec)
+    If Empty(cTec)
+        Return ""
+    EndIf
+Return AllTrim(Posicione("AA1", 1, xFilial("AA1") + cTec, "AA1_EMAIL"))
+
+// {cAssunto, cCorpoHtml} do evento
+Static Function CNS003OutTx(oSZ6)
+    Local cCli     := AllTrim(oSZ6:GetValue('Z6_CLIENTE'))
+    Local cLoja    := AllTrim(oSZ6:GetValue('Z6_LOJA'))
+    Local nCham    := oSZ6:GetValue('Z6_CHAMADO')
+    Local cNomCli  := ""
+    Local cAssunto := "Agendamento"
+    Local cCorpo   := ""
+
+    If !Empty(cCli)
+        cNomCli := AllTrim(Posicione("SA1", 1, xFilial("SA1") + cCli + cLoja, "A1_NREDUZ"))
+    EndIf
+    If !Empty(cNomCli)
+        cAssunto += " - " + cNomCli
+    EndIf
+    If ValType(nCham) == "N" .And. nCham > 0
+        cAssunto += " - Chamado #" + StrZero(nCham, 6)
+    EndIf
+
+    cCorpo := "<p><b>Cliente:</b> " + cNomCli + "</p>"
+    If !Empty(oSZ6:GetValue('Z6_PROJET'))
+        cCorpo += "<p><b>Projeto/Tarefa:</b> " + AllTrim(oSZ6:GetValue('Z6_PROJET')) + " / " + AllTrim(oSZ6:GetValue('Z6_TAREFA')) + "</p>"
+    EndIf
+    If !Empty(oSZ6:GetValue('Z6_SERVICO'))
+        cCorpo += "<p><b>Servi&ccedil;o:</b> " + AllTrim(oSZ6:GetValue('Z6_SERVICO')) + "</p>"
+    EndIf
+    If !Empty(oSZ6:GetValue('Z6_QGRAVOU'))
+        cCorpo += "<p><b>Agendado por:</b> " + AllTrim(oSZ6:GetValue('Z6_QGRAVOU')) + "</p>"
+    EndIf
+
+Return {cAssunto, cCorpo}
+
+// Grava o id do evento no SZ6 recem-gravado (localizado pela chave do modelo).
+Static Function CNS003GrvId(oSZ6, cId)
+    Local aArea  := SZ6->(GetArea())
+    Local cAlias := GetNextAlias()
+    Local cData  := DToS(oSZ6:GetValue('Z6_DTAGE'))
+    Local cTec   := oSZ6:GetValue('Z6_TECNICO')
+    Local xSeq   := oSZ6:GetValue('Z6_SEQ')
+
+    BeginSql Alias cAlias
+        SELECT SZ6.R_E_C_N_O_ RECNO
+        FROM %Table:SZ6% SZ6
+        WHERE Z6_FILIAL  = %xFilial:SZ6%
+          AND Z6_DTAGE   = %Exp:cData%
+          AND Z6_TECNICO = %Exp:cTec%
+          AND Z6_SEQ     = %Exp:xSeq%
+          AND %NotDel%
+    EndSql
+    If !(cAlias)->(Eof())
+        SZ6->(DbGoTo((cAlias)->RECNO))
+        RecLock("SZ6", .F.)
+            SZ6->Z6_IDOUTL := cId
+        SZ6->(MsUnlock())
+    Else
+        ConOut("CNSOUTLOOK: agendamento nao localizado pra gravar Z6_IDOUTL (" + cData + "/" + AllTrim(cTec) + ").")
+    EndIf
+    (cAlias)->(DbCloseArea())
+    RestArea(aArea)
+
+Return
 
 //-------------------------------------------------------------------
 /*/{Protheus.doc} ViewDef
@@ -88,6 +241,8 @@ oView:=FWFormView():New()
 oView:SetModel(oModel)
 
 oStruSZ6:=FWFormStruc(2,'SZ6')
+// Z6_IDOUTL (id do evento no Outlook) e so do sistema - fora da tela.
+oStruSZ6:RemoveField('Z6_IDOUTL')
 
 oView:AddField('ViewSZ6',oStruSZ6,'ModelSZ6_Main')
 
