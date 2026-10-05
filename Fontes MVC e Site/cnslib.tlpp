@@ -759,13 +759,16 @@ Cria ou atualiza o evento do agendamento no calendario do tecnico.
 @param  cHrFim     Hora final (HH:MM)
 @param  cAssunto   Assunto do evento
 @param  cCorpo     Corpo HTML do evento
+@param  aConv      E-mails de convidados (cliente) - opcional. Com
+                   convidados o Outlook manda o CONVITE de reuniao (Aceitar/
+                   Recusar) em nome do tecnico, e as atualizacoes no PATCH.
 @return cId        Id do evento (vazio se nao conseguiu criar)
 @author Henrique
 @since 05/10/2026
 @version P12
 /*/
 //-------------------------------------------------------------------
-User Function CNSOUTGR(cEmailTec, cIdEvento, dData, cHrIni, cHrFim, cAssunto, cCorpo)
+User Function CNSOUTGR(cEmailTec, cIdEvento, dData, cHrIni, cHrFim, cAssunto, cCorpo, aConv)
     Local cToken := ""
     Local cJson  := ""
     Local aResp  := {}
@@ -784,7 +787,9 @@ User Function CNSOUTGR(cEmailTec, cIdEvento, dData, cHrIni, cHrFim, cAssunto, cC
         Return cIdEvento
     EndIf
 
-    cJson := CNSOUTL_JSONEVENTO(dData, cHrIni, cHrFim, cAssunto, cCorpo)
+    Default aConv := {}
+
+    cJson := CNSOUTL_JSONEVENTO(dData, cHrIni, cHrFim, cAssunto, cCorpo, aConv)
 
     If !Empty(cIdEvento)
         aResp := CNSOUTL_HTTP("PATCH", "/v1.0/users/" + cEmailTec + "/events/" + cIdEvento, cJson, cToken)
@@ -871,6 +876,14 @@ User Function CNSOUTEX(cEmailTec, cIdEvento)
         Return .F.
     EndIf
 
+    // Reuniao com convidados (cliente): "cancel" apaga e manda o CANCELAMENTO
+    // pros convidados. Sem convidados o Graph recusa o cancel - ai DELETE.
+    aResp := CNSOUTL_HTTP("POST", "/v1.0/users/" + cEmailTec + "/events/" + cIdEvento + "/cancel", ;
+        '{"comment":"Agendamento cancelado."}', cToken)
+    If aResp[1] == 202 .Or. aResp[1] == 404
+        Return .T.
+    EndIf
+
     aResp := CNSOUTL_HTTP("DELETE", "/v1.0/users/" + cEmailTec + "/events/" + cIdEvento, "", cToken)
     lOk   := (aResp[1] == 204 .Or. aResp[1] == 404)
     If !lOk
@@ -919,11 +932,14 @@ Monta o JSON do evento (JsonObject cuida do escape) em UTF-8.
 @version P12
 /*/
 //-------------------------------------------------------------------
-Static Function CNSOUTL_JSONEVENTO(dData, cHrIni, cHrFim, cAssunto, cCorpo)
+Static Function CNSOUTL_JSONEVENTO(dData, cHrIni, cHrFim, cAssunto, cCorpo, aConv)
     Local oJson := JsonObject():New()
     Local cDia  := DToS(dData)
     Local cJson := ""
     Local xUtf8 := Nil
+    Local aAtt  := {}
+    Local oAtt  := Nil
+    Local nI    := 0
 
     cDia := Left(cDia, 4) + "-" + SubStr(cDia, 5, 2) + "-" + Right(cDia, 2)
 
@@ -940,6 +956,18 @@ Static Function CNSOUTL_JSONEVENTO(dData, cHrIni, cHrFim, cAssunto, cCorpo)
     oJson['showAs']  := "busy"
     oJson['isReminderOn'] := .T.
     oJson['reminderMinutesBeforeStart'] := 15
+
+    // Convidados (cliente): sempre manda a lista (vazia tambem) - no PATCH a
+    // lista substitui a anterior, entao tirar o cliente tira o convite.
+    For nI := 1 To Len(aConv)
+        oAtt := JsonObject():New()
+        oAtt['emailAddress'] := JsonObject():New()
+        oAtt['emailAddress']['address'] := AllTrim(aConv[nI])
+        oAtt['type'] := "required"
+        AAdd(aAtt, oAtt)
+    Next nI
+    oJson['attendees'] := aAtt
+    oJson['responseRequested'] := .T.
 
     cJson := oJson:ToJson()
     FreeObj(oJson)

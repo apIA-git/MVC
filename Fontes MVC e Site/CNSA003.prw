@@ -549,6 +549,8 @@ Return (nHr * 60) + nMin
 //     U_CNSOUTMA (e-mail ao tecnico)                                         //
 //   - CNSA001.TLPP: U_CH_HTMLPUB / U_CH_MAILPUB (layout e envio de e-mail)   //
 //   - Campo SZ6->Z6_IDOUTL (C, 250); AA1_EMAIL do tecnico preenchido         //
+//   - Cliente Participa? = Sim (Z6_INTERNO = "NAO"): cliente convidado       //
+//     (ZA1_EMAIL + A1_EMAIL) - convite Aceitar/Recusar em nome do tecnico    //
 //   - Azure: permissao de aplicativo Calendars.ReadWrite (Graph)             //
 //   ATENCAO: fonte .prw - nome de funcao vale ate 10 caracteres (com U_).    //
 //                                                                            //
@@ -600,6 +602,7 @@ Method AfterTTS(oModel, cModelId) Class CNS003OUTL
     Local cTec   := ""
     Local cId    := ""
     Local aTexto := {}
+    Local aConv  := {}
     Local oErro  := Nil
 
     Begin Sequence
@@ -628,8 +631,12 @@ Method AfterTTS(oModel, cModelId) Class CNS003OUTL
             cId := ""
         EndIf
 
+        // Cliente participa: convidado (convite com Aceitar/Recusar, em nome do
+        // tecnico) e o corpo do evento vai so com dados que o cliente pode ver.
+        aConv := CNS003Conv(oSZ6, aTexto[4])
         cId := U_CNSOUTGR(CNS003EmTec(cTec), cId, oSZ6:GetValue('Z6_DTAGE'), ;
-                    oSZ6:GetValue('Z6_HMINI'), oSZ6:GetValue('Z6_HMFIM'), aTexto[1], aTexto[2])
+                    oSZ6:GetValue('Z6_HMINI'), oSZ6:GetValue('Z6_HMFIM'), aTexto[1], ;
+                    If(Len(aConv) > 0, aTexto[6], aTexto[2]), aConv)
 
         // Grava o id ANTES do e-mail: se o e-mail falhar, o vinculo com o
         // evento ja esta salvo (senao a proxima alteracao duplicaria o evento).
@@ -667,7 +674,7 @@ Static Function CNS003EmTec(cTec)
 Return AllTrim(Posicione("AA1", 1, xFilial("AA1") + cTec, "AA1_EMAIL"))
 
 // Dados do agendamento pro Outlook e pro e-mail:
-// {cTitulo (nome do cliente), cCorpoEvento, aLinhas {rotulo, valor}, cIdCh, cQuando (texto puro pro assunto)}
+// {cTitulo (nome do cliente), cCorpoEvento, aLinhas {rotulo, valor}, cIdCh, cQuando (texto puro pro assunto), cCorpoCliente}
 Static Function CNS003OutTx(oSZ6)
     Local cCli     := AllTrim(oSZ6:GetValue('Z6_CLIENTE'))
     Local cLoja    := AllTrim(oSZ6:GetValue('Z6_LOJA'))
@@ -682,6 +689,7 @@ Static Function CNS003OutTx(oSZ6)
     Local cCorpo   := ""
     Local aLinhas  := {}
     Local nI       := 0
+    Local cCorpoCli := ""
 
     If Empty(cIdCh) .And. ValType(nCham) == "N" .And. nCham > 0
         cIdCh := StrZero(nCham, 6)
@@ -729,8 +737,18 @@ Static Function CNS003OutTx(oSZ6)
         cCorpo += "<p><b>" + aLinhas[nI][1] + ":</b> " + aLinhas[nI][2] + "</p>"
     Next nI
 
+    // Corpo quando o cliente e convidado: so o que ele pode ver (sem Cobrar,
+    // tipo, confirmado etc.).
+    cCorpoCli := ""
+    For nI := 1 To Len(aLinhas)
+        If aLinhas[nI][1] $ "Data|Hor&aacute;rio|T&eacute;cnico|Cliente|Projeto|Tarefa|Assunto|Chamado"
+            cCorpoCli += "<p><b>" + aLinhas[nI][1] + ":</b> " + aLinhas[nI][2] + "</p>"
+        EndIf
+    Next nI
+
 Return {cTitulo, cCorpo, aLinhas, cIdCh, ;
-    DToC(oSZ6:GetValue('Z6_DTAGE')) + " " + AllTrim(oSZ6:GetValue('Z6_HMINI')) + "-" + AllTrim(oSZ6:GetValue('Z6_HMFIM'))}
+    DToC(oSZ6:GetValue('Z6_DTAGE')) + " " + AllTrim(oSZ6:GetValue('Z6_HMINI')) + "-" + AllTrim(oSZ6:GetValue('Z6_HMFIM')), ;
+    cCorpoCli}
 
 // Campo de lista (X3_CBOX): titulo do dicionario + descricao da opcao.
 Static Function CNS003Opc(aLinhas, oSZ6, cCampo)
@@ -743,6 +761,36 @@ Static Function CNS003Opc(aLinhas, oSZ6, cCampo)
     cDesc := AllTrim(X3Combo(cCampo, cValor))
     AAdd(aLinhas, {AllTrim(RetTitle(cCampo)), If(Empty(cDesc), cValor, cDesc)})
 Return
+
+// Convidados do evento: e-mails do cliente quando "Cliente Participa?" = Sim
+// (Z6_INTERNO = "NAO" - pergunta invertida na agenda). Junta os e-mails do
+// chamado (ZA1_EMAIL) e do cadastro (A1_EMAIL), separando ";"/"," e sem repetir.
+Static Function CNS003Conv(oSZ6, cIdCh)
+    Local aConv  := {}
+    Local aLista := {}
+    Local cTodos := ""
+    Local cEmail := ""
+    Local nI     := 0
+
+    If Upper(AllTrim(oSZ6:GetValue('Z6_INTERNO'))) != "NAO"
+        Return {}
+    EndIf
+    If !Empty(cIdCh)
+        cTodos += AllTrim(Posicione("ZA1", 1, xFilial("ZA1") + cIdCh, "ZA1_EMAIL")) + ";"
+    EndIf
+    If !Empty(oSZ6:GetValue('Z6_CLIENTE'))
+        cTodos += AllTrim(Posicione("SA1", 1, xFilial("SA1") + AllTrim(oSZ6:GetValue('Z6_CLIENTE')) + ;
+            AllTrim(oSZ6:GetValue('Z6_LOJA')), "A1_EMAIL"))
+    EndIf
+
+    aLista := StrTokArr2(StrTran(cTodos, ",", ";"), ";", .F.)
+    For nI := 1 To Len(aLista)
+        cEmail := Lower(AllTrim(aLista[nI]))
+        If "@" $ cEmail .And. AScan(aConv, cEmail) == 0
+            AAdd(aConv, cEmail)
+        EndIf
+    Next nI
+Return aConv
 
 // E-mail de aviso ao tecnico (layout padrao Apia, via U_CNSOUTMA no cnslib).
 Static Function CNS003Mail(cTec, aTexto, cAlerta, cIntro)

@@ -94,4 +94,9 @@ chamar por macro (`&("U_CNSOUTEX")(...)`), que resolve no escopo global.
 
 - Envio retroativo dos agendamentos já existentes.
 - Sincronização no sentido Outlook → Protheus (mudança feita direto no Outlook não volta pra SZ6).
-- Convite ao cliente.
+
+## Adendo 05/10/2026 — e-mail ao técnico e convite ao cliente
+
+- E-mail de aviso ao técnico em incluir / alterar / excluir / troca de técnico (layout padrão, `U_CNSOUTMA`); avisos antigos do Agendar removidos.
+- Título do evento = nome reduzido do cliente; corpo com todos os dados da agenda.
+- Cliente Participa? = Sim (`Z6_INTERNO` = "NAO"): e-mails do chamado (`ZA1_EMAIL`) + cadastro (`A1_EMAIL`), separados por `;`/`,` e sem repetir, entram como convidados do evento — o Outlook manda o convite (Aceitar/Recusar) em nome do técnico, atualizações no PATCH e cancelamento (`/cancel`) na exclusão. Com convidados, o corpo do evento leva só dados que o cliente pode ver (sem Cobrar/tipo/confirmado).
