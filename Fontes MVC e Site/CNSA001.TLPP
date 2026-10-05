@@ -4116,6 +4116,10 @@ CH_NOTIFICARSEMCONTATO em CH_CRIARCHAMADOEMAIL).
 @since 02/09/2026
 @version P12
 @update 16/09/2026 - Remove fallback por e-mail direto/dominio da SA1; passa a exigir contato cadastrado em SU5
+@update 05/10/2026 - U5_EMAIL com varios e-mails (ex.: "a@x.com;b@x.com") - antes a
+        comparacao era exata e nenhum dos dois era achado (chamado nao abria e o
+        remetente recebia "e-mail nao cadastrado"). Agora confere CADA e-mail da
+        lista de TODOS os contatos candidatos antes de dizer que nao esta cadastrado.
 /*/
 Static Function CH_BUSCARCLIENTE(cEmail)
     Local cAlias   := GetNextAlias()
@@ -4129,15 +4133,24 @@ Static Function CH_BUSCARCLIENTE(cEmail)
         Return {"", ""}
     EndIf
 
+    // Candidatos: contato cujo U5_EMAIL CONTEM o remetente (pega o campo com
+    // um e-mail so e o com varios separados por ";"). "%" fica no SQL, nunca
+    // dentro do %Exp% (colide com a macro do BeginSql). A confirmacao exata
+    // e feita abaixo, e-mail por e-mail (CH_EMAILNALISTA) - o LIKE sozinho
+    // aceitaria "ana@x.com" dentro de "joana@x.com".
     BeginSql Alias cAlias
-        SELECT U5_CODCONT
+        SELECT U5_CODCONT, U5_EMAIL
         FROM %Table:SU5% SU5
-        WHERE Upper(U5_EMAIL) = %Exp:cEmail%
+        WHERE Upper(U5_EMAIL) LIKE '%' || %Exp:cEmail% || '%'
           AND %NotDel%
     EndSql
-    If !(cAlias)->(Eof())
-        cContat := AllTrim((cAlias)->U5_CODCONT)
-    EndIf
+    While !(cAlias)->(Eof())
+        If CH_EMAILNALISTA(cEmail, (cAlias)->U5_EMAIL)
+            cContat := AllTrim((cAlias)->U5_CODCONT)
+            Exit
+        EndIf
+        (cAlias)->(DbSkip())
+    EndDo
     (cAlias)->(DbCloseArea())
 
     If Empty(cContat)
@@ -4160,6 +4173,32 @@ Static Function CH_BUSCARCLIENTE(cEmail)
     (cAlias)->(DbCloseArea())
 
 Return {cCod, cLoja}
+
+/*/{Protheus.doc} CH_EMAILNALISTA
+Confere se um e-mail esta numa lista de e-mails de contato (U5_EMAIL), que
+pode ter um so ou varios separados por ";" ou "," (ex.:
+"maikon@safran.com;juliana@safran.com"). Percorre a lista inteira e compara
+cada item exato (sem maiuscula/minuscula e sem espacos).
+@param  cEmail   E-mail procurado (remetente)
+@param  cLista   Conteudo do campo de e-mail do contato
+@return .T. se algum e-mail da lista for igual ao procurado
+@author Henrique
+@since 05/10/2026
+@version P12
+/*/
+Static Function CH_EMAILNALISTA(cEmail, cLista)
+    Local aEmails := StrTokArr2(StrTran(AllTrim(cLista), ",", ";"), ";", .F.)
+    Local nI      := 0
+
+    cEmail := Upper(AllTrim(cEmail))
+
+    For nI := 1 To Len(aEmails)
+        If Upper(AllTrim(aEmails[nI])) == cEmail
+            Return .T.
+        EndIf
+    Next nI
+
+Return .F.
 
 /*/{Protheus.doc} CH_AVISOJAENVIADO
 Verifica se o aviso de "e-mail nao cadastrado" ja foi enviado para um mail
