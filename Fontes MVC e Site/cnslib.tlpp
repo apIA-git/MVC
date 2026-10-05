@@ -805,7 +805,6 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
     Local cId     := ""
     Local nOper   := 0
     Local nI      := 0
-    Local lTroca  := .F.
     Local lCria   := .F.
     // Linha {rotulo, valor} - vazia nao entra; lCli = o cliente tambem ve.
     Local bLinha  := {|lCli, cRot, cVal| If(Empty(cVal), Nil, ;
@@ -839,26 +838,15 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
                 Break
             EndIf
 
-            // Trocou o tecnico: sai do calendario do antigo, entra no do novo.
-            lTroca := nOper == OUTL_ALTERAR .And. x2 != cTec
-            If lTroca
-                U_CNSOUTL("EXCLUIR", U_CNSOUTL("EMAIL", x2), x3)
-            EndIf
-
-            cId := U_CNSOUTL("SALVAR", U_CNSOUTL("EMAIL", cTec), If(lTroca, "", x3), aAg)
-            // Vinculo gravado ANTES dos e-mails: falha no e-mail nao duplica evento.
+            // Incluir cria, Alterar atualiza o evento (agenda nao troca tecnico).
+            cId := U_CNSOUTL("SALVAR", U_CNSOUTL("EMAIL", cTec), x3, aAg)
+            // Vinculo gravado ANTES do e-mail: falha no e-mail nao duplica evento.
             If cId != x3
                 U_CNSOUTL("GRAVAID", oSZ6, cId)
             EndIf
 
-            If lTroca
-                U_CNSOUTL("AVISO", x2, aAg, "Agendamento cancelado", ;
-                    "Este agendamento foi transferido para outro t&eacute;cnico e removido do seu calend&aacute;rio.")
-            EndIf
-            If nOper == OUTL_ALTERAR .And. !lTroca
-                U_CNSOUTL("AVISO", cTec, aAg, "Agendamento alterado", ;
-                    "Um agendamento seu foi alterado - o seu calend&aacute;rio j&aacute; foi atualizado.")
-            Else
+            // E-mail ao tecnico so na inclusao (alteracao so atualiza o calendario).
+            If nOper != OUTL_ALTERAR
                 U_CNSOUTL("AVISO", cTec, aAg, "Novo agendamento", ;
                     "Um atendimento foi agendado para voc&ecirc; e j&aacute; est&aacute; no seu calend&aacute;rio.")
             EndIf
