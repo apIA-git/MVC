@@ -891,9 +891,9 @@ User Function CNSA_CRIAAGENDA()
         AllTrim(ZA1->ZA1_ASSUNT), AllTrim(ZA1->ZA1_PROJ), ;
         AllTrim(ZA1->ZA1_TAREFA), cIdCh)
 
-    If aAgenda[1] .And. CH_PERGUNTAEMAIL("Agendamento - Chamado " + cIdCh, .F., .T.)[2]
-        CH_NOTIFICARAGENDAMENTO(cIdCh, cTecnico, DToC(aAgenda[2]), aAgenda[3], aAgenda[4], AllTrim(ZA1->ZA1_ASSUNT))
-    EndIf
+    // E-mail ao tecnico sai do evento do modelo da Agenda (CNS003OUTL, CNSA003),
+    // junto com o calendario do Outlook - sempre, em toda tela. Sem pergunta aqui
+    // pra nao mandar dois.
 
 Return
 
@@ -2576,10 +2576,8 @@ Static Function CH_GRAVARAGENDA(cIdCh, cDataIni, cDataFim, cCodTecnico, cHoraIni
             Return {500, '{"erro":"' + CH_ESCAPARJSON(oErroLoop:Description) + '"}'}
         EndIf
 
-        If nCriados > 0 .And. lNotificarTecnico
-            CH_NOTIFICARAGENDAMENTO(cIdCh, cCodTecnico, ;
-                DToC(dDataIni) + If(dDataFim > dDataIni, " a " + DToC(dDataFim), ""), cHoraIni, cHoraFim, cDescricao)
-        EndIf
+        // E-mail ao tecnico: sai do evento do modelo da Agenda (CNS003OUTL,
+        // CNSA003), um por agendamento gravado, junto com o Outlook.
 
         oJson['sucesso']    := nCriados > 0
         oJson['idCh']       := cIdCh
@@ -3483,6 +3481,26 @@ Static Function CH_ENVIAREMAIL(cPara, cAssunto, cCorpo, cDe)
 
 Return lOk
 
+/*/{Protheus.doc} CH_HTMLPUB
+Expoe o layout de e-mail (CH_HTMLEMAIL, Static) pra fora do namespace -
+usado pelo aviso de agendamento (U_CNSOUTMA, cnslib.tlpp).
+@author Henrique
+@since 05/10/2026
+@version P12
+/*/
+User Function CH_HTMLPUB(cIdCh, cAlerta, cNome, cIntro, aLinhas, cTituloTexto, cTexto, cObs)
+Return CH_HTMLEMAIL(cIdCh, cAlerta, cNome, cIntro, aLinhas, cTituloTexto, cTexto, cObs)
+
+/*/{Protheus.doc} CH_MAILPUB
+Expoe o envio via Graph (CH_ENVIAREMAIL, Static) pra fora do namespace -
+mesma caixa remetente dos demais e-mails do chamado.
+@author Henrique
+@since 05/10/2026
+@version P12
+/*/
+User Function CH_MAILPUB(cPara, cAssunto, cCorpo)
+Return CH_ENVIAREMAIL(cPara, cAssunto, cCorpo, "apia@apia.com.br")
+
 /*/{Protheus.doc} CH_HTMLEMAIL
 Layout unico dos e-mails do chamado (identidade da Apia): logo + selo com o
 numero do chamado, alerta em vermelho centralizado, saudacao, cartao com os
@@ -3807,46 +3825,6 @@ Static Function CH_HTMLDESIGNA(cNomeTec, cIdCh, cCliente, cAssunto, cDataAge, cH
     EndIf
 
 Return cHtml
-
-/*/{Protheus.doc} CH_NOTIFICARAGENDAMENTO
-Envia ao analista o e-mail de agendamento criado a partir do chamado
-(mesmo layout do e-mail de designacao, tipo "AGENDAMENTO").
-@param  cIdCh      Id do chamado (ZA1_IDCH)
-@param  cCodTec    Codigo do analista (AA1)
-@param  cPeriodo   Data (ou intervalo "dd/mm/aaaa a dd/mm/aaaa") ja formatado
-@param  cHmini     Hora inicial
-@param  cHmfim     Hora final
-@param  cServico   Descricao/servico do agendamento
-@return .T./.F. indicando sucesso no envio (via CH_ENVIAREMAIL)
-@author Henrique
-@since 24/09/2026
-@version P12
-/*/
-Static Function CH_NOTIFICARAGENDAMENTO(cIdCh, cCodTec, cPeriodo, cHmini, cHmfim, cServico)
-    Local cEmailTec := AllTrim(Posicione("AA1", 1, xFilial("AA1") + cCodTec, "AA1_EMAIL"))
-    Local cNomeTec  := AllTrim(Posicione("AA1", 1, xFilial("AA1") + cCodTec, "AA1_NOMTEC"))
-    Local cNomeDe   := AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_NOMTEC"))
-    Local cNomeCli  := ""
-    Local cEmailCli := ""
-    Local cDescricao := ""
-    Local cCorpo    := ""
-
-    If Empty(cEmailTec)
-        ConOut("CH_NOTIFICARAGENDAMENTO: tecnico " + cCodTec + " sem AA1_EMAIL cadastrado - e-mail de agendamento nao enviado.")
-        Return .F.
-    EndIf
-
-    dbSelectArea("ZA1")
-    ZA1->(DbSetOrder(1))
-    If ZA1->(DbSeek(xFilial("ZA1") + cIdCh))
-        cNomeCli := AllTrim(Posicione("SA1", 1, xFilial("SA1") + AllTrim(ZA1->ZA1_CLIENT) + AllTrim(ZA1->ZA1_LOJA), "A1_NREDUZ"))
-        cEmailCli := AllTrim(ZA1->ZA1_EMAIL)
-        cDescricao := AllTrim(ZA1->ZA1_ANOT)
-    EndIf
-
-    cCorpo := CH_HTMLDESIGNA(cNomeTec, cIdCh, cNomeCli, cServico, cPeriodo, cHmini, cHmfim, cNomeDe, "AGENDAMENTO", cEmailCli, cDescricao)
-
-Return CH_ENVIAREMAIL(cEmailTec, "Agendamento - Chamado " + cIdCh, cCorpo, "apia@apia.com.br")
 
 /*/{Protheus.doc} CH_HTMLDESIGNACLIENTE
 Monta o corpo HTML do e-mail ao cliente informando que um tecnico foi
