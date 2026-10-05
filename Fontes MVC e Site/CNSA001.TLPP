@@ -2019,7 +2019,7 @@ Static Function CH_NUCLEOEXCLUIR(cIdCh, cMotivo, lNotificarCliente, lNotificarTe
                 // evento antes do registro - esta exclusao nao passa pelo modelo
                 // do CNSA003 (evento CNS003OUTL).
                 If !Empty(AllTrim(SZ6->Z6_IDOUTL))
-                    U_CNSOUTEX(AllTrim(Posicione("AA1", 1, xFilial("AA1") + SZ6->Z6_TECNICO, "AA1_EMAIL")), SZ6->Z6_IDOUTL)
+                    U_CNSOUTL("EXCLUIR", AllTrim(Posicione("AA1", 1, xFilial("AA1") + SZ6->Z6_TECNICO, "AA1_EMAIL")), SZ6->Z6_IDOUTL)
                 EndIf
                 RecLock("SZ6", .F.)
                     SZ6->(DbDelete())
@@ -3482,7 +3482,7 @@ Return lOk
 
 /*/{Protheus.doc} CH_HTMLPUB
 Expoe o layout de e-mail (CH_HTMLEMAIL, Static) pra fora do namespace -
-usado pelo aviso de agendamento (U_CNSOUTMA, cnslib.tlpp).
+usado pelo aviso de agendamento (U_CNSOUTL, cnslib.tlpp).
 @author Henrique
 @since 05/10/2026
 @version P12
