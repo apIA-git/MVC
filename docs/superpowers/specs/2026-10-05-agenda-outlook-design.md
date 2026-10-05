@@ -26,9 +26,10 @@ CNSA003, código do Luiz).
 
 ## Arquitetura
 
-### `CNSOUTLOOK.tlpp` (fonte novo, sem namespace, funções globais)
+### Funções de Outlook no final do `cnslib.tlpp` (sem fonte novo)
 
-Isolado, sem regra de negócio — mesmo espírito do `CNSLOGIN.tlpp`.
+Funções globais (o `cnslib.tlpp` não tem namespace), sem regra de negócio —
+decisão do usuário em 05/10/2026: nada de fonte novo.
 
 - `U_CNSOUTL_SALVAR(cEmailTec, cIdEvento, dData, cHrIni, cHrFim, cAssunto, cCorpoHtml) -> cIdEvento`
   - `cIdEvento` vazio: `POST /users/{cEmailTec}/events`; preenchido: `PATCH /users/{cEmailTec}/events/{cIdEvento}`.
@@ -36,8 +37,8 @@ Isolado, sem regra de negócio — mesmo espírito do `CNSLOGIN.tlpp`.
   - Devolve o id do evento (`id` da resposta) ou `""` em falha.
 - `U_CNSOUTL_EXCLUIR(cEmailTec, cIdEvento) -> lOk`
   - `DELETE /users/{cEmailTec}/events/{cIdEvento}`; 404 conta como sucesso.
-- Token próprio (client credentials) com `MV_CNSATEN` / `MV_CNSACLI` / `MV_CNSASEC` — não depende do CNSA001 (que está em namespace e tem o token como Static).
-- Toda falha (token, e-mail vazio, HTTP != 2xx) faz `ConOut("CNSOUTLOOK: ...")` e devolve vazio/.F. — nunca lança erro.
+- Token próprio no cnslib (client credentials) com `MV_CNSATEN` / `MV_CNSACLI` / `MV_CNSASEC` — não depende do CNSA001 (que está em namespace e tem o token como Static).
+- Toda falha (token, e-mail vazio, HTTP != 2xx) faz `ConOut("CNSOUTLOOK: ...")` (prefixo do log) e devolve vazio/.F. — nunca lança erro.
 
 ### CNSA003 (`cnsa003.prw`)
 
@@ -56,7 +57,7 @@ pelo modelo). Antes de cada `DbDelete`, chama `U_CNSOUTL_EXCLUIR` com o
 
 Risco: o CNSA001 está no namespace `apia.cnsa001`. A chamada à função global
 `U_CNSOUTL_EXCLUIR` deve resolver no escopo global; se não resolver, criar
-intermediário no próprio `CNSOUTLOOK.tlpp` e chamar pelo nome global.
+chamar por macro (`&("U_CNSOUTL_EXCLUIR")(...)`), que resolve no escopo global.
 
 ## Conteúdo do evento
 
@@ -78,7 +79,7 @@ intermediário no próprio `CNSOUTLOOK.tlpp` e chamar pelo nome global.
 
 1. Liberar `Calendars.ReadWrite` (Application) com consentimento de administrador no app do Azure já usado (`MV_CNSACLI`).
 2. Criar `Z6_IDOUTL` (Caractere, 200, contexto real, não usado/não visível na tela).
-3. Compilar `CNSOUTLOOK.tlpp`, `cnsa003.prw` e `CNSA001.TLPP`.
+3. Compilar `cnslib.tlpp`, `cnsa003.prw` e `CNSA001.TLPP`.
 
 ## Testes (manuais)
 
