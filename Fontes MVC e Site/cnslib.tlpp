@@ -737,11 +737,10 @@ Return apia.cnsa001.U_CNSA_TECNICO()
 // AGENDA NO CALENDARIO DO OUTLOOK DO TECNICO (Microsoft Graph)
 // Henrique - 05/10/2026 - spec docs/superpowers/specs/2026-10-05-agenda-outlook-design.md
 //
-// Uma funcao so - U_CNSOUTL(cAcao, ...) - com uma opcao por acao (Do Case).
+// Uma funcao so - U_CNSOUTL(cAcao, ...) - uma opcao por acao (Do Case).
 // Nome curto (9 caracteres com U_): o CNSA003 e .prw e so enxerga 10.
-//   U_CNSOUTL("AGENDA", oModel)                   evento do modelo da Agenda
-//                                                 (CNS003OUTL, CNSA003)
-//   U_CNSOUTL("EXCLUIR", cEmailTec, cIdEvento)    exclusao do chamado (CNSA001)
+//   U_CNSOUTL("AGENDA", oModel)                 evento do modelo da Agenda (CNSA003)
+//   U_CNSOUTL("EXCLUIR", cEmailTec, cIdEvento)  exclusao do chamado (CNSA001)
 // As demais opcoes sao internas (a funcao chama ela mesma).
 //
 // Depende de: Z6_IDOUTL (C 250); AA1_EMAIL do tecnico; MV_CNSATEN/MV_CNSACLI/
@@ -749,12 +748,12 @@ Return apia.cnsa001.U_CNSA_TECNICO()
 // apia.cnsa001.U_CH_HTMLPUB/U_CH_MAILPUB. Falha nunca impede gravar a agenda.
 ////////////////////////////////////////////////////////////////////////////////
 
-#define OUTL_GRAPH  "https://graph.microsoft.com/v1.0/users/"
-#define OUTL_FUSO   "E. South America Standard Time"
-#define OUTL_ALTERAR 4
-#define OUTL_EXCLUIR 5
+#define OUTL_GRAPH    "https://graph.microsoft.com/v1.0/users/"
+#define OUTL_FUSO     "E. South America Standard Time"
+#define OUTL_ALTERAR  4
+#define OUTL_EXCLUIR  5
 
-// Posicoes do array de dados da agenda (opcao "DADOS")
+// Posicoes do array de dados da agenda (opcao DADOS)
 #define AG_TECNICO    1
 #define AG_TITULO     2
 #define AG_IDCH       3
@@ -771,83 +770,86 @@ Return apia.cnsa001.U_CNSA_TECNICO()
 //-------------------------------------------------------------------
 /*/{Protheus.doc} CNSOUTL
 Agenda no Outlook do tecnico - uma funcao, varias opcoes:
-  AGENDA  (oModel)                   sincroniza o agendamento gravado
-  EXCLUIR (cEmailTec, cIdEvento)     apaga o evento (cancela se tem convidado)
-  SALVAR  (cEmailTec, cIdEvento, aAg) cria/atualiza o evento -> id
-  DADOS   (oSZ6)                     dados da agenda (posicoes AG_*)
-  JSON    (aAg)                      JSON do evento (UTF-8)
-  AVISO   (cTec, aAg, cAlerta, cIntro) e-mail ao tecnico
-  GRAVAID (oSZ6, cId)                grava Z6_IDOUTL
-  EMAIL   (cTec)                     AA1_EMAIL do tecnico
-  HTTP    (cMetodo, cUrl, cCorpo)    Graph -> {nStatus, cResposta}
-  TOKEN   ()                         token do Graph
+  AGENDA  (oModel)                      sincroniza o agendamento gravado
+  EXCLUIR (cEmail, cIdEvento)           apaga o evento -> .T./.F.
+  SALVAR  (cEmail, cIdEvento, aAg)      cria/atualiza o evento -> id
+  DADOS   (oSZ6)                        dados da agenda -> aAg (AG_*)
+  JSON    (aAg)                         JSON do evento (UTF-8)
+  AVISO   (cTec, aAg, cAlerta, cIntro)  e-mail ao tecnico
+  GRAVAID (oSZ6, cIdEvento)             grava Z6_IDOUTL
+  EMAIL   (cTec)                        AA1_EMAIL do tecnico
+  HTTP    (cMetodo, cUrl, cCorpo)       Graph -> {nStatus, cResposta}
+  TOKEN   ()                            token do Graph
 @author Henrique
 @since 05/10/2026
 @version P12
 /*/
 //-------------------------------------------------------------------
 User Function CNSOUTL(cAcao, x1, x2, x3, x4)
-    Local xRet    := Nil
-    Local oSZ6    := Nil
-    Local oJson   := Nil
-    Local oErro   := Nil
-    Local bErro   := Nil
-    Local aAg     := {}
-    Local aResp   := {}
-    Local aLin    := {}
-    Local aCli    := {}
-    Local aAux    := {}
-    Local cAux    := ""
-    Local cHead   := ""
-    Local cEnc    := ""
+    Local xRet     := Nil
+    Local oModel   := Nil
+    Local oSZ6     := Nil
+    Local oJson    := Nil
+    Local oErro    := Nil
+    Local bErro    := Nil
+    Local aAg      := {}
+    Local aResp    := {}
+    Local aLin     := {}
+    Local aCli     := {}
+    Local aConv    := {}
+    Local aCampos  := {}
+    Local cEmail   := ""
+    Local cId      := ""
+    Local cTec     := ""
+    Local cCli     := ""
+    Local cLoja    := ""
+    Local cProj    := ""
+    Local cTaf     := ""
+    Local cIdCh    := ""
+    Local cNomCli  := ""
     Local cAssunto := ""
-    Local cTec    := ""
-    Local cId     := ""
-    Local nOper   := 0
-    Local nI      := 0
-    Local lCria   := .F.
-    // Linha {rotulo, valor} - vazia nao entra; lCli = o cliente tambem ve.
-    Local bLinha  := {|lCli, cRot, cVal| If(Empty(cVal), Nil, ;
-                        (AAdd(aLin, {cRot, cVal}), If(lCli, AAdd(aCli, {cRot, cVal}), Nil)))}
-    Local bHtml   := {|aL| cAux := "", AEval(aL, {|l| cAux += "<p><b>" + l[1] + ":</b> " + l[2] + "</p>"}), cAux}
-    // Percent-encoding (x-www-form-urlencoded) do corpo do token.
-    Local bUrl    := {|cT| cEnc := "", AEval(Array(Len(cT)), {|x, n| cEnc += If(IsAlpha(SubStr(cT, n, 1)) .Or. ;
-                        IsDigit(SubStr(cT, n, 1)) .Or. SubStr(cT, n, 1) $ "-_.~", SubStr(cT, n, 1), ;
-                        "%" + SubStr("0123456789ABCDEF", Int(Asc(SubStr(cT, n, 1)) / 16) + 1, 1) + ;
-                        SubStr("0123456789ABCDEF", (Asc(SubStr(cT, n, 1)) % 16) + 1, 1))}), cEnc}
-    Local bHora   := {|dD, cH| cH := PadL(Left(StrTran(AllTrim(cH), ":", ""), 4), 4, "0"), ;
-                        Transform(DToS(dD), "@R 9999-99-99") + "T" + Left(cH, 2) + ":" + Right(cH, 2) + ":00"}
+    Local cCartao  := ""
+    Local cUrl     := ""
+    Local cHead    := ""
+    Local cValor   := ""
+    Local cAlias   := ""
+    Local nOper    := 0
+    Local nI       := 0
+    // Linha {rotulo, valor} pro e-mail (aLin); lCartao = entra tambem no cartao do evento (aCli).
+    Local bLinha   := {|lCartao, cRot, cVal| If(Empty(cVal), Nil, ;
+                         (AAdd(aLin, {cRot, cVal}), If(lCartao, AAdd(aCli, {cRot, cVal}), Nil)))}
 
     cAcao := Upper(AllTrim(cAcao))
 
     Do Case
+
+    //--- Sincroniza o agendamento gravado (chamado pelo CNSA003) --------------
     Case cAcao == "AGENDA"
-        bErro := ErrorBlock({|e| Break(e)})
+        oModel := x1
+        bErro  := ErrorBlock({|e| Break(e)})
         Begin Sequence
-            nOper  := x1:GetOperation()
-            oSZ6   := x1:GetModel("ModelSZ6_Main")
+            nOper  := oModel:GetOperation()
+            oSZ6   := oModel:GetModel("ModelSZ6_Main")
             aAg    := U_CNSOUTL("DADOS", oSZ6)
-            cTec   := aAg[AG_TECNICO]
-            // Id do evento ja vinculado - o modelo ainda tem o valor (agenda nao troca tecnico).
-            x2     := AllTrim(oSZ6:GetValue("Z6_IDOUTL"))
+            cEmail := U_CNSOUTL("EMAIL", aAg[AG_TECNICO])
+            cId    := AllTrim(oSZ6:GetValue("Z6_IDOUTL"))   // vazio = ainda nao tem evento
 
             If nOper == OUTL_EXCLUIR
-                U_CNSOUTL("EXCLUIR", U_CNSOUTL("EMAIL", cTec), x2)
-                U_CNSOUTL("AVISO", cTec, aAg, "Agendamento cancelado", ;
+                U_CNSOUTL("EXCLUIR", cEmail, cId)
+                U_CNSOUTL("AVISO", aAg[AG_TECNICO], aAg, "Agendamento cancelado", ;
                     "O agendamento abaixo foi cancelado e removido do seu calend&aacute;rio.")
                 Break
             EndIf
 
-            // Incluir cria, Alterar atualiza o evento (agenda nao troca tecnico).
-            cId := U_CNSOUTL("SALVAR", U_CNSOUTL("EMAIL", cTec), x2, aAg)
-            // Vinculo gravado ANTES do e-mail: falha no e-mail nao duplica evento.
-            If cId != x2
-                U_CNSOUTL("GRAVAID", oSZ6, cId)
+            // Incluir cria, Alterar atualiza. Vinculo gravado ANTES do e-mail.
+            xRet := U_CNSOUTL("SALVAR", cEmail, cId, aAg)
+            If xRet != cId
+                U_CNSOUTL("GRAVAID", oSZ6, xRet)
             EndIf
 
-            // E-mail ao tecnico so na inclusao (alteracao so atualiza o calendario).
+            // E-mail so na inclusao - alteracao so atualiza o calendario.
             If nOper != OUTL_ALTERAR
-                U_CNSOUTL("AVISO", cTec, aAg, "Novo agendamento", ;
+                U_CNSOUTL("AVISO", aAg[AG_TECNICO], aAg, "Novo agendamento", ;
                     "Um atendimento foi agendado para voc&ecirc; e j&aacute; est&aacute; no seu calend&aacute;rio.")
             EndIf
         Recover Using oErro
@@ -856,15 +858,19 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
             EndIf
         End Sequence
         ErrorBlock(bErro)
+        xRet := Nil
 
+    //--- Apaga o evento -------------------------------------------------------
     Case cAcao == "EXCLUIR"
-        xRet := .T.
-        If !Empty(AllTrim(x2))
-            cAux  := OUTL_GRAPH + AllTrim(x1) + "/events/" + AllTrim(x2)
-            // Com convidados (cliente) "cancel" apaga e avisa; sem convidados o Graph recusa - DELETE.
-            aResp := U_CNSOUTL("HTTP", "POST", cAux + "/cancel", '{"comment":"Agendamento cancelado."}')
+        cEmail := AllTrim(x1)
+        cId    := AllTrim(x2)
+        xRet   := .T.
+        If !Empty(cId)
+            cUrl  := OUTL_GRAPH + cEmail + "/events/" + cId
+            // Com convidados (cliente) "cancel" apaga e avisa; sem convidados o Graph recusa -> DELETE.
+            aResp := U_CNSOUTL("HTTP", "POST", cUrl + "/cancel", '{"comment":"Agendamento cancelado."}')
             If aResp[1] != 202 .And. aResp[1] != 404
-                aResp := U_CNSOUTL("HTTP", "DELETE", cAux, "")
+                aResp := U_CNSOUTL("HTTP", "DELETE", cUrl, "")
             EndIf
             xRet := AScan({202, 204, 404}, aResp[1]) > 0
             If !xRet
@@ -872,178 +878,220 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
             EndIf
         EndIf
 
+    //--- Cria ou atualiza o evento -> id --------------------------------------
     Case cAcao == "SALVAR"
-        xRet := x2
-        If Empty(x1)
+        cEmail := AllTrim(x1)
+        cId    := AllTrim(x2)
+        aAg    := x3
+        xRet   := cId
+        If Empty(cEmail)
             ConOut("CNSOUTLOOK: tecnico sem e-mail (AA1_EMAIL) - evento nao gravado.")
-        Else
-            cAux  := U_CNSOUTL("JSON", x3)
-            lCria := Empty(x2)
-            If !lCria
-                aResp := U_CNSOUTL("HTTP", "PATCH", OUTL_GRAPH + x1 + "/events/" + x2, cAux)
-                lCria := aResp[1] == 404   // apagado a mao no Outlook: cria de novo
-            EndIf
-            If lCria
-                aResp := U_CNSOUTL("HTTP", "POST", OUTL_GRAPH + x1 + "/events", cAux)
-                oJson := JsonObject():New()
-                xRet  := If(aResp[1] == 201 .And. Empty(oJson:FromJson(aResp[2])), oJson["id"], "")
-                FreeObj(oJson)
-            EndIf
-            If aResp[1] != 200 .And. aResp[1] != 201
-                ConOut("CNSOUTLOOK: falha ao gravar evento de " + x1 + " (HTTP " + cValToChar(aResp[1]) + "): " + aResp[2])
+            Return xRet
+        EndIf
+
+        cValor := U_CNSOUTL("JSON", aAg)
+        If !Empty(cId)
+            aResp := U_CNSOUTL("HTTP", "PATCH", OUTL_GRAPH + cEmail + "/events/" + cId, cValor)
+            If aResp[1] != 404                     // 404 = apagado a mao no Outlook: cria de novo
+                If aResp[1] != 200
+                    ConOut("CNSOUTLOOK: falha ao atualizar evento (HTTP " + cValToChar(aResp[1]) + "): " + aResp[2])
+                EndIf
+                Return xRet
             EndIf
         EndIf
 
-    Case cAcao == "DADOS"
-        cTec := AllTrim(x1:GetValue("Z6_TECNICO"))
-        cId  := AllTrim(x1:GetValue("Z6_IDCH"))
-        If Empty(cId) .And. ValType(x1:GetValue("Z6_CHAMADO")) == "N" .And. x1:GetValue("Z6_CHAMADO") > 0
-            cId := StrZero(x1:GetValue("Z6_CHAMADO"), 6)
-        EndIf
-        cAux := AllTrim(Posicione("SA1", 1, xFilial("SA1") + x1:GetValue("Z6_CLIENTE") + x1:GetValue("Z6_LOJA"), "A1_NREDUZ"))
-
-        // Assunto: o do chamado; sem chamado, o servico da agenda.
-        cAssunto := If(Empty(cId), "", AllTrim(Posicione("ZA1", 1, xFilial("ZA1") + cId, "ZA1_ASSUNT")))
-        cAssunto := If(Empty(cAssunto), AllTrim(x1:GetValue("Z6_SERVICO")), cAssunto)
-
-        // .T. = entra tambem no cartao do evento (Outlook). Data/hora o Outlook ja mostra.
-        Eval(bLinha, .F., "Data", DToC(x1:GetValue("Z6_DTAGE")))
-        Eval(bLinha, .F., "Hor&aacute;rio", AllTrim(x1:GetValue("Z6_HMINI")) + " &agrave;s " + AllTrim(x1:GetValue("Z6_HMFIM")))
-        Eval(bLinha, .F., "T&eacute;cnico", AllTrim(Posicione("AA1", 1, xFilial("AA1") + cTec, "AA1_NOMTEC")))
-        Eval(bLinha, .T., "Chamado", If(Empty(cId), "", "#" + cId))
-        Eval(bLinha, .T., "Assunto", cAssunto)
-        Eval(bLinha, .T., "Cliente", cAux + If(Empty(x1:GetValue("Z6_LOJA")), "", " (Loja " + AllTrim(x1:GetValue("Z6_LOJA")) + ")"))
-        If !Empty(x1:GetValue("Z6_PROJET"))
-            Eval(bLinha, .T., "Projeto", AllTrim(x1:GetValue("Z6_PROJET")) + " - " + ;
-                AllTrim(Posicione("AF8", 1, xFilial("AF8") + x1:GetValue("Z6_PROJET"), "AF8_DESCRI")))
-        EndIf
-        If !Empty(x1:GetValue("Z6_TAREFA"))
-            Eval(bLinha, .T., "Tarefa", AllTrim(x1:GetValue("Z6_TAREFA")) + " - " + ;
-                AllTrim(Posicione("AF9", 1, xFilial("AF9") + AllTrim(x1:GetValue("Z6_PROJET")) + AllTrim(x1:GetValue("Z6_TAREFA")), "AF9_DESCRI")))
-        EndIf
-        // Campos de lista da agenda (so pro tecnico): titulo e opcao do dicionario.
-        aResp := {"Z6_TIPOAG", "Z6_LOCAL", "Z6_CONFIRM", "Z6_INTERNO", "Z6_COBRAR"}
-        For nI := 1 To Len(aResp)
-            cHead := AllTrim(cValToChar(x1:GetValue(aResp[nI])))
-            Eval(bLinha, .F., AllTrim(RetTitle(aResp[nI])), ;
-                If(Empty(X3Combo(aResp[nI], cHead)), cHead, AllTrim(X3Combo(aResp[nI], cHead))))
-        Next nI
-        Eval(bLinha, .T., "Agendado por", AllTrim(x1:GetValue("Z6_QGRAVOU")))
-
-        // Convidados: Cliente Participa? = Sim (Z6_INTERNO = "NAO", pergunta
-        // invertida) -> todos os e-mails do chamado e do cadastro, sem repetir.
-        If Upper(AllTrim(x1:GetValue("Z6_INTERNO"))) == "NAO"
-            aResp := StrTokArr2(StrTran(If(Empty(cId), "", Posicione("ZA1", 1, xFilial("ZA1") + cId, "ZA1_EMAIL")) + ";" + ;
-                Posicione("SA1", 1, xFilial("SA1") + x1:GetValue("Z6_CLIENTE") + x1:GetValue("Z6_LOJA"), "A1_EMAIL"), ",", ";"), ";", .F.)
-            AEval(aResp, {|e| e := Lower(AllTrim(e)), If("@" $ e .And. AScan(aAux, e) == 0, AAdd(aAux, e), Nil)})
-        EndIf
-
-        // Titulo "CLIENTE - Assunto"; cartao enxuto (aCli) pro evento; aLin completo pro e-mail.
-        xRet := {cTec, ;
-                 If(Empty(cAux), "Agendamento", cAux) + If(Empty(cAssunto), "", " - " + cAssunto), ;
-                 cId, ;
-                 DToC(x1:GetValue("Z6_DTAGE")) + " " + AllTrim(x1:GetValue("Z6_HMINI")) + "-" + AllTrim(x1:GetValue("Z6_HMFIM")), ;
-                 aLin, Eval(bHtml, aCli), ;
-                 AllTrim(X3Combo("Z6_LOCAL", AllTrim(x1:GetValue("Z6_LOCAL")))), ;
-                 aAux, x1:GetValue("Z6_DTAGE"), AllTrim(x1:GetValue("Z6_HMINI")), AllTrim(x1:GetValue("Z6_HMFIM")), ;
-                 Upper(AllTrim(x1:GetValue("Z6_COBRAR")))}
-
-    Case cAcao == "JSON"
-        // Evento enxuto: titulo, local, categoria (Cobravel/Nao Cobravel) e cartao
-        // curto - o mesmo pro cliente convidado (nao tem campo interno). Convidados
-        // sempre vao (vazio tambem: no PATCH a lista substitui a anterior).
+        aResp := U_CNSOUTL("HTTP", "POST", OUTL_GRAPH + cEmail + "/events", cValor)
+        xRet  := ""
         oJson := JsonObject():New()
-        oJson["subject"] := x1[AG_TITULO]
-        oJson["body"]    := JsonObject():New()
+        If aResp[1] == 201 .And. Empty(oJson:FromJson(aResp[2]))
+            xRet := oJson["id"]
+        Else
+            ConOut("CNSOUTLOOK: falha ao criar evento de " + cEmail + " (HTTP " + cValToChar(aResp[1]) + "): " + aResp[2])
+        EndIf
+        FreeObj(oJson)
+
+    //--- Dados da agenda (posicoes AG_*) --------------------------------------
+    Case cAcao == "DADOS"
+        oSZ6  := x1
+        cTec  := AllTrim(oSZ6:GetValue("Z6_TECNICO"))
+        cCli  := AllTrim(oSZ6:GetValue("Z6_CLIENTE"))
+        cLoja := AllTrim(oSZ6:GetValue("Z6_LOJA"))
+        cProj := AllTrim(oSZ6:GetValue("Z6_PROJET"))
+        cTaf  := AllTrim(oSZ6:GetValue("Z6_TAREFA"))
+
+        // Chamado: Z6_IDCH (portal) ou Z6_CHAMADO (numerico, Agendar do chamado).
+        cIdCh := AllTrim(oSZ6:GetValue("Z6_IDCH"))
+        If Empty(cIdCh) .And. ValType(oSZ6:GetValue("Z6_CHAMADO")) == "N" .And. oSZ6:GetValue("Z6_CHAMADO") > 0
+            cIdCh := StrZero(oSZ6:GetValue("Z6_CHAMADO"), 6)
+        EndIf
+
+        cNomCli  := AllTrim(Posicione("SA1", 1, xFilial("SA1") + cCli + cLoja, "A1_NREDUZ"))
+        // Assunto: o do chamado; sem chamado, o servico da agenda.
+        cAssunto := If(Empty(cIdCh), "", AllTrim(Posicione("ZA1", 1, xFilial("ZA1") + cIdCh, "ZA1_ASSUNT")))
+        If Empty(cAssunto)
+            cAssunto := AllTrim(oSZ6:GetValue("Z6_SERVICO"))
+        EndIf
+
+        // Linhas do e-mail; .T. = tambem no cartao do evento (data/hora o Outlook ja mostra).
+        Eval(bLinha, .F., "Data",            DToC(oSZ6:GetValue("Z6_DTAGE")))
+        Eval(bLinha, .F., "Hor&aacute;rio",  AllTrim(oSZ6:GetValue("Z6_HMINI")) + " &agrave;s " + AllTrim(oSZ6:GetValue("Z6_HMFIM")))
+        Eval(bLinha, .F., "T&eacute;cnico",  AllTrim(Posicione("AA1", 1, xFilial("AA1") + cTec, "AA1_NOMTEC")))
+        Eval(bLinha, .T., "Chamado",         If(Empty(cIdCh), "", "#" + cIdCh))
+        Eval(bLinha, .T., "Assunto",         cAssunto)
+        Eval(bLinha, .T., "Cliente",         cNomCli + If(Empty(cLoja), "", " (Loja " + cLoja + ")"))
+        Eval(bLinha, .T., "Projeto",         If(Empty(cProj), "", cProj + " - " + AllTrim(Posicione("AF8", 1, xFilial("AF8") + cProj, "AF8_DESCRI"))))
+        Eval(bLinha, .T., "Tarefa",          If(Empty(cTaf), "", cTaf + " - " + AllTrim(Posicione("AF9", 1, xFilial("AF9") + cProj + cTaf, "AF9_DESCRI"))))
+
+        // Campos de lista da agenda (so no e-mail): titulo e opcao do proprio dicionario.
+        aCampos := {"Z6_TIPOAG", "Z6_LOCAL", "Z6_CONFIRM", "Z6_INTERNO", "Z6_COBRAR"}
+        For nI := 1 To Len(aCampos)
+            cValor := AllTrim(cValToChar(oSZ6:GetValue(aCampos[nI])))
+            Eval(bLinha, .F., AllTrim(RetTitle(aCampos[nI])), If(Empty(X3Combo(aCampos[nI], cValor)), cValor, AllTrim(X3Combo(aCampos[nI], cValor))))
+        Next nI
+        Eval(bLinha, .T., "Agendado por", AllTrim(oSZ6:GetValue("Z6_QGRAVOU")))
+
+        For nI := 1 To Len(aCli)
+            cCartao += "<p><b>" + aCli[nI][1] + ":</b> " + aCli[nI][2] + "</p>"
+        Next nI
+
+        // Convidados: Cliente Participa? = Sim (Z6_INTERNO = "NAO" - pergunta invertida na
+        // agenda) -> todos os e-mails do chamado (ZA1_EMAIL) e do cadastro (A1_EMAIL), sem repetir.
+        If Upper(AllTrim(oSZ6:GetValue("Z6_INTERNO"))) == "NAO"
+            cValor := If(Empty(cIdCh), "", Posicione("ZA1", 1, xFilial("ZA1") + cIdCh, "ZA1_EMAIL")) + ";" + ;
+                      Posicione("SA1", 1, xFilial("SA1") + cCli + cLoja, "A1_EMAIL")
+            aResp := StrTokArr2(StrTran(cValor, ",", ";"), ";", .F.)
+            For nI := 1 To Len(aResp)
+                cEmail := Lower(AllTrim(aResp[nI]))
+                If "@" $ cEmail .And. AScan(aConv, cEmail) == 0
+                    AAdd(aConv, cEmail)
+                EndIf
+            Next nI
+        EndIf
+
+        xRet := Array(AG_COBRAR)
+        xRet[AG_TECNICO]    := cTec
+        xRet[AG_TITULO]     := If(Empty(cNomCli), "Agendamento", cNomCli) + If(Empty(cAssunto), "", " - " + cAssunto)
+        xRet[AG_IDCH]       := cIdCh
+        xRet[AG_QUANDO]     := DToC(oSZ6:GetValue("Z6_DTAGE")) + " " + AllTrim(oSZ6:GetValue("Z6_HMINI")) + "-" + AllTrim(oSZ6:GetValue("Z6_HMFIM"))
+        xRet[AG_LINHAS]     := aLin
+        xRet[AG_CARTAO]     := cCartao
+        xRet[AG_LOCAL]      := AllTrim(X3Combo("Z6_LOCAL", AllTrim(oSZ6:GetValue("Z6_LOCAL"))))
+        xRet[AG_CONVIDADOS] := aConv
+        xRet[AG_DATA]       := oSZ6:GetValue("Z6_DTAGE")
+        xRet[AG_HRINI]      := Transform(PadL(StrTran(AllTrim(oSZ6:GetValue("Z6_HMINI")), ":", ""), 4, "0"), "@R 99:99")
+        xRet[AG_HRFIM]      := Transform(PadL(StrTran(AllTrim(oSZ6:GetValue("Z6_HMFIM")), ":", ""), 4, "0"), "@R 99:99")
+        xRet[AG_COBRAR]     := Upper(AllTrim(oSZ6:GetValue("Z6_COBRAR")))
+
+    //--- JSON do evento -------------------------------------------------------
+    Case cAcao == "JSON"
+        // Titulo, local, categoria (Cobravel/Nao Cobravel) e cartao curto - o mesmo pro
+        // cliente convidado. Convidados sempre vao (vazio tambem: no PATCH a lista substitui a anterior).
+        aAg   := x1
+        oJson := JsonObject():New()
+        oJson["subject"]  := aAg[AG_TITULO]
+        oJson["body"]     := JsonObject():New()
         oJson["body"]["contentType"] := "HTML"
-        oJson["body"]["content"]     := x1[AG_CARTAO]
+        oJson["body"]["content"]     := aAg[AG_CARTAO]
         oJson["location"] := JsonObject():New()
-        oJson["location"]["displayName"] := x1[AG_LOCAL]
-        oJson["categories"] := {If(x1[AG_COBRAR] == "NAO", "N" + Chr(227) + "o Cobr" + Chr(225) + "vel", "Cobr" + Chr(225) + "vel")}
-        oJson["start"]   := JsonObject():New()
-        oJson["start"]["dateTime"]   := Eval(bHora, x1[AG_DATA], x1[AG_HRINI])
+        oJson["location"]["displayName"] := aAg[AG_LOCAL]
+        oJson["categories"] := {If(aAg[AG_COBRAR] == "NAO", "N" + Chr(227) + "o Cobr" + Chr(225) + "vel", "Cobr" + Chr(225) + "vel")}
+        oJson["start"]    := JsonObject():New()
+        oJson["start"]["dateTime"]   := Transform(DToS(aAg[AG_DATA]), "@R 9999-99-99") + "T" + aAg[AG_HRINI] + ":00"
         oJson["start"]["timeZone"]   := OUTL_FUSO
-        oJson["end"]     := JsonObject():New()
-        oJson["end"]["dateTime"]     := Eval(bHora, x1[AG_DATA], x1[AG_HRFIM])
+        oJson["end"]      := JsonObject():New()
+        oJson["end"]["dateTime"]     := Transform(DToS(aAg[AG_DATA]), "@R 9999-99-99") + "T" + aAg[AG_HRFIM] + ":00"
         oJson["end"]["timeZone"]     := OUTL_FUSO
-        oJson["showAs"]  := "busy"
+        oJson["showAs"]   := "busy"
         oJson["isReminderOn"] := .T.
         oJson["reminderMinutesBeforeStart"] := 15
         oJson["responseRequested"] := .T.
-        For nI := 1 To Len(x1[AG_CONVIDADOS])
-            AAdd(aAux, JsonObject():New())
-            aAux[nI]["type"] := "required"
-            aAux[nI]["emailAddress"] := JsonObject():New()
-            aAux[nI]["emailAddress"]["address"] := x1[AG_CONVIDADOS][nI]
+        For nI := 1 To Len(aAg[AG_CONVIDADOS])
+            AAdd(aConv, JsonObject():New())
+            aConv[nI]["type"] := "required"
+            aConv[nI]["emailAddress"] := JsonObject():New()
+            aConv[nI]["emailAddress"]["address"] := aAg[AG_CONVIDADOS][nI]
         Next nI
-        oJson["attendees"] := aAux
-        cAux := oJson:ToJson()
+        oJson["attendees"] := aConv
+        cValor := oJson:ToJson()
         FreeObj(oJson)
         // Base em CP1252 - o Graph espera UTF-8.
-        xRet := EncodeUTF8(cAux)
-        xRet := If(ValType(xRet) == "C", xRet, cAux)
-
-    Case cAcao == "AVISO"
-        cAux := U_CNSOUTL("EMAIL", x1)
-        If !Empty(cAux)
-            apia.cnsa001.U_CH_MAILPUB(cAux, x3 + " - " + x2[AG_TITULO] + " - " + x2[AG_QUANDO], ;
-                apia.cnsa001.U_CH_HTMLPUB(x2[AG_IDCH], x3, AllTrim(Posicione("AA1", 1, xFilial("AA1") + x1, "AA1_NOMTEC")), ;
-                    x4, x2[AG_LINHAS], "", "", ""))
+        xRet := EncodeUTF8(cValor)
+        If ValType(xRet) != "C"
+            xRet := cValor
         EndIf
 
+    //--- E-mail de aviso ao tecnico (layout padrao do chamado) ----------------
+    Case cAcao == "AVISO"
+        cTec   := x1
+        aAg    := x2
+        cEmail := U_CNSOUTL("EMAIL", cTec)
+        If !Empty(cEmail)
+            apia.cnsa001.U_CH_MAILPUB(cEmail, x3 + " - " + aAg[AG_TITULO] + " - " + aAg[AG_QUANDO], ;
+                apia.cnsa001.U_CH_HTMLPUB(aAg[AG_IDCH], x3, AllTrim(Posicione("AA1", 1, xFilial("AA1") + cTec, "AA1_NOMTEC")), ;
+                    x4, aAg[AG_LINHAS], "", "", ""))
+        EndIf
+
+    //--- Grava o id do evento no SZ6 recem-gravado ----------------------------
     Case cAcao == "GRAVAID"
-        aAux := SZ6->(GetArea())
-        cAux := GetNextAlias()
-        cHead := DToS(x1:GetValue("Z6_DTAGE"))
-        cTec  := x1:GetValue("Z6_TECNICO")
-        cId   := x1:GetValue("Z6_SEQ")
-        BeginSql Alias cAux
+        oSZ6   := x1
+        aResp  := SZ6->(GetArea())
+        cAlias := GetNextAlias()
+        cValor := DToS(oSZ6:GetValue("Z6_DTAGE"))
+        cTec   := oSZ6:GetValue("Z6_TECNICO")
+        cId    := oSZ6:GetValue("Z6_SEQ")
+        BeginSql Alias cAlias
             SELECT SZ6.R_E_C_N_O_ RECNO
             FROM %Table:SZ6% SZ6
             WHERE Z6_FILIAL  = %xFilial:SZ6%
-              AND Z6_DTAGE   = %Exp:cHead%
+              AND Z6_DTAGE   = %Exp:cValor%
               AND Z6_TECNICO = %Exp:cTec%
               AND Z6_SEQ     = %Exp:cId%
               AND %NotDel%
         EndSql
-        If !(cAux)->(Eof())
-            SZ6->(DbGoTo((cAux)->RECNO))
+        If !(cAlias)->(Eof())
+            SZ6->(DbGoTo((cAlias)->RECNO))
             RecLock("SZ6", .F.)
                 SZ6->Z6_IDOUTL := x2
             SZ6->(MsUnlock())
         EndIf
-        (cAux)->(DbCloseArea())
-        RestArea(aAux)
+        (cAlias)->(DbCloseArea())
+        RestArea(aResp)
 
+    //--- E-mail do tecnico ----------------------------------------------------
     Case cAcao == "EMAIL"
         xRet := If(Empty(x1), "", AllTrim(Posicione("AA1", 1, xFilial("AA1") + AllTrim(x1), "AA1_EMAIL")))
 
+    //--- Chamada ao Graph (FWRest nao tem PATCH - HttpQuote) -------------------
     Case cAcao == "HTTP"
-        // FWRest nao tem PATCH - HttpQuote. Status na 1a linha do cabecalho ("HTTP/1.1 201 Created").
-        cAux := U_CNSOUTL("TOKEN")
-        If Empty(cAux)
+        cValor := U_CNSOUTL("TOKEN")
+        If Empty(cValor)
             Return {0, "sem token do Graph"}
         EndIf
-        xRet := HttpQuote(x2, x1, "", x3, 60, {"Authorization: Bearer " + cAux, "Content-Type: application/json; charset=utf-8"}, @cHead)
-        xRet := {If(ValType(cHead) == "C" .And. At(" ", cHead) > 0, Val(SubStr(cHead, At(" ", cHead) + 1, 3)), 0), ;
-                 If(ValType(xRet) == "C", xRet, "")}
+        cValor := HttpQuote(x2, x1, "", x3, 60, {"Authorization: Bearer " + cValor, "Content-Type: application/json; charset=utf-8"}, @cHead)
+        // Status na 1a linha do cabecalho: "HTTP/1.1 201 Created"
+        xRet := {If(At(" ", cValToChar(cHead)) > 0, Val(SubStr(cHead, At(" ", cHead) + 1, 3)), 0), ;
+                 If(ValType(cValor) == "C", cValor, "")}
 
+    //--- Token do Graph (client credentials, igual ao CH_TOKENGRAPH) ----------
     Case cAcao == "TOKEN"
-        // Client credentials - mesma logica do CH_TOKENGRAPH (CNSA001).
-        xRet := ""
-        aAux := {AllTrim(GetMV("MV_CNSATEN")), AllTrim(GetMV("MV_CNSACLI")), AllTrim(GetMV("MV_CNSASEC"))}
-        If AScan(aAux, {|c| Empty(c)}) > 0
+        xRet    := ""
+        aCampos := {AllTrim(GetMV("MV_CNSATEN")), AllTrim(GetMV("MV_CNSACLI")), AllTrim(GetMV("MV_CNSASEC"))}
+        If AScan(aCampos, {|c| Empty(c)}) > 0
             ConOut("CNSOUTLOOK: MV_CNSATEN/MV_CNSACLI/MV_CNSASEC nao configurados.")
-            Return ""
+            Return xRet
         EndIf
-        cAux := HttpQuote("https://login.microsoftonline.com/" + aAux[1] + "/oauth2/v2.0/token", "POST", "", ;
-            "grant_type=client_credentials&client_id=" + Eval(bUrl, aAux[2]) + "&client_secret=" + Eval(bUrl, aAux[3]) + ;
-            "&scope=" + Eval(bUrl, "https://graph.microsoft.com/.default"), 60, {"Content-Type: application/x-www-form-urlencoded"}, @cHead)
+        // Segredo pode ter + / = % & - codifica so esses (tenant/client sao GUID).
+        cValor := aCampos[3]
+        cValor := StrTran(cValor, "%", "%25")
+        cValor := StrTran(StrTran(StrTran(StrTran(cValor, "+", "%2B"), "/", "%2F"), "=", "%3D"), "&", "%26")
+        cValor := HttpQuote("https://login.microsoftonline.com/" + aCampos[1] + "/oauth2/v2.0/token", "POST", "", ;
+            "grant_type=client_credentials&client_id=" + aCampos[2] + "&client_secret=" + cValor + ;
+            "&scope=https%3A%2F%2Fgraph.microsoft.com%2F.default", 60, {"Content-Type: application/x-www-form-urlencoded"}, @cHead)
         oJson := JsonObject():New()
-        If ValType(cAux) == "C" .And. Empty(oJson:FromJson(cAux)) .And. ValType(oJson["access_token"]) == "C"
+        If ValType(cValor) == "C" .And. Empty(oJson:FromJson(cValor)) .And. ValType(oJson["access_token"]) == "C"
             xRet := oJson["access_token"]
         Else
-            ConOut("CNSOUTLOOK: falha ao obter token do Graph: " + cValToChar(cAux))
+            ConOut("CNSOUTLOOK: falha ao obter token do Graph: " + cValToChar(cValor))
         EndIf
         FreeObj(oJson)
 
