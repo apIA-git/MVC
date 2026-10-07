@@ -1006,6 +1006,11 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
         xRet[AG_LINHAS]     := aLin
         xRet[AG_CARTAO]     := cCartao
         xRet[AG_LOCAL]      := U_CNSOUTL("OPCAO", "Z6_LOCAL", AllTrim(oSZ6:GetValue("Z6_LOCAL")))
+        // Sem lista no dicionario volta o codigo - usa as opcoes da agenda (1/2/3).
+        If Len(xRet[AG_LOCAL]) == 1 .And. xRet[AG_LOCAL] $ "123"
+            aResp          := {"Presencial", "Remoto", "Na Apia"}
+            xRet[AG_LOCAL] := aResp[Val(xRet[AG_LOCAL])]
+        EndIf
         xRet[AG_CONVIDADOS] := aConv
         xRet[AG_DATA]       := oSZ6:GetValue("Z6_DTAGE")
         xRet[AG_HRINI]      := Transform(PadL(StrTran(AllTrim(oSZ6:GetValue("Z6_HMINI")), ":", ""), 4, "0"), "@R 99:99")
