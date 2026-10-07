@@ -986,7 +986,9 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
 
         // Convidados: Cliente Participa? = Sim (Z6_INTERNO = "NAO" - pergunta invertida na
         // agenda) -> todos os e-mails do chamado (ZA1_EMAIL) e do cadastro (A1_EMAIL), sem repetir.
-        If Upper(AllTrim(oSZ6:GetValue("Z6_INTERNO"))) == "NAO"
+        // Trava a mais: Private __lA03ConvCli (portal, criada no SaveData do CNSA003) = .F.
+        // nao convida; sem ela (tela do Protheus, agenda pelo chamado) segue convidando.
+        If Upper(AllTrim(oSZ6:GetValue("Z6_INTERNO"))) == "NAO" .And. If(Type("__lA03ConvCli") == "L", __lA03ConvCli, .T.)
             cValor := If(Empty(cIdCh), "", Posicione("ZA1", 1, xFilial("ZA1") + cIdCh, "ZA1_EMAIL")) + ";" + ;
                       Posicione("SA1", 1, xFilial("SA1") + cCli + cLoja, "A1_EMAIL")
             aResp := StrTokArr2(StrTran(cValor, ",", ";"), ";", .F.)
@@ -1000,12 +1002,16 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
 
         xRet := Array(AG_RESUMO)
         xRet[AG_TECNICO]    := cTec
-        xRet[AG_TITULO]     := If(Empty(cNomCli), "Agendamento", cNomCli) + If(Empty(cAssunto), "", " - " + cAssunto)
         xRet[AG_IDCH]       := cIdCh
         xRet[AG_QUANDO]     := DToC(oSZ6:GetValue("Z6_DTAGE")) + " " + AllTrim(oSZ6:GetValue("Z6_HMINI")) + "-" + AllTrim(oSZ6:GetValue("Z6_HMFIM"))
         xRet[AG_LINHAS]     := aLin
         xRet[AG_CARTAO]     := cCartao
         xRet[AG_LOCAL]      := U_CNSOUTL("OPCAO", "Z6_LOCAL", AllTrim(oSZ6:GetValue("Z6_LOCAL")))
+        // Sem lista no dicionario volta o codigo - usa as opcoes da agenda (1/2/3).
+        If Len(xRet[AG_LOCAL]) == 1 .And. xRet[AG_LOCAL] $ "123"
+            aResp          := {"Presencial", "Remoto", "Na Apia"}
+            xRet[AG_LOCAL] := aResp[Val(xRet[AG_LOCAL])]
+        EndIf
         xRet[AG_CONVIDADOS] := aConv
         xRet[AG_DATA]       := oSZ6:GetValue("Z6_DTAGE")
         xRet[AG_HRINI]      := Transform(PadL(StrTran(AllTrim(oSZ6:GetValue("Z6_HMINI")), ":", ""), 4, "0"), "@R 99:99")
@@ -1015,6 +1021,8 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
         xRet[AG_RESUMO]     := cNomCli + If(Empty(cLoja), "", "-" + cLoja) + ;
                                If(Empty(cProjDesc), "", " | " + cProjDesc) + ;
                                If(Empty(xRet[AG_LOCAL]), "", " | " + xRet[AG_LOCAL])
+        // Titulo do evento no calendario = assunto do e-mail, sem a operacao (Novo/Alterado).
+        xRet[AG_TITULO]     := "Agendamento: " + xRet[AG_RESUMO]
 
     //--- JSON do evento -------------------------------------------------------
     Case cAcao == "JSON"
