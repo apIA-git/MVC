@@ -847,8 +847,11 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
                 U_CNSOUTL("GRAVAID", oSZ6, xRet)
             EndIf
 
-            // E-mail so na inclusao - alteracao so atualiza o calendario.
-            If nOper != OUTL_ALTERAR
+            // Data e tecnico sao chave (nao mudam): alteracao fica no mesmo calendario.
+            If nOper == OUTL_ALTERAR
+                U_CNSOUTL("AVISO", aAg[AG_TECNICO], aAg, "Agendamento alterado", ;
+                    "Um agendamento seu foi alterado. Confira os dados atualizados - o seu calend&aacute;rio j&aacute; foi atualizado.")
+            Else
                 U_CNSOUTL("AVISO", aAg[AG_TECNICO], aAg, "Novo agendamento", ;
                     "Um atendimento foi agendado para voc&ecirc; e j&aacute; est&aacute; no seu calend&aacute;rio.")
             EndIf
