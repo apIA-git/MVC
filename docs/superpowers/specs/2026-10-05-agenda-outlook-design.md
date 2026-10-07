@@ -94,4 +94,13 @@ chamar por macro (`&("U_CNSOUTEX")(...)`), que resolve no escopo global.
 
 - Envio retroativo dos agendamentos já existentes.
 - Sincronização no sentido Outlook → Protheus (mudança feita direto no Outlook não volta pra SZ6).
-- Convite ao cliente.
+
+## Adendo 05/10/2026 — e-mail ao técnico e convite ao cliente
+
+- E-mail de aviso ao técnico em incluir / alterar / excluir / troca de técnico (layout padrão, `U_CNSOUTMA`); avisos antigos do Agendar removidos.
+- Título do evento = nome reduzido do cliente; corpo com todos os dados da agenda.
+- Cliente Participa? = Sim (`Z6_INTERNO` = "NAO"): e-mails do chamado (`ZA1_EMAIL`) + cadastro (`A1_EMAIL`), separados por `;`/`,` e sem repetir, entram como convidados do evento — o Outlook manda o convite (Aceitar/Recusar) em nome do técnico, atualizações no PATCH e cancelamento (`/cancel`) na exclusão. Com convidados, o corpo do evento leva só dados que o cliente pode ver (sem Cobrar/tipo/confirmado).
+
+## Adendo 05/10/2026 — código enxuto
+
+Tudo do Outlook virou **uma função só** no `cnslib.tlpp`: `U_CNSOUTL(cAcao, ...)` com `Do Case` (AGENDA, EXCLUIR, SALVAR, DADOS, JSON, AVISO, GRAVAID, EMAIL, HTTP, TOKEN) — as opções internas chamam a própria função. O CNSA003 ficou só com a classe `CNS003OUTL` (BeforeTTS guarda técnico/id; AfterTTS chama `U_CNSOUTL("AGENDA", ...)`). O CNSA001 chama `U_CNSOUTL("EXCLUIR", email, id)`. Substitui `U_CNSOUTGR`/`U_CNSOUTEX`/`U_CNSOUTMA`.
