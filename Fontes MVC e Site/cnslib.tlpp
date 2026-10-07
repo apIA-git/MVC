@@ -986,7 +986,9 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
 
         // Convidados: Cliente Participa? = Sim (Z6_INTERNO = "NAO" - pergunta invertida na
         // agenda) -> todos os e-mails do chamado (ZA1_EMAIL) e do cadastro (A1_EMAIL), sem repetir.
-        If Upper(AllTrim(oSZ6:GetValue("Z6_INTERNO"))) == "NAO"
+        // Trava a mais: Private __lA03ConvCli (portal, criada no SaveData do CNSA003) = .F.
+        // nao convida; sem ela (tela do Protheus, agenda pelo chamado) segue convidando.
+        If Upper(AllTrim(oSZ6:GetValue("Z6_INTERNO"))) == "NAO" .And. If(Type("__lA03ConvCli") == "L", __lA03ConvCli, .T.)
             cValor := If(Empty(cIdCh), "", Posicione("ZA1", 1, xFilial("ZA1") + cIdCh, "ZA1_EMAIL")) + ";" + ;
                       Posicione("SA1", 1, xFilial("SA1") + cCli + cLoja, "A1_EMAIL")
             aResp := StrTokArr2(StrTran(cValor, ",", ";"), ";", .F.)
