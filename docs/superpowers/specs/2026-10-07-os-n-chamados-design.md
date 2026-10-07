@@ -82,3 +82,11 @@ Tabela **ZA3** (criada pelo usuário; modo igual à SZ1; campos "usado", sem bro
 ## Fora do escopo (revisão)
 
 - Horas separadas por chamado (OS continua com um horário/total).
+
+## Versão final (aprovada em 07/10/2026) — enxuta
+
+- **Protheus:** uma função nova só, `OS_ZA3(cAcao, ...)` com `Do Case` (LER, PARAM, VALIDAR, GRAVAR), no final do CNSA002. Sem endpoint novo: `GET /CNSAOSINTERACOES` passa a devolver `chamados` (idCh, assunto, status) e `assunto` em cada interação. Incluir/alterar/excluir/copiar/listar só chamam `OS_ZA3`.
+- **Separação:** toda interação de OS com 2+ chamados exige escolher UM chamado (campo obrigatório); histórico da OS em ordem de data com "Chamado #n - assunto". Sem "aplicar a todos".
+- **Visualizar chamados** (3 pontinhos + coluna "Chamados"): mesmo componente de interação, agrupado em um bloco por chamado (número, assunto, status, interações desta OS) + caixa de interação.
+- **Horas:** sem mudança.
+- **Mesmo cliente:** campo "Chamados" só habilita com cliente; lupa filtra; `OS_ZA3("VALIDAR")` recusa ao gravar.
