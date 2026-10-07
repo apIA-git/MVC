@@ -16,14 +16,14 @@ Ponto de entrada do browse de Agenda dos Tecnicos (SZ6).
 /*/
 //-------------------------------------------------------------------
 User Function CNSA003()
-// O Browse com o MenuDef sï¿½oo parte do Control ("C" do MVC)
+// O Browse com o MenuDef são parte do Control ("C" do MVC)
 
 Local   oBrowse := Nil
 Private aRotina := MenuDef()
 
 oBrowse := FWMBrowse():New()
 If oBrowse <> Nil
-	oBrowse:SetDescription("Agendas dos Tï¿½cnicos") 
+	oBrowse:SetDescription("Agendas dos Técnicos") 
     oBrowse:SetAlias('SZ6') 
 	oBrowse:Activate()
 EndIf
@@ -40,7 +40,7 @@ Menu padrao do browse (Pesquisar/Visualizar/Incluir/Alterar/Excluir).
 /*/
 //-------------------------------------------------------------------
 Static Function MenuDef()
-// Usando MenuDef padrï¿½o por enquanto
+// Usando MenuDef padrão por enquanto
 Return FWMVCMenu('CNSA003')
 
 //-------------------------------------------------------------------
@@ -59,14 +59,13 @@ Local oModel
 Local ostruSZ6
 
 ostruSZ6:=FWFormStruc(1,'SZ6')
-oModel:=MPFormModel():New('ModelSZ6', , {|oModel| CNS003VldH(oModel)}, , ) //VOLTAR PARA MPFORMMODEL !!!!! R U_
-// [OUTLOOK - linha 1 de 2] Calendario do Outlook do tecnico: cria/atualiza/apaga o evento depois de
-// gravar (CNS003OUTL) - vale pra toda tela que grava SZ6 por este modelo.
-oModel:InstallEvent("CNS003OUTL", /*cOwner*/, CNS003OUTL():New())
+oModel:=MPFormModel():New('ModelSZ6', , {|oModel| CNS003VldH(oModel)}, , ) 
 oModel:AddFields('ModelSZ6_Main',,oStruSZ6)
 oModel:SetPrimaryKey({'Z6_FILIAL','Z6_DTAGE','Z6_TECNICO','Z6_SEQ'})
 oModel:SetDescription('Model Agendas')
 oModel:GetModel('ModelSZ6_Main'):SetDescription('Model Agendas Main')
+// Criação do evento aftertts para criação da agenda
+oModel:InstallEvent("CNS003OUTL", /*cOwner*/, CNS003OUTL():New())
 
 Return oModel
 
@@ -85,14 +84,12 @@ Local oView
 Local oModel
 Local oStruSZ6
 
-oModel:=ModelDef() //Se nï¿½o estivesse nesse fonte oModel:=FWLoadModel('CNSA003')
+oModel:=ModelDef() //Se não estivesse nesse fonte oModel:=FWLoadModel('CNSA003')
 
 oView:=FWFormView():New()
 oView:SetModel(oModel)
 
 oStruSZ6:=FWFormStruc(2,'SZ6')
-// [OUTLOOK - linha 2 de 2] Z6_IDOUTL (id do evento no Outlook) e so do sistema - fora da tela.
-oStruSZ6:RemoveField('Z6_IDOUTL')
 
 oView:AddField('ViewSZ6',oStruSZ6,'ModelSZ6_Main')
 
@@ -103,7 +100,7 @@ oView:SetCloseOnOk({||,.T.})
 
 Return oView
 
-// Funï¿½ï¿½es parametrizadas no Model sï¿½o executadas quando chamadas pelo rest/fwmodel
+// Funções parametrizadas no Model são executadas quando chamadas pelo rest/fwmodel
 
 //-------------------------------------------------------------------
 /*/{Protheus.doc} CNS003VldH
@@ -155,22 +152,22 @@ Local cDtAge := DToS(dDtAge)
                     EndDo
                 EndIf
             Else
-                // Campos nï¿½o preenchidos Nï¿½o faz nada
+                // Campos não preenchidos Não faz nada
                 Return .T.
             EndIf
         Recover Using oErroSeq
             lRet   := .F.
-            ConOut("[oRestAgenda:CNS003VldH] Operaï¿½ï¿½o: " + Str(nOper) + oErroSeq:Description)
+            ConOut("[oRestAgenda:CNS003VldH] Operação: " + Str(nOper) + oErroSeq:Description)
         End Sequence
     Else
-        // Outras operaï¿½ï¿½es nï¿½o faz nada
+        // Outras operações não faz nada
         Return .T.
     EndIf
 
 Return lRet
 
-// Funï¿½ï¿½es Complementares
-// Essas funï¿½ï¿½es no dicionï¿½rio e gatilhos nï¿½o sï¿½o executadas no rest/fwmodel
+// Funções Complementares
+// Essas funções no dicionário e gatilhos não são executadas no rest/fwmodel
 
 //-------------------------------------------------------------------
 /*/{Protheus.doc} CNS003Seq
@@ -184,8 +181,8 @@ SaveData() do REST.
 /*/
 //-------------------------------------------------------------------
 User Function CNS003Seq()
-// Prï¿½xima sequencia de agenda - cadastrada no sx7 e sx3 (inicializador)
-// Situaï¿½ï¿½o especï¿½fica desse Crud
+// Próxima sequencia de agenda - cadastrada no sx7 e sx3 (inicializador)
+// Situação específica desse Crud
 Local oModel  := FWModelActive()
 Local dDtAge  := CToD("")
 Local cTec    := ""
@@ -387,6 +384,13 @@ Local nY
     self:oModel:DeActivate()
 
     Begin Sequence
+        // PENDENTE: trazer tambem a descricao do projeto neste GET da agenda
+        // (Posicione("AF8", 1, xFilial("AF8") + Z6_PROJET, "AF8_DESCRI")) num
+        // campo virtual novo da SZ6 (ex.: Z6_NOMPRJ), injetado abaixo igual ao
+        // Z6_NOMTEC/Z6_NOMCLI. Hoje o front (cns009.ts, resolverDescricoesProjeto)
+        // consulta a lupa de projeto (CNSLIBCOMPONENTES) pra montar a descricao
+        // das celulas da Grade/Minha Agenda - e a lupa so traz projeto ativo
+        // (AF8_FASE = 03), entao agendamento de projeto encerrado fica sem descricao.
         cNomTec := Posicione("AA1", 1, xFilial("AA1") + cTecnico, "AA1_NOMTEC")
         cNomCli := Posicione("SA1", 1, xFilial("SA1") + cCliente + cLoja, "A1_NREDUZ")
         cTemOS  := U_CNS003TemOS(cTecnico, dDtAge, cHoraIni, cHoraFim)
@@ -484,6 +488,14 @@ Local cSeq         := ""
             oModelSZ6:SetValue("Z6_INTERNO", AllTrim(jBody:GetJsonText("semcliente")))
             oModelSZ6:SetValue("Z6_TIPOAG",  AllTrim(jBody:GetJsonText("tipoagenda")))
             oModelSZ6:SetValue("Z6_LOCAL",   AllTrim(jBody:GetJsonText("local")))
+            // Cobravel (SIM/NAO), descricao da agenda, chamados do cliente/Totvs e
+            // agendador (login de quem esta agendando) - so inclusao; na alteracao
+            // os campos seguem pelo PUT generico do FwModel.
+            oModelSZ6:SetValue("Z6_COBRAR",  If(Empty(AllTrim(jBody:GetJsonText("cobravel"))), "SIM", AllTrim(jBody:GetJsonText("cobravel"))))
+            oModelSZ6:SetValue("Z6_SERVICO", AllTrim(jBody:GetJsonText("descricao")))
+            oModelSZ6:SetValue("Z6_CHDCLI",  AllTrim(jBody:GetJsonText("chamadocliente")))
+            oModelSZ6:SetValue("Z6_CHDTOT",  AllTrim(jBody:GetJsonText("chamadototvs")))
+            oModelSZ6:SetValue("Z6_QGRAVOU", AllTrim(jBody:GetJsonText("agendador")))
             If self:oModel:VldData()
                 lRet := self:oModel:CommitData()
             Else
@@ -505,7 +517,31 @@ Local cSeq         := ""
     End Sequence
 Return lRet
 
-// Funï¿½oes Genï¿½ricas
+//-------------------------------------------------------------------
+/*/{Protheus.doc} HrMin
+Evento após TTS para Chamada da rotina de integração com o Outlook
+@param  "AGENDA" especifica que tipo de integração OUTL
+@param  oMOdel   Passa esse Model para a rotina de integração
+@author Henrique
+@since 05/10/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+
+Class CNS003OUTL From FWModelEvent
+    Method New() Constructor
+    Method AfterTTS()
+EndClass
+
+Method New() Class CNS003OUTL
+Return Self
+
+// Depois de gravar: calendario do Outlook + e-mail ao tecnico (cnslib.tlpp).
+Method AfterTTS(oModel, cModelId) Class CNS003OUTL
+    U_CNSOUTL("AGENDA", oModel)
+Return
+
+// Funções Genéricas
 //-------------------------------------------------------------------
 /*/{Protheus.doc} HrMin
 Converte uma hora no formato "HH:MM" (ou "HHMM") pra minutos totais
@@ -530,29 +566,6 @@ User Function HrMin(cHora)
 
 Return (nHr * 60) + nMin
 
-////////////////////////////////////////////////////////////////////////////////
-// AGENDA NO CALENDARIO DO OUTLOOK + E-MAIL AO TECNICO
-// Henrique - 05/10/2026
-//
-// Este bloco + 2 linhas marcadas "[OUTLOOK - linha X de 2]":
-//   ModelDef: oModel:InstallEvent("CNS003OUTL", /*cOwner*/, CNS003OUTL():New())
-//   ViewDef : oStruSZ6:RemoveField('Z6_IDOUTL')
-// Toda a regra fica no cnslib.tlpp (U_CNSOUTL) - aqui so o gancho do modelo.
-////////////////////////////////////////////////////////////////////////////////
 
-Class CNS003OUTL From FWModelEvent
-    Method New() Constructor
-    Method AfterTTS()
-EndClass
 
-Method New() Class CNS003OUTL
-Return Self
 
-// Depois de gravar: calendario do Outlook + e-mail ao tecnico (cnslib.tlpp).
-Method AfterTTS(oModel, cModelId) Class CNS003OUTL
-    U_CNSOUTL("AGENDA", oModel)
-Return
-
-////////////////////////////////////////////////////////////////////////////////
-// FIM - AGENDA NO CALENDARIO DO OUTLOOK + E-MAIL AO TECNICO
-////////////////////////////////////////////////////////////////////////////////
