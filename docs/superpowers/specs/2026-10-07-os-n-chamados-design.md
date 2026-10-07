@@ -14,12 +14,14 @@ Uma OS pode atender **vários chamados do mesmo cliente** (ex.: 15 chamados da S
 | Campo antigo | `Z1_IDCH` continua: **chamado principal** = primeiro da lista (compatibilidade: Agenda, tela clássica, relatórios). |
 | Restrição | Só chamados do **mesmo cliente e loja** da OS (lupa filtra + Protheus valida ao gravar). |
 | Onde liga | **Só no portal**, no formulário da OS (campo "Chamados" múltipla escolha). Tela clássica segue só com o principal. |
-| Interação | Na OS com chamados, a "Nova interação" escolhe os chamados (todos marcados por padrão); grava uma interação em cada chamado marcado, com `ZA2_OS`. Histórico mostra "Chamado #n - assunto" em destaque. |
+| Interação | **Separada por chamado**: cada chamado da OS tem a sua caixa "O que foi feito neste chamado" (grava só naquele chamado, com `ZA2_OS`). Atalho "Aplicar a todos os chamados" (desmarcado) grava o mesmo texto em todos, só quando for igual. |
+| Remover chamado | **Bloqueado** se o chamado já tem interação desta OS (ZA2 com `ZA2_IDCH` = chamado e `ZA2_OS` = OS). |
+| Horas | Continuam **só no total da OS** (separar horas por chamado = fora do escopo). |
 | Visualização | Lista de OS: coluna "Chamados" (quantidade) e ação "Chamados" nos 3 pontinhos → janela com um bloco por chamado (número, assunto, status, interações daquela OS naquele chamado). |
 | OS sem chamado | = zero chamados ligados (regra da descrição única continua). |
 | Copiar OS | Cópia nasce **sem** chamados. |
 
-Aprovado pelo usuário em 07/10/2026.
+Aprovado pelo usuário em 07/10/2026. Revisado em 07/10/2026: interação separada por chamado, bloqueio de remoção, horas só no total.
 
 ## Dados
 
@@ -42,6 +44,7 @@ Tabela **ZA3** (criada pelo usuário; modo igual à SZ1; campos "usado", sem bro
 - **Incluir/Alterar (REST):** novo parâmetro `chamados` (códigos separados por vírgula). O antigo `chamado` continua aceito (vira lista de 1).
   - Valida cada chamado: existe na ZA1 e `ZA1_CLIENT`/`ZA1_LOJA` = cliente/loja da OS. Senão 400: "Chamado #n não é do cliente da OS."
   - Grava `Z1_IDCH` = primeiro da lista (ou vazio).
+  - Bloqueia remover chamado que já tem interação desta OS: 400 "Chamado #n já tem interação desta OS - não pode ser removido."
   - Sincroniza a ZA3 depois do commit: apaga os que saíram, inclui os novos.
 - **Excluir OS:** apaga a ZA3 da OS.
 - **Copiar OS:** não copia ZA3 e grava `Z1_IDCH` vazio.
@@ -57,8 +60,8 @@ Tabela **ZA3** (criada pelo usuário; modo igual à SZ1; campos "usado", sem bro
 ## Portal (apia-po-cnshub)
 
 - **Formulário da OS:** campo "Chamado" vira **"Chamados"** (`po-lookup` com `p-multiple`), lupa dos chamados do cliente/loja; desabilitado sem cliente; trocar o cliente limpa. Envia `chamados` no incluir/alterar.
-- **Nova interação (OS com chamados):** multiselect "Chamados" com os chamados da OS, todos marcados; grava uma interação por chamado marcado (endpoint de interação do chamado já existente, com `os`). Sem nenhum marcado: avisa e não grava.
-- **Histórico da OS:** cada item com "Chamado #n - assunto" em destaque.
+- **Interações (OS com chamados):** um bloco por chamado ("Chamado #n - assunto"), cada um com o componente de interação já existente (`app-interacao-historico` com `idCh` daquele chamado e `os` da OS) - caixa própria "O que foi feito neste chamado" + histórico do chamado. Acima dos blocos, atalho "Aplicar a todos os chamados" (texto único gravado em todos, desmarcado por padrão).
+- **OS sem chamado:** inalterado (descrição única).
 - **Lista de OS:** coluna "Chamados" (quantidade); ação "Chamados" nos 3 pontinhos → modal com um bloco por chamado (número, assunto, status, interações dessa OS nesse chamado).
 - **Detalhe da OS:** lista os chamados ligados.
 
@@ -71,7 +74,11 @@ Tabela **ZA3** (criada pelo usuário; modo igual à SZ1; campos "usado", sem bro
 
 1. Criar OS com 3 chamados do mesmo cliente → ZA3 com 3 registros, `Z1_IDCH` = primeiro.
 2. Tentar chamado de outro cliente (via REST) → 400.
-3. Interação marcando 2 dos 3 → 2 registros na ZA2 com `ZA2_OS`; histórico mostra os chamados.
+3. Interação no bloco do chamado #2 → grava só nele; "Aplicar a todos" → grava nos 3. Remover um chamado que já tem interação desta OS → recusado.
 4. "Chamados" nos 3 pontinhos → 3 blocos, interações certas em cada um.
 5. Alterar OS antiga (só `Z1_IDCH`) → aparece 1 chamado; ao salvar com mais, ZA3 preenchida.
 6. Excluir OS → ZA3 da OS apagada. Copiar OS → cópia sem chamados.
+
+## Fora do escopo (revisão)
+
+- Horas separadas por chamado (OS continua com um horário/total).
