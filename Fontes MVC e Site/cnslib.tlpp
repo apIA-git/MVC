@@ -773,11 +773,13 @@ Agenda no Outlook do tecnico - uma funcao, varias opcoes:
   AGENDA  (oModel)                      sincroniza o agendamento gravado
   EXCLUIR (cEmail, cIdEvento)           apaga o evento -> .T./.F.
   SALVAR  (cEmail, cIdEvento, aAg)      cria/atualiza o evento -> id
-  DADOS   (oSZ6)                        dados da agenda -> aAg (AG_*)
+  DADOS   (oSZ6, lAlterar)              dados da agenda -> aAg (AG_*); lAlterar destaca o que mudou
   JSON    (aAg)                         JSON do evento (UTF-8)
   AVISO   (cTec, aAg, cAlerta, cIntro)  e-mail ao tecnico
   GRAVAID (oSZ6, cIdEvento)             grava Z6_IDOUTL
   EMAIL   (cTec)                        AA1_EMAIL do tecnico
+  TEXTO   (cTexto)                      texto do banco -> HTML (corrige UTF-8 e acentos)
+  OPCAO   (cCampo, cValor)              descricao da opcao no X3_CBOX (ex: "2" -> "Remoto")
   HTTP    (cMetodo, cUrl, cCorpo)       Graph -> {nStatus, cResposta}
   TOKEN   ()                            token do Graph
 @author Henrique
@@ -804,6 +806,7 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
     Local cCli     := ""
     Local cLoja    := ""
     Local cProj    := ""
+    Local cRevisa  := ""
     Local cTaf     := ""
     Local cIdCh    := ""
     Local cNomCli  := ""
@@ -815,9 +818,13 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
     Local cAlias   := ""
     Local nOper    := 0
     Local nI       := 0
-    // Linha {rotulo, valor} pro e-mail (aLin); lCartao = entra tambem no cartao do evento (aCli).
-    Local bLinha   := {|lCartao, cRot, cVal| If(Empty(cVal), Nil, ;
-                         (AAdd(aLin, {cRot, cVal}), If(lCartao, AAdd(aCli, {cRot, cVal}), Nil)))}
+    Local lMarca   := .F.
+    // Linha {rotulo, valor} pro e-mail (aLin) e, com lCartao, pro cartao do evento (aCli).
+    // Na alteracao (lMarca) o valor dos campos aCpos que mudaram vem destacado no e-mail.
+    Local bLinha   := {|lCartao, cRot, cVal, aCpos| If(Empty(cVal), Nil, ;
+                         (AAdd(aLin, {cRot, If(lMarca .And. AScan(aCpos, {|c| oSZ6:IsFieldUpdated(c)}) > 0, ;
+                             '<span style="background-color:#fff3b0;color:#c62828;font-weight:bold">' + cVal + ' (alterado)</span>', cVal)}), ;
+                          If(lCartao, AAdd(aCli, {cRot, cVal}), Nil)))}
 
     cAcao := Upper(AllTrim(cAcao))
 
@@ -830,7 +837,7 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
         Begin Sequence
             nOper  := oModel:GetOperation()
             oSZ6   := oModel:GetModel("ModelSZ6_Main")
-            aAg    := U_CNSOUTL("DADOS", oSZ6)
+            aAg    := U_CNSOUTL("DADOS", oSZ6, nOper == OUTL_ALTERAR)
             cEmail := U_CNSOUTL("EMAIL", aAg[AG_TECNICO])
             cId    := AllTrim(oSZ6:GetValue("Z6_IDOUTL"))   // vazio = ainda nao tem evento
 
@@ -847,8 +854,11 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
                 U_CNSOUTL("GRAVAID", oSZ6, xRet)
             EndIf
 
-            // E-mail so na inclusao - alteracao so atualiza o calendario.
-            If nOper != OUTL_ALTERAR
+            // Data e tecnico sao chave (nao mudam): alteracao fica no mesmo calendario.
+            If nOper == OUTL_ALTERAR
+                U_CNSOUTL("AVISO", aAg[AG_TECNICO], aAg, "Agendamento alterado", ;
+                    "Um agendamento seu foi alterado - o que mudou est&aacute; destacado abaixo. O seu calend&aacute;rio j&aacute; foi atualizado.")
+            Else
                 U_CNSOUTL("AVISO", aAg[AG_TECNICO], aAg, "Novo agendamento", ;
                     "Um atendimento foi agendado para voc&ecirc; e j&aacute; est&aacute; no seu calend&aacute;rio.")
             EndIf
@@ -912,11 +922,13 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
 
     //--- Dados da agenda (posicoes AG_*) --------------------------------------
     Case cAcao == "DADOS"
-        oSZ6  := x1
-        cTec  := AllTrim(oSZ6:GetValue("Z6_TECNICO"))
+        oSZ6   := x1
+        lMarca := ValType(x2) == "L" .And. x2 .And. MethIsMemberOf(oSZ6, "ISFIELDUPDATED")
+        cTec   := AllTrim(oSZ6:GetValue("Z6_TECNICO"))
         cCli  := AllTrim(oSZ6:GetValue("Z6_CLIENTE"))
         cLoja := AllTrim(oSZ6:GetValue("Z6_LOJA"))
         cProj := AllTrim(oSZ6:GetValue("Z6_PROJET"))
+        cRevisa := AllTrim(oSZ6:GetValue("Z6_REVISA"))
         cTaf  := AllTrim(oSZ6:GetValue("Z6_TAREFA"))
 
         // Chamado: Z6_IDCH (portal) ou Z6_CHAMADO (numerico, Agendar do chamado).
@@ -925,30 +937,37 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
             cIdCh := StrZero(oSZ6:GetValue("Z6_CHAMADO"), 6)
         EndIf
 
-        cNomCli  := AllTrim(Posicione("SA1", 1, xFilial("SA1") + cCli + cLoja, "A1_NREDUZ"))
+        // Textos do banco podem vir em UTF-8 (assunto do chamado) - DECODESAFE volta pra CP1252.
+        cNomCli  := CNS001_LUPA_DECODESAFE(AllTrim(Posicione("SA1", 1, xFilial("SA1") + cCli + cLoja, "A1_NREDUZ")))
         // Assunto: o do chamado; sem chamado, o servico da agenda.
         cAssunto := If(Empty(cIdCh), "", AllTrim(Posicione("ZA1", 1, xFilial("ZA1") + cIdCh, "ZA1_ASSUNT")))
         If Empty(cAssunto)
             cAssunto := AllTrim(oSZ6:GetValue("Z6_SERVICO"))
         EndIf
+        cAssunto := CNS001_LUPA_DECODESAFE(cAssunto)
 
-        // Linhas do e-mail; .T. = tambem no cartao do evento (data/hora o Outlook ja mostra).
-        Eval(bLinha, .F., "Data",            DToC(oSZ6:GetValue("Z6_DTAGE")))
-        Eval(bLinha, .F., "Hor&aacute;rio",  AllTrim(oSZ6:GetValue("Z6_HMINI")) + " &agrave;s " + AllTrim(oSZ6:GetValue("Z6_HMFIM")))
-        Eval(bLinha, .F., "T&eacute;cnico",  AllTrim(Posicione("AA1", 1, xFilial("AA1") + cTec, "AA1_NOMTEC")))
-        Eval(bLinha, .T., "Chamado",         If(Empty(cIdCh), "", "#" + cIdCh))
-        Eval(bLinha, .T., "Assunto",         cAssunto)
-        Eval(bLinha, .T., "Cliente",         cNomCli + If(Empty(cLoja), "", " (Loja " + cLoja + ")"))
-        Eval(bLinha, .T., "Projeto",         If(Empty(cProj), "", cProj + " - " + AllTrim(Posicione("AF8", 1, xFilial("AF8") + cProj, "AF8_DESCRI"))))
-        Eval(bLinha, .T., "Tarefa",          If(Empty(cTaf), "", cTaf + " - " + AllTrim(Posicione("AF9", 1, xFilial("AF9") + cProj + cTaf, "AF9_DESCRI"))))
+        // Linhas do e-mail (valores ja em HTML, opcao TEXTO); .T. = tambem no cartao do evento.
+        // Data/hora o Outlook ja mostra no evento.
+        Eval(bLinha, .F., "Data",            DToC(oSZ6:GetValue("Z6_DTAGE")), {"Z6_DTAGE"})
+        Eval(bLinha, .F., "Hor&aacute;rio",  AllTrim(oSZ6:GetValue("Z6_HMINI")) + " &agrave;s " + AllTrim(oSZ6:GetValue("Z6_HMFIM")), {"Z6_HMINI", "Z6_HMFIM"})
+        Eval(bLinha, .F., "T&eacute;cnico",  U_CNSOUTL("TEXTO", Posicione("AA1", 1, xFilial("AA1") + cTec, "AA1_NOMTEC")), {"Z6_TECNICO"})
+        Eval(bLinha, .T., "Chamado",         If(Empty(cIdCh), "", "#" + cIdCh), {"Z6_IDCH", "Z6_CHAMADO"})
+        Eval(bLinha, .T., "Assunto",         U_CNSOUTL("TEXTO", cAssunto), {"Z6_IDCH", "Z6_CHAMADO", "Z6_SERVICO"})
+        Eval(bLinha, .T., "Cliente",         U_CNSOUTL("TEXTO", cNomCli) + If(Empty(cLoja), "", " (Loja " + cLoja + ")"), {"Z6_CLIENTE", "Z6_LOJA"})
+        // Projeto e tarefa: so o codigo quando nao acha a descricao. AF9 = projeto + revisao + tarefa.
+        cValor := If(Empty(cProj), "", AllTrim(Posicione("AF8", 1, xFilial("AF8") + cProj, "AF8_DESCRI")))
+        Eval(bLinha, .T., "Projeto",         cProj + If(Empty(cValor), "", " - " + U_CNSOUTL("TEXTO", cValor)), {"Z6_PROJET", "Z6_REVISA"})
+        cValor := If(Empty(cTaf), "", AllTrim(Posicione("AF9", 1, xFilial("AF9") + PadR(cProj, TamSX3("AF9_PROJET")[1]) + ;
+                      PadR(cRevisa, TamSX3("AF9_REVISA")[1]) + cTaf, "AF9_DESCRI")))
+        Eval(bLinha, .T., "Tarefa",          cTaf + If(Empty(cValor), "", " - " + U_CNSOUTL("TEXTO", cValor)), {"Z6_TAREFA"})
 
-        // Campos de lista da agenda (so no e-mail): titulo e opcao do proprio dicionario.
+        // Campos de lista da agenda (so no e-mail): titulo e descricao da opcao no dicionario.
         aCampos := {"Z6_TIPOAG", "Z6_LOCAL", "Z6_CONFIRM", "Z6_INTERNO", "Z6_COBRAR"}
         For nI := 1 To Len(aCampos)
             cValor := AllTrim(cValToChar(oSZ6:GetValue(aCampos[nI])))
-            Eval(bLinha, .F., AllTrim(RetTitle(aCampos[nI])), If(Empty(X3Combo(aCampos[nI], cValor)), cValor, AllTrim(X3Combo(aCampos[nI], cValor))))
+            Eval(bLinha, .F., U_CNSOUTL("TEXTO", RetTitle(aCampos[nI])), U_CNSOUTL("TEXTO", U_CNSOUTL("OPCAO", aCampos[nI], cValor)), {aCampos[nI]})
         Next nI
-        Eval(bLinha, .T., "Agendado por", AllTrim(oSZ6:GetValue("Z6_QGRAVOU")))
+        Eval(bLinha, .T., "Agendado por", U_CNSOUTL("TEXTO", oSZ6:GetValue("Z6_QGRAVOU")), {"Z6_QGRAVOU"})
 
         For nI := 1 To Len(aCli)
             cCartao += "<p><b>" + aCli[nI][1] + ":</b> " + aCli[nI][2] + "</p>"
@@ -975,7 +994,7 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
         xRet[AG_QUANDO]     := DToC(oSZ6:GetValue("Z6_DTAGE")) + " " + AllTrim(oSZ6:GetValue("Z6_HMINI")) + "-" + AllTrim(oSZ6:GetValue("Z6_HMFIM"))
         xRet[AG_LINHAS]     := aLin
         xRet[AG_CARTAO]     := cCartao
-        xRet[AG_LOCAL]      := AllTrim(X3Combo("Z6_LOCAL", AllTrim(oSZ6:GetValue("Z6_LOCAL"))))
+        xRet[AG_LOCAL]      := U_CNSOUTL("OPCAO", "Z6_LOCAL", AllTrim(oSZ6:GetValue("Z6_LOCAL")))
         xRet[AG_CONVIDADOS] := aConv
         xRet[AG_DATA]       := oSZ6:GetValue("Z6_DTAGE")
         xRet[AG_HRINI]      := Transform(PadL(StrTran(AllTrim(oSZ6:GetValue("Z6_HMINI")), ":", ""), 4, "0"), "@R 99:99")
@@ -1026,7 +1045,7 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
         aAg    := x2
         cEmail := U_CNSOUTL("EMAIL", cTec)
         If !Empty(cEmail)
-            apia.cnsa001.U_CH_MAILPUB(cEmail, x3 + " - " + aAg[AG_TITULO] + " - " + aAg[AG_QUANDO], ;
+            apia.cnsa001.U_CH_MAILPUB(cEmail, FwNoAccent(x3 + " - " + aAg[AG_TITULO] + " - " + aAg[AG_QUANDO]), ;
                 apia.cnsa001.U_CH_HTMLPUB(aAg[AG_IDCH], x3, AllTrim(Posicione("AA1", 1, xFilial("AA1") + cTec, "AA1_NOMTEC")), ;
                     x4, aAg[AG_LINHAS], "", "", ""))
         EndIf
@@ -1056,6 +1075,26 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
         EndIf
         (cAlias)->(DbCloseArea())
         RestArea(aResp)
+
+    //--- Texto do banco -> HTML: volta UTF-8 pra CP1252 e troca acento por entidade --
+    Case cAcao == "TEXTO"
+        cValor := CNS001_LUPA_DECODESAFE(AllTrim(cValToChar(x1)))
+        cValor := StrTran(StrTran(StrTran(cValor, "&", "&amp;"), "<", "&lt;"), ">", "&gt;")
+        xRet   := ""
+        For nI := 1 To Len(cValor)
+            xRet += If(Asc(SubStr(cValor, nI, 1)) > 127, "&#" + cValToChar(Asc(SubStr(cValor, nI, 1))) + ";", SubStr(cValor, nI, 1))
+        Next nI
+
+    //--- Descricao da opcao no X3_CBOX ("1=Presencial;2=Remoto" + "2" -> "Remoto") --
+    Case cAcao == "OPCAO"
+        xRet  := AllTrim(cValToChar(x2))
+        aResp := StrTokArr2(AllTrim(GetSX3Cache(x1, "X3_CBOX")), ";", .F.)
+        For nI := 1 To Len(aResp)
+            If Upper(AllTrim(Left(aResp[nI], At("=", aResp[nI]) - 1))) == Upper(xRet)
+                xRet := AllTrim(SubStr(aResp[nI], At("=", aResp[nI]) + 1))
+                Exit
+            EndIf
+        Next nI
 
     //--- E-mail do tecnico ----------------------------------------------------
     Case cAcao == "EMAIL"

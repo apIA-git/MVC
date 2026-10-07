@@ -1,8 +1,0 @@
-{
-  "/rest": {
-    "target": "http://10.0.0.3:3624",
-    "secure": false,
-    "changeOrigin": true,
-    "logLevel": "debug"
-  }
-}
