@@ -1002,7 +1002,6 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
 
         xRet := Array(AG_RESUMO)
         xRet[AG_TECNICO]    := cTec
-        xRet[AG_TITULO]     := If(Empty(cNomCli), "Agendamento", cNomCli) + If(Empty(cAssunto), "", " - " + cAssunto)
         xRet[AG_IDCH]       := cIdCh
         xRet[AG_QUANDO]     := DToC(oSZ6:GetValue("Z6_DTAGE")) + " " + AllTrim(oSZ6:GetValue("Z6_HMINI")) + "-" + AllTrim(oSZ6:GetValue("Z6_HMFIM"))
         xRet[AG_LINHAS]     := aLin
@@ -1022,6 +1021,8 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
         xRet[AG_RESUMO]     := cNomCli + If(Empty(cLoja), "", "-" + cLoja) + ;
                                If(Empty(cProjDesc), "", " | " + cProjDesc) + ;
                                If(Empty(xRet[AG_LOCAL]), "", " | " + xRet[AG_LOCAL])
+        // Titulo do evento no calendario = assunto do e-mail, sem a operacao (Novo/Alterado).
+        xRet[AG_TITULO]     := "Agendamento: " + xRet[AG_RESUMO]
 
     //--- JSON do evento -------------------------------------------------------
     Case cAcao == "JSON"
