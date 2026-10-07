@@ -4648,24 +4648,6 @@ Local aResultado  := {}
 Return lRet
 
 
-// DECISOES DE NOME/CONSOLIDACAO
-// 1) Este arquivo e o UNICO que precisa ser compilado. CNSA001.PRW e
-//    CNS001Rest.tlpp ficam no disco so como referencia/rollback - NAO
-//    compilar nenhum dos dois junto com este: os globais CH_APIASSUMIR/
-//    CH_APIEXCLUIR/CH_APIAGENDAR/CH_APIVERAGENDA/CH_APILISTAINTERACOES/
-//    CH_APINOVAINTERACAO usam o MESMO nome e PATH do CNS001Rest.tlpp de
-//    proposito (contrato REST identico) - colisao de global function
-//    garantida se os dois forem compilados juntos.
-// 2) Static Functions reusam nomes ja existentes no CNS001Rest.tlpp sem
-//    risco (escopo de arquivo, nao aparece no RPO global).
-// 3) Assumir/Excluir mantidos como endpoints/telas proprios (regras de
-//    negocio especificas) - so a persistencia interna mudou pra
-//    FWLoadModel/CommitData (Assumir) ou fica em CH_NUCLEOEXCLUIR (Excluir).
-// 4) Exclusao nao e MODEL_OPERATION_DELETE de verdade - deliberado, ver
-//    comentario em CH_VALIDACANCELA. Exclusao real fica em CH_NUCLEOEXCLUIR.
-// 5) Numeracao de ZA1_IDCH mantida manual (GetSxeNum/ConfirmSX8) - NAO
-//    CONFIRMADO contra o dicionario se e de fato nao-automatica.
-// 6) LockByName/UnLockByName (CH_GRAVARAGENDA): assinatura pode variar por build.
 
 ////////////////////////////////////////////////////////////////////////////////
 // AGENDA NO CALENDARIO DO OUTLOOK (cnslib.tlpp - U_CNSOUTL)
