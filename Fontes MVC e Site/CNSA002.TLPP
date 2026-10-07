@@ -2606,6 +2606,7 @@ User Function OS_APILISTAINTERACOES() As Logical
             oLinha['idCh']    := aCh[nI]
             oLinha['assunto'] := OS_DECODESAFE(AllTrim(Posicione("ZA1", 1, xFilial("ZA1") + aCh[nI], "ZA1_ASSUNT")))
             oLinha['status']  := AllTrim(Posicione("ZA1", 1, xFilial("ZA1") + aCh[nI], "ZA1_STATUS"))
+            oLinha['data']    := OS_DATAISO(Posicione("ZA1", 1, xFilial("ZA1") + aCh[nI], "ZA1_DATA"))   // abertura - ordem cronologica
             aCh[nI] := oLinha
         Next nI
         oJson['chamados'] := aCh
