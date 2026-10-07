@@ -777,6 +777,7 @@ Agenda no Outlook do tecnico - uma funcao, varias opcoes:
   JSON    (aAg)                         JSON do evento (UTF-8)
   AVISO   (cTec, aAg, cAlerta, cIntro)  e-mail ao tecnico
   GRAVAID (oSZ6, cIdEvento)             grava Z6_IDOUTL
+  LERID   (oSZ6)                        le Z6_IDOUTL do registro gravado
   EMAIL   (cTec)                        AA1_EMAIL do tecnico
   TEXTO   (cTexto)                      texto do banco -> HTML (corrige UTF-8 e acentos)
   OPCAO   (cCampo, cValor)              descricao da opcao no X3_CBOX (ex: "2" -> "Remoto")
@@ -839,7 +840,7 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
             oSZ6   := oModel:GetModel("ModelSZ6_Main")
             aAg    := U_CNSOUTL("DADOS", oSZ6, nOper == OUTL_ALTERAR)
             cEmail := U_CNSOUTL("EMAIL", aAg[AG_TECNICO])
-            cId    := AllTrim(oSZ6:GetValue("Z6_IDOUTL"))   // vazio = ainda nao tem evento
+            cId    := U_CNSOUTL("LERID", oSZ6)               // vazio = ainda nao tem evento
 
             If nOper == OUTL_EXCLUIR
                 U_CNSOUTL("EXCLUIR", cEmail, cId)
@@ -1095,6 +1096,34 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
                 Exit
             EndIf
         Next nI
+
+    //--- Le o Z6_IDOUTL direto na SZ6 (campo "nao usado": fora do modelo) -----------
+    Case cAcao == "LERID"
+        oSZ6 := x1
+        xRet := ""
+        // Depois do commit a SZ6 fica no registro gravado (tambem no excluido).
+        If DToS(SZ6->Z6_DTAGE) == DToS(oSZ6:GetValue("Z6_DTAGE")) .And. ;
+                AllTrim(SZ6->Z6_TECNICO) == AllTrim(oSZ6:GetValue("Z6_TECNICO")) .And. ;
+                AllTrim(cValToChar(SZ6->Z6_SEQ)) == AllTrim(cValToChar(oSZ6:GetValue("Z6_SEQ")))
+            xRet := AllTrim(SZ6->Z6_IDOUTL)
+        Else
+            // Nao posicionado: busca pela chave (o mais recente, inclusive excluido).
+            cAlias := GetNextAlias()
+            cValor := DToS(oSZ6:GetValue("Z6_DTAGE"))
+            cTec   := oSZ6:GetValue("Z6_TECNICO")
+            cId    := oSZ6:GetValue("Z6_SEQ")
+            BeginSql Alias cAlias
+                SELECT Z6_IDOUTL
+                FROM %Table:SZ6% SZ6
+                WHERE Z6_FILIAL  = %xFilial:SZ6%
+                  AND Z6_DTAGE   = %Exp:cValor%
+                  AND Z6_TECNICO = %Exp:cTec%
+                  AND Z6_SEQ     = %Exp:cId%
+                ORDER BY SZ6.R_E_C_N_O_ DESC
+            EndSql
+            xRet := If((cAlias)->(Eof()), "", AllTrim((cAlias)->Z6_IDOUTL))
+            (cAlias)->(DbCloseArea())
+        EndIf
 
     //--- E-mail do tecnico ----------------------------------------------------
     Case cAcao == "EMAIL"
