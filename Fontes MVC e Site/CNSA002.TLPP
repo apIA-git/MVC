@@ -613,6 +613,8 @@ Static Function OS_NUCLEOCOPIAR(cOsOrigem)
         oModelSZ1:SetValue("Z1_APVDOR",  "")
         oModelSZ1:SetValue("Z1_APVMAIL", "")
         oModelSZ1:SetValue("Z1_APVIP",   "")
+        // Copia e outro atendimento: nasce sem chamados (ZA3 nao e copiada).
+        oModelSZ1:LoadValue("Z1_IDCH",   "")
         oModelSZ1:SetValue("Z1_APVDATA", CtoD(""))
         oModelSZ1:SetValue("Z1_APVHORA", "")
 
@@ -992,6 +994,14 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
     Local cDtDigit   := AllTrim(OS_LERJSONTXT(jQuery, "dtDigitacao"))
     Local aHrIni     := OS_LERHORA(jQuery, "horaInicial", "horaInicialDec")
     Local aHrFim     := OS_LERHORA(jQuery, "horaFinal", "horaFinalDec")
+    // Chamados da OS (ZA3) - so do mesmo cliente/loja da OS.
+    Local aParCh     := OS_ZA3("PARAM", jQuery)
+    Local cMsgCh     := OS_ZA3("VALIDAR", "", aParCh[2], AllTrim(OS_LERJSONTXT(jQuery, "codCliente")), ;
+                            If(Empty(AllTrim(OS_LERJSONTXT(jQuery, "lojaCliente"))), "01", AllTrim(OS_LERJSONTXT(jQuery, "lojaCliente"))))
+
+    If !Empty(cMsgCh)
+        Return {.F., cMsgCh, ""}
+    EndIf
 
     // Campo obrigatorio nao valida mais aqui - front-end valida antes de
     // chamar, e OS_PREVALIDA (Model) cobre via SetErrorMessage.
@@ -1070,11 +1080,9 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
         If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"chamadoHpsd")))
             oModelSZ1:SetValue("Z1_CHPSD", AllTrim(OS_LERJSONTXT(jQuery,"chamadoHpsd")))
         EndIf
-        // Z1_IDCH (caractere) - liga a OS ao chamado novo (ZA1_IDCH), campo
-        // proprio pra isso, separado do Z1_CHHDK (numerico, legado do HPSD -
-        // ver Z6_IDCH/Z6_CHAMADO na Agenda, mesmo padrao).
-        If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"chamado")))
-            oModelSZ1:SetValue("Z1_IDCH", AllTrim(OS_LERJSONTXT(jQuery,"chamado")))
+        // Z1_IDCH = chamado principal (primeiro da lista); a lista toda vai pra ZA3.
+        If Len(aParCh[2]) > 0
+            oModelSZ1:LoadValue("Z1_IDCH", aParCh[2][1])
         EndIf
         If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"osDesenv")))
             oModelSZ1:SetValue("Z1_OSDESE", AllTrim(OS_LERJSONTXT(jQuery,"osDesenv")))
@@ -1116,6 +1124,7 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
         oModel:DeActivate(lOk)
 
         If lOk
+            OS_ZA3("GRAVAR", cOs, aParCh[2])
             ConfirmSX8()
         Else
             ConfirmSX8(.F.)
@@ -1183,6 +1192,8 @@ Static Function OS_NUCLEOALTERAR(jQuery)
     Local cVal       := ""
     Local aHrIni     := OS_LERHORA(jQuery, "horaInicial", "horaInicialDec")
     Local aHrFim     := OS_LERHORA(jQuery, "horaFinal", "horaFinalDec")
+    Local aParCh     := OS_ZA3("PARAM", jQuery)
+    Local cMsgCh     := ""
 
     If Empty(cOs)
         Return {.F., "Informe o numero da OS (?os=000001).", ""}
@@ -1192,6 +1203,18 @@ Static Function OS_NUCLEOALTERAR(jQuery)
     SZ1->(DbSetOrder(1))
     If !SZ1->(DbSeek(cFilAnt + cOs))
         Return {.F., "OS nao encontrada.", cOs}
+    EndIf
+
+    // Chamados (so se o portal mandou a lista): mesmo cliente/loja e sem tirar
+    // chamado que ja tem interacao desta OS.
+    If aParCh[1]
+        cMsgCh := OS_ZA3("VALIDAR", cOs, aParCh[2], ;
+            If(Empty(AllTrim(OS_LERJSONTXT(jQuery, "codCliente"))), SZ1->Z1_CLI, AllTrim(OS_LERJSONTXT(jQuery, "codCliente"))), ;
+            If(Empty(AllTrim(OS_LERJSONTXT(jQuery, "lojaCliente"))), SZ1->Z1_LOJA, AllTrim(OS_LERJSONTXT(jQuery, "lojaCliente"))))
+        If !Empty(cMsgCh)
+            Return {.F., cMsgCh, cOs}
+        EndIf
+        SZ1->(DbSeek(cFilAnt + cOs))
     EndIf
 
     Begin Sequence
@@ -1264,11 +1287,10 @@ Static Function OS_NUCLEOALTERAR(jQuery)
         If !Empty(cVal) ; oModelSZ1:SetValue("Z1_TAREFA", cVal) ; EndIf
         cVal := AllTrim(OS_LERJSONTXT(jQuery,"chamadoHpsd"))
         If !Empty(cVal) ; oModelSZ1:SetValue("Z1_CHPSD", cVal) ; EndIf
-        // Z1_IDCH (caractere) - liga a OS ao chamado novo (ZA1_IDCH), campo
-        // proprio pra isso, separado do Z1_CHHDK (numerico, legado do HPSD -
-        // ver Z6_IDCH/Z6_CHAMADO na Agenda, mesmo padrao).
-        cVal := AllTrim(OS_LERJSONTXT(jQuery,"chamado"))
-        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_IDCH", cVal) ; EndIf
+        // Z1_IDCH = chamado principal (primeiro da lista); a lista toda vai pra ZA3.
+        If aParCh[1]
+            oModelSZ1:LoadValue("Z1_IDCH", If(Len(aParCh[2]) > 0, aParCh[2][1], ""))
+        EndIf
         cVal := AllTrim(OS_LERJSONTXT(jQuery,"osDesenv"))
         If !Empty(cVal) ; oModelSZ1:SetValue("Z1_OSDESE", cVal) ; EndIf
         // Z1_OSENVCL (OS Enviada, S/N) e obrigatorio - OS antigas estao vazias.
@@ -1309,6 +1331,9 @@ Static Function OS_NUCLEOALTERAR(jQuery)
         // OS acabou de ganhar chamado: interacoes que estavam no Memo
         // (Z1_SERV) passam pra ZA2 do chamado.
         If lOk
+            If aParCh[1]
+                OS_ZA3("GRAVAR", cOs, aParCh[2])
+            EndIf
             OS_MIGRARINTERACOES(cOs)
         EndIf
 
@@ -2042,6 +2067,9 @@ User Function OS_APILISTAR() As Logical
             // Z1_IDCH (caractere) - chamado novo (ZA1_IDCH); Z1_CHHDK segue
             // intocado (legado do HPSD, sem uso novo).
             oLinha['chamado']        := AllTrim((cAlias)->Z1_IDCH)
+            // Todos os chamados da OS (ZA3 + principal) e a quantidade.
+            oLinha['chamados']       := OS_ZA3("LER", cOsAtual, (cAlias)->Z1_IDCH)
+            oLinha['qtdChamados']    := Len(oLinha['chamados'])
             oLinha['osDesenv']       := AllTrim((cAlias)->Z1_OSDESE)
             oLinha['osEnviada']      := AllTrim((cAlias)->Z1_OSENVCL)
             oLinha['linhaPv']        := AllTrim((cAlias)->Z1_LIN)
@@ -2128,6 +2156,11 @@ User Function OS_APIEXCLUIR() As Logical
         EndIf
 
         oModel:DeActivate(lOk)
+
+        // Chamados ligados (ZA3) saem junto.
+        If lOk
+            OS_ZA3("GRAVAR", cOs, {})
+        EndIf
 
         If !lOk
             Return oRest:setStatusResponse(400, '{"erro":"' + OS_ESCAPARJSON(cErro) + '"}')
@@ -2462,6 +2495,7 @@ User Function OS_APILISTAINTERACOES() As Logical
     Local cAlias  := ""
     Local cData   := ""
     Local cConsul := ""
+    Local aCh     := {}
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -2548,6 +2582,7 @@ User Function OS_APILISTAINTERACOES() As Logical
             oLinha['texto']     := OS_DECODESAFE(AllTrim((cAlias)->ZA2_DESCRI))
             oLinha['os']        := cOs
             oLinha['idCh']      := AllTrim((cAlias)->ZA2_IDCH)
+            oLinha['assunto']   := OS_DECODESAFE(AllTrim(Posicione("ZA1", 1, xFilial("ZA1") + AllTrim((cAlias)->ZA2_IDCH), "ZA1_ASSUNT")))
             AAdd(aOrdem, {cData + AllTrim((cAlias)->ZA2_HORA), oLinha})
 
             (cAlias)->(DbSkip())
@@ -2562,6 +2597,18 @@ User Function OS_APILISTAINTERACOES() As Logical
 
         oJson['os']    := cOs
         oJson['items'] := aItens
+
+        // Chamados da OS (ZA3 + principal) - janela "Visualizar chamados" e o
+        // campo "Chamado" obrigatorio da interacao no portal.
+        aCh := OS_ZA3("LER", cOs, SZ1->Z1_IDCH)
+        For nI := 1 To Len(aCh)
+            oLinha := JsonObject():New()
+            oLinha['idCh']    := aCh[nI]
+            oLinha['assunto'] := OS_DECODESAFE(AllTrim(Posicione("ZA1", 1, xFilial("ZA1") + aCh[nI], "ZA1_ASSUNT")))
+            oLinha['status']  := AllTrim(Posicione("ZA1", 1, xFilial("ZA1") + aCh[nI], "ZA1_STATUS"))
+            aCh[nI] := oLinha
+        Next nI
+        oJson['chamados'] := aCh
 
         Return oRest:setStatusResponse(200, oJson:ToJson())
 
@@ -2630,3 +2677,131 @@ User Function OS_APINOVAINTERACAO() As Logical
     End Sequence
 
 Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
+
+////////////////////////////////////////////////////////////////////////////////
+// OS LIGADA A VARIOS CHAMADOS (tabela ZA3)
+// Henrique - 07/10/2026 - spec docs/superpowers/specs/2026-10-07-os-n-chamados-design.md
+// ZA3: ZA3_FILIAL + ZA3_OS + ZA3_IDCH (indice 1). Z1_IDCH segue como chamado
+// principal (primeiro da lista) - Agenda, tela classica e a regra "OS sem
+// chamado" continuam olhando ele.
+////////////////////////////////////////////////////////////////////////////////
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} OS_ZA3
+Chamados da OS - uma funcao, uma opcao por acao:
+  LER     (cOs, cIdChPrincipal)    chamados da OS: principal + ZA3 -> array
+  PARAM   (jQuery)                 le "chamados" (CSV) ou "chamado" -> {lVeio, aCodigos}
+  VALIDAR (cOs, aCh, cCli, cLoja)  "" se ok; senao a mensagem (mesmo cliente/loja
+                                   e nao tirar chamado com interacao desta OS)
+  GRAVAR  (cOs, aCh)               grava a lista na ZA3 (substitui a anterior)
+@author Henrique
+@since 07/10/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+Static Function OS_ZA3(cAcao, x1, x2, x3, x4)
+    Local xRet   := Nil
+    Local aCh    := {}
+    Local aAntes := {}
+    Local aLista := {}
+    Local cAlias := ""
+    Local cCod   := ""
+    Local cOs    := ""
+    Local nQtd   := 0
+    Local nI     := 0
+
+    Do Case
+
+    //--- Chamados da OS: principal (Z1_IDCH) primeiro + os da ZA3 ---------------
+    Case cAcao == "LER"
+        cOs    := AllTrim(x1)
+        cCod   := AllTrim(cValToChar(x2))
+        If !Empty(cCod)
+            AAdd(aCh, cCod)
+        EndIf
+        cAlias := GetNextAlias()
+        BeginSql Alias cAlias
+            SELECT ZA3_IDCH
+            FROM %Table:ZA3% ZA3
+            WHERE ZA3_FILIAL = %xFilial:ZA3%
+              AND ZA3_OS     = %Exp:cOs%
+              AND %NotDel%
+            ORDER BY ZA3_IDCH
+        EndSql
+        While !(cAlias)->(Eof())
+            If AScan(aCh, AllTrim((cAlias)->ZA3_IDCH)) == 0
+                AAdd(aCh, AllTrim((cAlias)->ZA3_IDCH))
+            EndIf
+            (cAlias)->(DbSkip())
+        EndDo
+        (cAlias)->(DbCloseArea())
+        xRet := aCh
+
+    //--- Parametro do portal: "chamados" (CSV) ou o antigo "chamado" ----------
+    Case cAcao == "PARAM"
+        xRet   := {x1["chamados"] != Nil .Or. x1["chamado"] != Nil, {}}
+        aLista := StrTokArr2(AllTrim(If(x1["chamados"] != Nil, OS_LERJSONTXT(x1, "chamados"), OS_LERJSONTXT(x1, "chamado"))), ",", .F.)
+        For nI := 1 To Len(aLista)
+            cCod := AllTrim(aLista[nI])
+            If !Empty(cCod) .And. AScan(xRet[2], cCod) == 0
+                AAdd(xRet[2], cCod)
+            EndIf
+        Next nI
+
+    //--- Mesmo cliente/loja e nao tirar chamado com interacao desta OS ---------
+    Case cAcao == "VALIDAR"
+        cOs  := AllTrim(x1)
+        xRet := ""
+        ZA1->(DbSetOrder(1))
+        For nI := 1 To Len(x2)
+            If !ZA1->(DbSeek(xFilial("ZA1") + x2[nI]))
+                Return "Chamado #" + x2[nI] + " nao encontrado."
+            EndIf
+            If AllTrim(ZA1->ZA1_CLIENT) != AllTrim(x3) .Or. AllTrim(ZA1->ZA1_LOJA) != AllTrim(x4)
+                Return "Chamado #" + x2[nI] + " nao e do cliente da OS."
+            EndIf
+        Next nI
+
+        If !Empty(cOs)
+            aAntes := OS_ZA3("LER", cOs, Posicione("SZ1", 1, xFilial("SZ1") + cOs, "Z1_IDCH"))
+            For nI := 1 To Len(aAntes)
+                If AScan(x2, aAntes[nI]) == 0
+                    cCod   := aAntes[nI]
+                    cAlias := GetNextAlias()
+                    BeginSql Alias cAlias
+                        SELECT COUNT(*) QTD
+                        FROM %Table:ZA2% ZA2
+                        WHERE ZA2_FILIAL = %xFilial:ZA2%
+                          AND ZA2_IDCH   = %Exp:cCod%
+                          AND ZA2_OS     = %Exp:cOs%
+                          AND %NotDel%
+                    EndSql
+                    nQtd := (cAlias)->QTD
+                    (cAlias)->(DbCloseArea())
+                    If nQtd > 0
+                        Return "Chamado #" + cCod + " ja tem interacao desta OS - nao pode ser removido."
+                    EndIf
+                EndIf
+            Next nI
+        EndIf
+
+    //--- Grava a lista da OS na ZA3 (lista vazia = so apaga) ------------------
+    Case cAcao == "GRAVAR"
+        cOs := PadR(AllTrim(x1), TamSX3("ZA3_OS")[1])
+        ZA3->(DbSetOrder(1))
+        While ZA3->(DbSeek(xFilial("ZA3") + cOs))
+            RecLock("ZA3", .F.)
+                ZA3->(DbDelete())
+            ZA3->(MsUnlock())
+        EndDo
+        For nI := 1 To Len(x2)
+            RecLock("ZA3", .T.)
+                ZA3->ZA3_FILIAL := xFilial("ZA3")
+                ZA3->ZA3_OS     := cOs
+                ZA3->ZA3_IDCH   := x2[nI]
+            ZA3->(MsUnlock())
+        Next nI
+
+    EndCase
+
+Return xRet
