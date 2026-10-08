@@ -1067,6 +1067,11 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
         cTec   := x1
         aAg    := x2
         cEmail := U_CNSOUTL("EMAIL", cTec)
+        // Private __lA03NotTec (portal, criada no SaveData do CNSA003): .T. envia, .F. nao
+        // envia; sem ela (tela do Protheus, agenda pelo chamado) envia como sempre.
+        If Type("__lA03NotTec") == "L" .And. !__lA03NotTec
+            cEmail := ""
+        EndIf
         // Alerta do corpo conforme a operacao.
         cValor := If(x3 == "Cancelado", "Agendamento cancelado", If(x3 == "Alterado", "Agendamento alterado", "Novo agendamento"))
         If !Empty(cEmail)
