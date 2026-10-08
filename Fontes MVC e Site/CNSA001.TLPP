@@ -4335,6 +4335,17 @@ Static Function CH_CRIARCHAMADOEMAIL()
             Loop
         EndIf
 
+        // Anti-loop: nunca responde a si mesmo (apia@apia.com.br), a remetente de
+        // sistema (devolucao/postmaster/noreply) nem a resposta automatica - cada
+        // resposta gerava um e-mail novo na caixa e o job respondia de novo.
+        If "apia@apia.com.br" $ Lower(cEmail) .Or. "postmaster" $ Lower(cEmail) .Or. ;
+                "mailer-daemon" $ Lower(cEmail) .Or. "noreply" $ Lower(cEmail) .Or. "no-reply" $ Lower(cEmail) .Or. ;
+                "microsoftexchange" $ Lower(cEmail) .Or. ;
+                CH_EHRESPOSTAAUTO(cAssunto)
+            ConOut("CH_CRIARCHAMADOEMAIL: e-mail ignorado (anti-loop) de " + cEmail + " - " + cAssunto)
+            Loop
+        EndIf
+
         // Pedido do usuario: sem contato cadastrado (SU5), nao abre
         // chamado - so avisa o remetente (CH_NOTIFICARSEMCONTATO), uma
         // unica vez por mail Id (CH_AVISOJAENVIADO/CH_MARCARAVISOENVIADO) -
@@ -4384,6 +4395,30 @@ Static Function CH_CRIARCHAMADOEMAIL()
     FreeObj(oJson)
     CH_DESTRAVAREMAIL(nLock)
 Return nCriados
+
+/*/{Protheus.doc} CH_EHRESPOSTAAUTO
+Assunto de resposta automatica/devolucao (ausencia, nao entregue) - o job
+nao responde nem abre chamado para esses e-mails (anti-loop).
+@param  cAssunto  Assunto do e-mail
+@return .T. se for resposta automatica
+@author Henrique
+@since 08/10/2026
+@version P12
+/*/
+Static Function CH_EHRESPOSTAAUTO(cAssunto)
+    Local cAss  := Upper(FwNoAccent(AllTrim(cAssunto)))
+    Local aTerm := {"RESPOSTA AUTOMATICA", "AUTOMATIC REPLY", "AUTO-REPLY", "AUTOREPLY", "FORA DO ESCRITORIO", ;
+                    "OUT OF OFFICE", "UNDELIVERABLE", "NAO E POSSIVEL ENTREGAR", "NAO FOI POSSIVEL ENTREGAR", ;
+                    "DELIVERY STATUS", "MAIL DELIVERY", "RETORNADO", "SEU E-MAIL NAO ESTA CADASTRADO", "CHAMADO ABERTO"}
+    Local nI    := 0
+
+    For nI := 1 To Len(aTerm)
+        If aTerm[nI] $ cAss
+            Return .T.
+        EndIf
+    Next nI
+
+Return .F.
 
 /*/{Protheus.doc} CH_TRAVAREMAIL
 Obtem uma trava exclusiva (lock de arquivo) pra impedir que duas chamadas
