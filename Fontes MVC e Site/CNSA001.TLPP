@@ -4164,34 +4164,46 @@ Static Function CH_EMAILNALISTA(cEmail, cLista)
 Return .F.
 
 /*/{Protheus.doc} CH_AVISOJAENVIADO
-Verifica se o aviso de "e-mail nao cadastrado" ja foi enviado para um mail
-Id (Graph), via arquivo local (\system\cnsa_email_semcontato.dat).
-Dedup do aviso por mail Id (arquivo local) - NAO usa Graph/isRead (pedido do usuario: nao marcar como lido). Sem isso o aviso repetiria a cada execucao do job pro mesmo e-mail (varios avisos pro mesmo remetente).
-@param  cMailId   Id do e-mail (Graph)
-@return .T. se o aviso ja foi enviado para esse mail Id, .F. caso contrario
+Verifica se o aviso de "e-mail nao cadastrado" ja foi enviado para este
+ENDERECO nos ultimos 7 dias (arquivo \system\cnsa_email_semcontato.dat,
+linhas |endereco|AAAAMMDD|). Dentro dos 7 dias nao avisa de novo - segura o
+loop de resposta automatica/devolucao (cada resposta chega como e-mail novo).
+@param  cEmail   Endereco do remetente
+@return .T. se ja avisou ha menos de 7 dias, .F. caso contrario
 @author Henrique
 @since 16/09/2026
 @version P12
 /*/
-Static Function CH_AVISOJAENVIADO(cMailId)
-    Local cArq := "\system\cnsa_email_semcontato.dat"
+Static Function CH_AVISOJAENVIADO(cEmail)
+    Local cArq   := "\system\cnsa_email_semcontato.dat"
+    Local cChave := "|" + Lower(AllTrim(cEmail)) + "|"
+    Local cTexto := ""
+    Local nPos   := 0
+    Local dUlt   := CToD("")
 
     If !File(cArq)
         Return .F.
     EndIf
 
-Return "|" + cMailId + "|" $ MemoRead(cArq)
+    // Ultimo aviso = ultima ocorrencia do endereco no arquivo (gravado em ordem).
+    cTexto := MemoRead(cArq)
+    nPos   := RAt(cChave, cTexto)
+    If nPos > 0
+        dUlt := SToD(SubStr(cTexto, nPos + Len(cChave), 8))
+    EndIf
+
+Return !Empty(dUlt) .And. Date() - dUlt < 7
 
 /*/{Protheus.doc} CH_MARCARAVISOENVIADO
 Registra no arquivo local (\system\cnsa_email_semcontato.dat) que o aviso
-de "e-mail nao cadastrado" ja foi enviado para um mail Id (Graph), evitando
-repetir o aviso pro mesmo e-mail a cada execucao do job.
-@param  cMailId   Id do e-mail (Graph)
+de "e-mail nao cadastrado" foi enviado hoje para o endereco (|endereco|AAAAMMDD|)
+- base da regra de 7 dias do CH_AVISOJAENVIADO.
+@param  cEmail   Endereco do remetente
 @author Henrique
 @since 16/09/2026
 @version P12
 /*/
-Static Function CH_MARCARAVISOENVIADO(cMailId)
+Static Function CH_MARCARAVISOENVIADO(cEmail)
     Local cArq    := "\system\cnsa_email_semcontato.dat"
     Local nHandle := -1
 
@@ -4205,7 +4217,7 @@ Static Function CH_MARCARAVISOENVIADO(cMailId)
     nHandle := FOpen(cArq, FO_READWRITE)
     If nHandle != -1
         FSeek(nHandle, 0, 2)
-        FWrite(nHandle, "|" + cMailId + "|" + CRLF)
+        FWrite(nHandle, "|" + Lower(AllTrim(cEmail)) + "|" + DToS(Date()) + "|" + CRLF)
         FClose(nHandle)
     EndIf
 
@@ -4215,7 +4227,7 @@ Return
 Le as mensagens nao lidas da caixa apia@apia.com.br (Microsoft Graph) e
 cria um chamado (via CH_NUCLEOINCLUIR) para cada e-mail ainda nao
 processado, incluindo o corpo como primeira interacao (CH_GRAVARINTERACAO).
-Le a caixa apia@apia.com.br (Graph) e cria um chamado (ZA1) por e-mail novo. NAO marca como lido de proposito (deve continuar nao lido na caixa) - dedup contra reprocesso via CH_EMAILJAPROCESSADO (ZA1_MAILID). Chamada por 3 gatilhos independentes (job CH_JOBEMAIL, botao Recarregar via CH_APIVERIFICAEMAIL, tela classica CNS001) - CH_TRAVAREMAIL garante que so uma execucao roda por vez.
+Le a caixa apia@apia.com.br (Graph) e cria um chamado (ZA1) por e-mail novo. Marca como lido o e-mail tratado (chamado criado, aviso, ignorado) - so fica nao lido se falhar ao criar o chamado (tenta de novo). Dedup do chamado via CH_EMAILJAPROCESSADO (ZA1_MAILID). Chamada por 3 gatilhos independentes (job CH_JOBEMAIL, botao Recarregar via CH_APIVERIFICAEMAIL, tela classica CNS001) - CH_TRAVAREMAIL garante que so uma execucao roda por vez.
 @return nCriados   Quantidade de chamados criados (-1 em falha de token/Graph)
 @author Henrique
 @since 02/09/2026
@@ -4233,6 +4245,11 @@ Static Function CH_CRIARCHAMADOEMAIL()
     Local oBody      := Nil
     Local aResultado := {}
     Local nLock      := -1
+    Local aLido      := {}
+    // Marca o e-mail como lido (Graph, Mail.ReadWrite) - mesma chamada HTTP do Outlook (cnslib).
+    Local bLido      := {|c| aLido := U_CNSOUTL("HTTP", "PATCH", "https://graph.microsoft.com/v1.0/users/apia@apia.com.br/messages/" + ;
+                            StrTran(StrTran(StrTran(c, "/", "%2F"), "+", "%2B"), "=", "%3D"), '{"isRead":true}'), ;
+                            If(aLido[1] == 200, Nil, ConOut("CH_CRIARCHAMADOEMAIL: nao marcou como lido (" + cValToChar(aLido[1]) + "): " + aLido[2]))}
 
     nLock := CH_TRAVAREMAIL()
     If nLock == -1
@@ -4332,20 +4349,32 @@ Static Function CH_CRIARCHAMADOEMAIL()
         EndIf
 
         If CH_EMAILJAPROCESSADO(cId)
+            Eval(bLido, cId)
             Loop
         EndIf
 
-        // Pedido do usuario: sem contato cadastrado (SU5), nao abre
-        // chamado - so avisa o remetente (CH_NOTIFICARSEMCONTATO), uma
-        // unica vez por mail Id (CH_AVISOJAENVIADO/CH_MARCARAVISOENVIADO) -
-        // job roda a cada poucos segundos/minuto e o e-mail continua nao
-        // lido de proposito, sem o dedup o aviso repetiria toda execucao.
+        // Anti-loop: nunca responde a si mesmo (apia@apia.com.br), a remetente de
+        // sistema (devolucao/postmaster/noreply) nem a resposta automatica - cada
+        // resposta gerava um e-mail novo na caixa e o job respondia de novo.
+        If "apia@apia.com.br" $ Lower(cEmail) .Or. "postmaster" $ Lower(cEmail) .Or. ;
+                "mailer-daemon" $ Lower(cEmail) .Or. "noreply" $ Lower(cEmail) .Or. "no-reply" $ Lower(cEmail) .Or. ;
+                "microsoftexchange" $ Lower(cEmail) .Or. ;
+                CH_EHRESPOSTAAUTO(cAssunto)
+            ConOut("CH_CRIARCHAMADOEMAIL: e-mail ignorado (anti-loop) de " + cEmail + " - " + cAssunto)
+            Eval(bLido, cId)
+            Loop
+        EndIf
+
+        // Sem contato cadastrado (SU5): nao abre chamado - so avisa o remetente
+        // (CH_NOTIFICARSEMCONTATO), no maximo 1 vez a cada 7 dias por endereco
+        // (CH_AVISOJAENVIADO/CH_MARCARAVISOENVIADO) - segura loop de resposta automatica.
         If Empty(cCodCli)
-            If !Empty(cEmail) .And. !CH_AVISOJAENVIADO(cId)
+            If !Empty(cEmail) .And. !CH_AVISOJAENVIADO(cEmail)
                 CH_NOTIFICARSEMCONTATO(cEmail)
-                CH_MARCARAVISOENVIADO(cId)
+                CH_MARCARAVISOENVIADO(cEmail)
             EndIf
             ConOut("CH_CRIARCHAMADOEMAIL: e-mail " + cEmail + " nao cadastrado em SU5 (contatos) - chamado nao criado.")
+            Eval(bLido, cId)
             Loop
         EndIf
 
@@ -4377,6 +4406,7 @@ Static Function CH_CRIARCHAMADOEMAIL()
         If !Empty(cEmail)
             CH_NOTIFICARCHAMADOCRIADO(cEmail, cNewId)
         EndIf
+        Eval(bLido, cId)
 
         nCriados++
     Next nI
@@ -4384,6 +4414,30 @@ Static Function CH_CRIARCHAMADOEMAIL()
     FreeObj(oJson)
     CH_DESTRAVAREMAIL(nLock)
 Return nCriados
+
+/*/{Protheus.doc} CH_EHRESPOSTAAUTO
+Assunto de resposta automatica/devolucao (ausencia, nao entregue) - o job
+nao responde nem abre chamado para esses e-mails (anti-loop).
+@param  cAssunto  Assunto do e-mail
+@return .T. se for resposta automatica
+@author Henrique
+@since 08/10/2026
+@version P12
+/*/
+Static Function CH_EHRESPOSTAAUTO(cAssunto)
+    Local cAss  := Upper(FwNoAccent(AllTrim(cAssunto)))
+    Local aTerm := {"RESPOSTA AUTOMATICA", "AUTOMATIC REPLY", "AUTO-REPLY", "AUTOREPLY", "FORA DO ESCRITORIO", ;
+                    "OUT OF OFFICE", "UNDELIVERABLE", "NAO E POSSIVEL ENTREGAR", "NAO FOI POSSIVEL ENTREGAR", ;
+                    "DELIVERY STATUS", "MAIL DELIVERY", "RETORNADO", "SEU E-MAIL NAO ESTA CADASTRADO", "CHAMADO ABERTO"}
+    Local nI    := 0
+
+    For nI := 1 To Len(aTerm)
+        If aTerm[nI] $ cAss
+            Return .T.
+        EndIf
+    Next nI
+
+Return .F.
 
 /*/{Protheus.doc} CH_TRAVAREMAIL
 Obtem uma trava exclusiva (lock de arquivo) pra impedir que duas chamadas
