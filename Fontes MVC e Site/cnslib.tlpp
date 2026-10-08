@@ -1021,8 +1021,8 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
         xRet[AG_RESUMO]     := cNomCli + If(Empty(cLoja), "", "-" + cLoja) + ;
                                If(Empty(cProjDesc), "", " | " + cProjDesc) + ;
                                If(Empty(xRet[AG_LOCAL]), "", " | " + xRet[AG_LOCAL])
-        // Titulo do evento no calendario = assunto do e-mail, sem a operacao (Novo/Alterado).
-        xRet[AG_TITULO]     := "Agendamento: " + xRet[AG_RESUMO]
+        // Titulo do evento no calendario: CLIENTE-LOJA | PROJETO (sem "Agendamento" e sem o local).
+        xRet[AG_TITULO]     := cNomCli + If(Empty(cLoja), "", "-" + cLoja) + If(Empty(cProjDesc), "", " | " + cProjDesc)
 
     //--- JSON do evento -------------------------------------------------------
     Case cAcao == "JSON"
