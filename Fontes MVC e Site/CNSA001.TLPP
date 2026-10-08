@@ -676,8 +676,8 @@ Return cRspMnt == "1"
 /*/{Protheus.doc} CH_PERGUNTAEMAIL
 Janela unica da tela classica pra escolher, por checkbox, se envia o e-mail
 ao analista e/ou ao cliente (substitui os MsgYesNo separados). So mostra as
-opcoes que se aplicam a acao. Padrao igual ao portal: analista marcado,
-cliente desmarcado. Fechar a janela sem confirmar = nao envia nenhum.
+opcoes que se aplicam a acao. Padrao igual ao portal: os dois marcados
+(quem grava desmarca). Fechar a janela sem confirmar = nao envia nenhum.
 @param  cTitulo      Titulo da janela (ex: "Alteracao do Chamado 000250")
 @param  lOfereceCli  .T. mostra a opcao "Cliente"
 @param  lOfereceTec  .T. mostra a opcao "Analista (tecnico)"
@@ -694,7 +694,7 @@ Static Function CH_PERGUNTAEMAIL(cTitulo, lOfereceCli, lOfereceTec)
     Local nLin     := 28
 
     Private lChkTec  := .T.
-    Private lChkCli  := .F.
+    Private lChkCli  := .T.
     Private lConfEml := .F.
 
     Default lOfereceCli := .F.
@@ -777,6 +777,7 @@ Opcao de menu "Incluir" da tela classica: abre a View em modo inclusao.
 /*/
 User Function CH_INCLUIRTELA()
     Local oModel := Nil
+    Local aEnvio := {}
 
     // Monta E ativa o Model AQUI (mesma funcao) - igual padrao ja usado em
     // CNSA_INTERAGIR/CH_MONTAAGENDA. Necessario pro Insert: FWInitCpo prende
@@ -795,10 +796,15 @@ User Function CH_INCLUIRTELA()
 
     // FWExecView devolve 0 quando o usuario confirma e grava.
     If FWExecView("Registro de Chamados", "apia.cnsa001.u_cns001", MODEL_OPERATION_INSERT, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel) == 0
-        // Ja nasceu com tecnico: mesma escolha do portal (e-mail de designacao).
-        // Depois do commit a ZA1 fica posicionada no chamado gravado.
-        If !Empty(AllTrim(ZA1->ZA1_CONSUL)) .And. CH_PERGUNTAEMAIL("Inclusao do Chamado " + AllTrim(ZA1->ZA1_IDCH), .F., .T.)[2]
+        // Mesma escolha do portal: tecnico (designacao, se ja nasceu com tecnico) e
+        // cliente ("Chamado Aberto"). Depois do commit a ZA1 fica no chamado gravado.
+        aEnvio := CH_PERGUNTAEMAIL("Inclusao do Chamado " + AllTrim(ZA1->ZA1_IDCH), ;
+            !Empty(AllTrim(ZA1->ZA1_EMAIL)), !Empty(AllTrim(ZA1->ZA1_CONSUL)))
+        If aEnvio[2]
             CH_NOTIFICARDESIGNA(AllTrim(ZA1->ZA1_IDCH), AllTrim(ZA1->ZA1_CONSUL), .F., .T.)
+        EndIf
+        If aEnvio[1]
+            CH_NOTIFICARCHAMADOCRIADO(AllTrim(ZA1->ZA1_EMAIL), AllTrim(ZA1->ZA1_IDCH))
         EndIf
     EndIf
 Return
@@ -917,6 +923,7 @@ User Function CNSA_INTERAGIR()
     Local nSeq       := 1
     Local cSeqGrav   := ""
     Local cTextoInteracao := ""
+    Local aEnvio     := {}
 
     If ZA1->(Eof()) .Or. ZA1->(Bof())
         MsgAlert("Nenhum chamado selecionado.", "Interagir")
@@ -993,9 +1000,14 @@ User Function CNSA_INTERAGIR()
     EndIf
     (cAlias)->(DbCloseArea())
 
-    If !Empty(cTextoInteracao) .And. !Empty(cEmailCli)
-        If CH_PERGUNTAEMAIL("Nova Interacao - Chamado " + cIdCh, .T., .F.)[1]
+    // Cliente e tecnico do chamado (o tecnico so se nao foi ele quem interagiu).
+    If !Empty(cTextoInteracao)
+        aEnvio := CH_PERGUNTAEMAIL("Nova Interacao - Chamado " + cIdCh, !Empty(cEmailCli), cConsul <> AllTrim(cConsultor))
+        If aEnvio[1]
             CH_NOTIFICARINTERACAO(cEmailCli, cIdCh, cTextoInteracao, "incluida", "Nova Interacao")
+        EndIf
+        If aEnvio[2]
+            CH_NOTIFICARINTERACAO(AllTrim(Posicione("AA1", 1, xFilial("AA1") + cConsul, "AA1_EMAIL")), cIdCh, cTextoInteracao, "incluida", "Nova Interacao")
         EndIf
     EndIf
 
@@ -1335,7 +1347,7 @@ User Function CH_EXCLUIRINTERACAOTELA()
     Local aSeqs      := {}
     Local aExibicao  := {}
     Local nOpcao     := 0
-    Local lNotificar := .F.
+    Local aEnvio     := {}
     Local aResultado := {}
 
     If ZA1->(Eof()) .Or. ZA1->(Bof())
@@ -1375,9 +1387,9 @@ User Function CH_EXCLUIRINTERACAOTELA()
         Return
     EndIf
 
-    lNotificar := CH_PERGUNTAEMAIL("Excluir Interacao - Chamado " + cIdCh, .T., .F.)[1]
+    aEnvio := CH_PERGUNTAEMAIL("Excluir Interacao - Chamado " + cIdCh, .T., .T.)
 
-    aResultado := CH_NUCLEOEXCLUIRINTERACAO(cIdCh, aSeqs[nOpcao], lNotificar)
+    aResultado := CH_NUCLEOEXCLUIRINTERACAO(cIdCh, aSeqs[nOpcao], aEnvio[1], aEnvio[2])
 
     If aResultado[1] == 200
         MsgInfo("Interação excluida com sucesso!", "Excluir Interação")
@@ -1560,6 +1572,7 @@ parametros da query string, chamando CH_NUCLEOINCLUIR.
 User Function CH_APIINCLUIR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
+    Local cEmailCli  := ""
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -1567,6 +1580,14 @@ User Function CH_APIINCLUIR() As Logical
         AllTrim(CH_LERJSONTXT(jQuery,"codCliente")), AllTrim(CH_LERJSONTXT(jQuery,"lojaCliente")), AllTrim(CH_LERJSONTXT(jQuery,"emailCliente")), ;
         AllTrim(CH_LERJSONTXT(jQuery,"codConsultor")), AllTrim(CH_LERJSONTXT(jQuery,"projeto")), AllTrim(CH_LERJSONTXT(jQuery,"tarefa")), ;
         "", .T., AllTrim(CH_LERJSONTXT(jQuery,"notificarTecnico")) != "0", AllTrim(CH_LERJSONTXT(jQuery,"descricao")))
+
+    // Informar o cliente: mesmo e-mail "Chamado Aberto" do chamado aberto por e-mail.
+    If aResultado[1] == 200 .And. AllTrim(CH_LERJSONTXT(jQuery,"notificarCliente")) == "1"
+        cEmailCli := AllTrim(Posicione("ZA1", 1, xFilial("ZA1") + aResultado[3], "ZA1_EMAIL"))
+        If !Empty(cEmailCli)
+            CH_NOTIFICARCHAMADOCRIADO(cEmailCli, aResultado[3])
+        EndIf
+    EndIf
 
 Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
@@ -2942,18 +2963,21 @@ Notifica o cliente (ZA1_EMAIL) quando lNotificarCliente for .T.
 @author Henrique
 @since 02/09/2026
 @version P12
+@param  lNotificarTecnico   .T. pra enviar o texto ao tecnico do chamado (nao vai pra quem interagiu)
 @update 17/09/2026 - Adiciona lNotificarCliente (e-mail ao cliente com o texto da interacao)
 /*/
-Static Function CH_INCLUIRINTERACAO(cIdCh, cTexto, lNotificarCliente, cOs)
+Static Function CH_INCLUIRINTERACAO(cIdCh, cTexto, lNotificarCliente, cOs, lNotificarTecnico)
     Local oJson      := JsonObject():New()
     Local oErro      := Nil
     Local cConsultor := ""
     Local cSeq       := ""
     Local cEmailCli  := ""
     Local cErroGrv   := ""
+    Local cConsulCh  := ""
 
     Default lNotificarCliente := .F.
     Default cOs               := ""
+    Default lNotificarTecnico := .F.
 
     cTexto := AllTrim(cTexto)
 
@@ -2980,6 +3004,7 @@ Static Function CH_INCLUIRINTERACAO(cIdCh, cTexto, lNotificarCliente, cOs)
         EndIf
 
         cEmailCli := AllTrim(ZA1->ZA1_EMAIL)
+        cConsulCh := AllTrim(ZA1->ZA1_CONSUL)
 
         // FIX: ZA2_DESCRI e Memo (TamSX3 devolve 10 - tamanho do ponteiro,
         // NAO limite real de conteudo). Validacao de tamanho contra TamSX3
@@ -2995,6 +3020,10 @@ Static Function CH_INCLUIRINTERACAO(cIdCh, cTexto, lNotificarCliente, cOs)
 
         If lNotificarCliente .And. !Empty(cEmailCli)
             CH_NOTIFICARINTERACAO(cEmailCli, cIdCh, cTexto, "incluida", "Nova Interacao")
+        EndIf
+        // Tecnico do chamado - nao manda pra ele mesmo (quem interagiu).
+        If lNotificarTecnico .And. cConsulCh <> AllTrim(cConsultor)
+            CH_NOTIFICARINTERACAO(AllTrim(Posicione("AA1", 1, xFilial("AA1") + cConsulCh, "AA1_EMAIL")), cIdCh, cTexto, "incluida", "Nova Interacao")
         EndIf
 
         oJson['sucesso']  := .T.
@@ -3025,7 +3054,8 @@ User Function CH_APINOVAINTERACAO() As Logical
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
-    aResultado := CH_INCLUIRINTERACAO(AllTrim(CH_LERJSONTXT(jQuery,"idCh")), CH_LERJSONTXT(jQuery,"texto"), AllTrim(CH_LERJSONTXT(jQuery,"notificarCliente")) == "1", AllTrim(CH_LERJSONTXT(jQuery,"os")))
+    aResultado := CH_INCLUIRINTERACAO(AllTrim(CH_LERJSONTXT(jQuery,"idCh")), CH_LERJSONTXT(jQuery,"texto"), AllTrim(CH_LERJSONTXT(jQuery,"notificarCliente")) == "1", AllTrim(CH_LERJSONTXT(jQuery,"os")), ;
+        AllTrim(CH_LERJSONTXT(jQuery,"notificarTecnico")) == "1")
 
 Return oRest:setStatusResponse(aResultado[1], aResultado[2])
 
@@ -3038,12 +3068,13 @@ com o texto da interacao removida quando lNotificarCliente for .T.
 @param  cIdCh               Id do chamado (ZA1_IDCH)
 @param  cSeq                Sequencia da interacao (ZA2_IDGRID, 3 digitos)
 @param  lNotificarCliente   .T. pra tambem enviar e-mail ao cliente avisando da remocao
+@param  lNotificarTecnico   .T. pra avisar o tecnico do chamado (nao vai pra quem excluiu)
 @return Array {nStatusHTTP, cMensagem}
 @author Henrique
 @since 17/09/2026
 @version P12
 /*/
-Static Function CH_NUCLEOEXCLUIRINTERACAO(cIdCh, cSeq, lNotificarCliente)
+Static Function CH_NUCLEOEXCLUIRINTERACAO(cIdCh, cSeq, lNotificarCliente, lNotificarTecnico)
     Local oErro      := Nil
     Local cAlias     := ""
     Local nRecno     := 0
@@ -3052,8 +3083,10 @@ Static Function CH_NUCLEOEXCLUIRINTERACAO(cIdCh, cSeq, lNotificarCliente)
     Local cTexto     := ""
     Local cEmailCli  := ""
     Local cStatusCh  := ""
+    Local cConsulCh  := ""
 
     Default lNotificarCliente := .F.
+    Default lNotificarTecnico := .F.
 
     Begin Sequence
 
@@ -3065,6 +3098,7 @@ Static Function CH_NUCLEOEXCLUIRINTERACAO(cIdCh, cSeq, lNotificarCliente)
 
         cStatusCh := AllTrim(ZA1->ZA1_STATUS)
         cEmailCli := AllTrim(ZA1->ZA1_EMAIL)
+        cConsulCh := AllTrim(ZA1->ZA1_CONSUL)
 
         If cStatusCh == "4"
             Return {400, "Chamado fechado nao pode ter interacoes excluidas."}
@@ -3105,6 +3139,9 @@ Static Function CH_NUCLEOEXCLUIRINTERACAO(cIdCh, cSeq, lNotificarCliente)
         If lNotificarCliente .And. !Empty(cEmailCli)
             CH_NOTIFICARINTERACAO(cEmailCli, cIdCh, cTexto, "removida", "Interacao Removida")
         EndIf
+        If lNotificarTecnico .And. cConsulCh <> cConsultor
+            CH_NOTIFICARINTERACAO(AllTrim(Posicione("AA1", 1, xFilial("AA1") + cConsulCh, "AA1_EMAIL")), cIdCh, cTexto, "removida", "Interacao Removida")
+        EndIf
 
         Return {200, "Interacao excluida com sucesso."}
 
@@ -3132,7 +3169,8 @@ User Function CH_APIEXCLUIRINTERACAO() As Logical
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
-    aResultado := CH_NUCLEOEXCLUIRINTERACAO(cIdCh, cSeq, AllTrim(CH_LERJSONTXT(jQuery,"notificarCliente")) == "1")
+    aResultado := CH_NUCLEOEXCLUIRINTERACAO(cIdCh, cSeq, AllTrim(CH_LERJSONTXT(jQuery,"notificarCliente")) == "1", ;
+        AllTrim(CH_LERJSONTXT(jQuery,"notificarTecnico")) == "1")
 
     If aResultado[1] == 200
         oJson['sucesso']  := .T.
@@ -4729,3 +4767,14 @@ mesma caixa remetente dos demais e-mails do chamado.
 /*/
 User Function CH_MAILPUB(cPara, cAssunto, cCorpo)
 Return CH_ENVIAREMAIL(cPara, cAssunto, cCorpo, "apia@apia.com.br")
+
+/*/{Protheus.doc} CH_PERGUNTAPUB
+Expoe a janela de e-mails (CH_PERGUNTAEMAIL, Static) pra fora do namespace -
+usada na tela classica da OS (CNSA002, OS_EMAIL "TELA").
+@return aRet   {lEnviarCliente, lEnviarTecnico}
+@author Henrique
+@since 08/10/2026
+@version P12
+/*/
+User Function CH_PERGUNTAPUB(cTitulo, lOfereceCli, lOfereceTec)
+Return CH_PERGUNTAEMAIL(cTitulo, lOfereceCli, lOfereceTec)
