@@ -124,6 +124,10 @@ Static Function CNS001_TECLUPA(cFiltro)
     // concatenacao ('%' || valor).
     Local cFiltroUp  := Upper(cFiltro)
     Local cFiltroUp2 := cFiltroUp
+    // So tecnicos disponiveis (AA1_ALOCA 1=disponivel, 2=nao disponivel). Codigo
+    // exato passa sempre: o portal usa a lupa pra mostrar o nome do tecnico ja
+    // gravado em chamado/OS/agenda antigos, mesmo que hoje esteja indisponivel.
+    Local cCodExato  := AllTrim(cFiltroUp)
 
     BeginSql Alias cAlias
         SELECT AA1_CODTEC,
@@ -136,6 +140,7 @@ Static Function CNS001_TECLUPA(cFiltro)
             AND USR.%NotDel%
         WHERE AA1_FILIAL = %xFilial:AA1%
         AND AA1.%NotDel%
+        AND (AA1_ALOCA = '1' OR UPPER(TRIM(AA1_CODTEC)) = %Exp:cCodExato%)
         AND (UPPER(AA1_CODTEC) LIKE '%' || %Exp:cFiltroUp% || '%'
         OR UPPER(AA1_NOMTEC) LIKE '%' || %Exp:cFiltroUp2% || '%')
         ORDER BY AA1_NOMTEC
