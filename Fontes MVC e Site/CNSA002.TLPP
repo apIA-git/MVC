@@ -73,6 +73,8 @@ Local aRotina  := {}
     ADD OPTION aRotina TITLE "Excluir"      ACTION "apia.cnsa002.U_OS_EXCLUIRTELA"    OPERATION 5 ACCESS 0
     ADD OPTION aRotina TITLE "Copiar"       ACTION "apia.cnsa002.U_OS_COPIARTELA"    OPERATION 0 ACCESS 0
     ADD OPTION aRotina TITLE "Legenda"      ACTION "apia.cnsa002.U_OS_LEGENDA"       OPERATION 0 ACCESS 0
+    // Historico de aprovacao da OS posicionada (SZA, CNSA004 - so consulta).
+    ADD OPTION aRotina TITLE "Historico Aprovacao" ACTION "apia.cnsa004.U_CNS004(SZ1->Z1_OS)" OPERATION 0 ACCESS 0
 
 Return aRotina
 

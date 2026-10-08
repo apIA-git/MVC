@@ -1,0 +1,173 @@
+#Include "FWMVCDef.ch"
+#Include "Totvs.ch"
+#include "tlpp-core.th"
+
+Namespace apia.cnsa004
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CNS004
+Historico de aprovacao de OS (tabela SZA) - so consulta. Cada resposta vira
+uma linha: aprovou pelo link (A), recusou pelo link (R) ou aprovacao manual
+de administrador (M). Quem grava e o fluxo de aprovacao da OS; aqui so le.
+Chamada sem parametro mostra tudo; com o numero da OS (menu da OS, CNSA002)
+abre filtrada nela.
+@param  cOs   Numero da OS (opcional)
+@author Henrique
+@since 08/10/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+User Function CNS004(cOs)
+
+    Local l_oBrowse := Nil
+    // User Function do mesmo namespace precisa do prefixo "u_" (ver CNSA002).
+    Private aRotina := u_MenuDef()
+
+    Default cOs := ""
+
+    l_oBrowse := FWMBrowse():New()
+    If l_oBrowse <> Nil
+
+        l_oBrowse:SetDescription("Historico de Aprovacao de OS" + If(Empty(cOs), "", " - OS " + AllTrim(cOs)))
+        l_oBrowse:SetAlias("SZA")
+
+        If !Empty(cOs)
+            l_oBrowse:SetFilterDefault("SZA->ZA_OS == '" + PadR(AllTrim(cOs), TamSX3("ZA_OS")[1]) + "'")
+        EndIf
+
+        l_oBrowse:AddLegend("SZA->ZA_TIPO=='A'", "GREEN", "Aprovada pelo cliente")
+        l_oBrowse:AddLegend("SZA->ZA_TIPO=='M'", "BLUE",  "Aprovada manualmente")
+        l_oBrowse:AddLegend("SZA->ZA_TIPO=='R'", "RED",   "Recusada pelo cliente")
+
+        l_oBrowse:Activate()
+
+    EndIf
+
+Return
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} MenuDef
+Menu so de consulta - o historico nao e editado a mao.
+@return aRotina   Array de opcoes de menu (ADD OPTION)
+@author Henrique
+@since 08/10/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+User Function MenuDef()
+
+Local aRotina := {}
+
+    ADD OPTION aRotina TITLE "Pesquisar"  ACTION "AxPesqui"                         OPERATION 1 ACCESS 0
+    // Mesmo padrao do CNSA002: dentro do Namespace cada opcao chama uma User
+    // Function que abre a View via FWExecView.
+    ADD OPTION aRotina TITLE "Visualizar" ACTION "apia.cnsa004.U_HA_VISUALIZAR"   OPERATION 2 ACCESS 0
+    ADD OPTION aRotina TITLE "Legenda"    ACTION "apia.cnsa004.U_HA_LEGENDA"      OPERATION 0 ACCESS 0
+
+Return aRotina
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} ModelDef
+Modelo de dados do historico (so SZA).
+@return oModel   Objeto MPFormModel
+@author Henrique
+@since 08/10/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+User Function ModelDef()
+Return HA_MONTARMODEL()
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} ViewDef
+View do historico (so SZA).
+@return oView   Objeto FWFormView
+@author Henrique
+@since 08/10/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+User Function ViewDef()
+
+    Local oView  := Nil
+    // Model ativo (montado em HA_VISUALIZAR) - FWLoadModel nao acha o modelo
+    // dentro do Namespace (mesmo padrao do CNSA001/CNSA002).
+    Local oModel := FWModelActive()
+
+    If oModel == Nil
+        oModel := HA_MONTARMODEL()
+    EndIf
+
+    oView := FWFormView():New()
+    oView:SetModel(oModel)
+    oView:AddField("VIEW_SZA", FWFormStruct(2, "SZA"), "SZAMASTER")
+    oView:CreateHorizontalBox("TELA", 100)
+    oView:SetOwnerView("VIEW_SZA", "TELA")
+    oView:EnableTitleView("VIEW_SZA", "Resposta da OS")
+    oView:SetCloseOnOk({|| .T.})
+
+Return oView
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} HA_MONTARMODEL
+Monta (e ativa, se pedido) o modelo da SZA - ativado na mesma funcao de quem
+abre a tela, senao INITVALUE quebra com "owner private environment not found"
+(ver OS_MONTARMODEL no CNSA002).
+@param  nOperAtivar   Operacao a ativar (0 = so monta)
+@return oModel        Objeto MPFormModel
+@author Henrique
+@since 08/10/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+Static Function HA_MONTARMODEL(nOperAtivar)
+
+    Local oModel := MPFormModel():New("FCNS004")
+
+    Default nOperAtivar := 0
+
+    oModel:AddFields("SZAMASTER", NIL, FWFormStruct(1, "SZA"))
+    oModel:SetPrimaryKey({"ZA_FILIAL", "ZA_OS", "ZA_DTREC", "ZA_HRREC"})
+    oModel:SetDescription("Historico de Aprovacao de OS")
+    oModel:GetModel("SZAMASTER"):SetDescription("Resposta da OS")
+
+    If nOperAtivar > 0
+        oModel:SetOperation(nOperAtivar)
+        oModel:Activate()
+    EndIf
+
+Return oModel
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} HA_VISUALIZAR
+Opcao "Visualizar": abre a resposta posicionada so para leitura.
+@author Henrique
+@since 08/10/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+User Function HA_VISUALIZAR()
+    // MODEL_OPERATION_VIEW e 1 (o "2" do ADD OPTION e so o codigo do botao).
+    Local oModel := HA_MONTARMODEL(MODEL_OPERATION_VIEW)
+
+    FWExecView("Historico de Aprovacao de OS", "apia.cnsa004.u_cns004", MODEL_OPERATION_VIEW, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel)
+Return
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} HA_LEGENDA
+Legenda do tipo de resposta (ZA_TIPO).
+@author Henrique
+@since 08/10/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+User Function HA_LEGENDA()
+
+    BrwLegenda("Legenda", "Tipo de resposta", ;
+        { ;
+            { "BR_VERDE",    "Aprovada pelo cliente" }, ;
+            { "BR_AZUL",     "Aprovada manualmente"  }, ;
+            { "BR_VERMELHO", "Recusada pelo cliente" }  ;
+        })
+
+Return
