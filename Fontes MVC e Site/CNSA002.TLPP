@@ -1175,9 +1175,6 @@ User Function OS_APIINCLUIR() As Logical
         Return oRest:setStatusResponse(400, '{"erro":"' + OS_ESCAPARJSON(aResultado[2]) + '"}')
     EndIf
 
-    // Informar cliente/tecnico (portal) - falha no e-mail nao desfaz a OS.
-    OS_EMAIL("ENVIAR", aResultado[3], OS_LERJSONTXT(jQuery, "notificarCliente") == "1", OS_LERJSONTXT(jQuery, "notificarTecnico") == "1")
-
 Return oRest:setStatusResponse(200, OS_RESPOSTAOK(aResultado[3], "OS incluida com sucesso."))
 
 //-------------------------------------------------------------------
@@ -1386,9 +1383,6 @@ User Function OS_APIALTERAR() As Logical
         EndIf
         Return oRest:setStatusResponse(400, '{"erro":"' + OS_ESCAPARJSON(aResultado[2]) + '"}')
     EndIf
-
-    // Informar cliente/tecnico (portal) - falha no e-mail nao desfaz a OS.
-    OS_EMAIL("ENVIAR", aResultado[3], OS_LERJSONTXT(jQuery, "notificarCliente") == "1", OS_LERJSONTXT(jQuery, "notificarTecnico") == "1")
 
 Return oRest:setStatusResponse(200, OS_RESPOSTAOK(aResultado[3], "OS alterada com sucesso."))
 
@@ -2828,15 +2822,49 @@ Return xRet
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
 // Quem grava a OS escolhe avisar o cliente e/ou o tecnico (portal: switches;
-// tela classica: janela de checkboxes do CNSA001). Layout e envio do CNSA001
+// tela classica: janela de checkboxes do CNSA001). Portal chama o endpoint
+// POST /CNSAOSEMAIL depois de gravar (OS_APIEMAIL). Layout e envio do CNSA001
 // (apia.cnsa001.U_CH_HTMLPUB / U_CH_MAILPUB); acentos via U_CNSOUTL("TEXTO").
 // Falha no e-mail nunca desfaz a OS.
 //
-//   ENVIAR  (cOs, lCliente, lTecnico)  envia o resumo; ao cliente marca Z1_OSENVCL/Z1_ENVDT/Z1_ENVHR
+//   ENVIAR  (cOs, lCliente, lTecnico)  envia o resumo; ao cliente marca Z1_OSENVCL/Z1_ENVDT/Z1_ENVHR;
+//                                      devolve {qtd e-mails ao cliente, enviou ao tecnico}
 //   TELA    (cOs)                      tela classica: pergunta e chama ENVIAR
 //   RESUMO  ()                         linhas do cartao (SZ1 posicionada)
 //   DESTINO ()                         e-mails do cliente: chamados da OS, senao A1_EMAIL
 ////////////////////////////////////////////////////////////////////////////////
+
+/*/{Protheus.doc} OS_APIEMAIL
+Endpoint REST POST /CNSAOSEMAIL?os=&cliente=1&tecnico=1 - envia o resumo da OS
+ao cliente e/ou ao tecnico (OS_EMAIL "ENVIAR"). O portal chama depois de gravar
+a OS; separado da gravacao pra nao atrasar o Salvar e poder reenviar.
+@return lOk   200 {sucesso, os, emailsCliente, emailTecnico} ou 404
+@author Henrique
+@since 08/10/2026
+@version P12
+/*/
+@Post(endpoint="/CNSAOSEMAIL")
+User Function OS_APIEMAIL() As Logical
+    Local jQuery := oRest:getQueryRequest() As Json
+    Local cOs    := AllTrim(OS_LERJSONTXT(jQuery, "os"))
+    Local aEnvio := {}
+    Local oJson  := JsonObject():New()
+
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
+
+    SZ1->(DbSetOrder(1))
+    If Empty(cOs) .Or. !SZ1->(DbSeek(cFilAnt + PadR(cOs, TamSX3("Z1_OS")[1])))
+        Return oRest:setStatusResponse(404, '{"erro":"OS nao encontrada."}')
+    EndIf
+
+    aEnvio := OS_EMAIL("ENVIAR", cOs, OS_LERJSONTXT(jQuery, "cliente") == "1", OS_LERJSONTXT(jQuery, "tecnico") == "1")
+
+    oJson["sucesso"]      := .T.
+    oJson["os"]           := cOs
+    oJson["emailsCliente"] := aEnvio[1]
+    oJson["emailTecnico"] := aEnvio[2]
+
+Return oRest:setStatusResponse(200, oJson:ToJson())
 
 /*/{Protheus.doc} OS_EMAIL
 E-mail da OS ao cliente e/ou ao tecnico - uma funcao, uma acao por Case.
@@ -2863,7 +2891,7 @@ Static Function OS_EMAIL(cAcao, x1, x2, x3)
 
     //--- Envia o resumo da OS ao cliente e/ou ao tecnico ---------------------
     Case cAcao == "ENVIAR"
-        xRet := .F.
+        xRet := {0, .F.}
         cOs  := PadR(AllTrim(cValToChar(x1)), TamSX3("Z1_OS")[1])
         SZ1->(DbSetOrder(1))
         If !(x2 .Or. x3) .Or. Empty(cOs) .Or. !SZ1->(DbSeek(cFilAnt + cOs))
@@ -2882,7 +2910,7 @@ Static Function OS_EMAIL(cAcao, x1, x2, x3)
         If x3
             cEmail := AllTrim(Posicione("AA1", 1, xFilial("AA1") + PadR(AllTrim(SZ1->Z1_TEC), TamSX3("AA1_CODTEC")[1]), "AA1_EMAIL"))
             If !Empty(cEmail)
-                apia.cnsa001.U_CH_MAILPUB(cEmail, "OS " + AllTrim(cOs) + " registrada", ;
+                xRet[2] := apia.cnsa001.U_CH_MAILPUB(cEmail, "OS " + AllTrim(cOs) + " registrada", ;
                     apia.cnsa001.U_CH_HTMLPUB("", "OS " + AllTrim(cOs), U_CNSOUTL("TEXTO", OS_NOMETEC(AllTrim(SZ1->Z1_TEC))), ;
                         "Uma OS foi registrada em seu nome. Confira o resumo abaixo.", aLin, "Descri&ccedil;&atilde;o", cTexto, ""))
             EndIf
@@ -2892,11 +2920,13 @@ Static Function OS_EMAIL(cAcao, x1, x2, x3)
         If x2 .And. AllTrim(SZ1->Z1_INTERNO) != "S"
             aResp := OS_EMAIL("DESTINO")
             For nI := 1 To Len(aResp)
-                apia.cnsa001.U_CH_MAILPUB(aResp[nI], "Ordem de Servico " + AllTrim(cOs), ;
-                    apia.cnsa001.U_CH_HTMLPUB("", "Ordem de Servi&ccedil;o " + AllTrim(cOs), "", ;
-                        "Segue o resumo do atendimento realizado.", aLin, "Descri&ccedil;&atilde;o", cTexto, ;
-                        "Qualquer d&uacute;vida, entre em contato: <b>pericles@apia.com.br</b>"))
-                lEnviou := .T.
+                If apia.cnsa001.U_CH_MAILPUB(aResp[nI], "Ordem de Servico " + AllTrim(cOs), ;
+                        apia.cnsa001.U_CH_HTMLPUB("", "Ordem de Servi&ccedil;o " + AllTrim(cOs), "", ;
+                            "Segue o resumo do atendimento realizado.", aLin, "Descri&ccedil;&atilde;o", cTexto, ;
+                            "Qualquer d&uacute;vida, entre em contato: <b>pericles@apia.com.br</b>"))
+                    xRet[1]++
+                    lEnviou := .T.
+                EndIf
             Next nI
             If lEnviou
                 SZ1->(DbSeek(cFilAnt + cOs))
@@ -2907,7 +2937,6 @@ Static Function OS_EMAIL(cAcao, x1, x2, x3)
                 SZ1->(MsUnlock())
             EndIf
         EndIf
-        xRet := .T.
 
     //--- Tela classica: pergunta (janela do CNSA001) e envia -----------------
     Case cAcao == "TELA"
