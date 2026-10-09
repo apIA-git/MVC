@@ -9,8 +9,6 @@
 
 Namespace apia.cnsa002
 
-PUBLISH MODEL REST NAME OS RESOURCE OBJECT oRestOS
-
 
 //-------------------------------------------------------------------
 /*/{Protheus.doc} CNS002
@@ -64,9 +62,6 @@ User Function MenuDef()
 Local aRotina  := {}
 
     ADD OPTION aRotina TITLE "Pesquisar"    ACTION "AxPesqui"                        OPERATION 1 ACCESS 0
-    // Mesmo padrao do CNSA001 (Chamado): ACTION "ViewDef.<fonte>" nao dispara
-    // nada dentro do Namespace - cada opcao chama uma User Function que abre a
-    // View via FWExecView com o identificador do namespace.
     ADD OPTION aRotina TITLE "Visualizar"   ACTION "apia.cnsa002.U_OS_VISUALIZARTELA" OPERATION 2 ACCESS 0
     ADD OPTION aRotina TITLE "Incluir"      ACTION "apia.cnsa002.U_OS_INCLUIRTELA"    OPERATION 3 ACCESS 0
     ADD OPTION aRotina TITLE "Alterar"      ACTION "apia.cnsa002.U_OS_ALTERARTELA"    OPERATION 4 ACCESS 0
@@ -462,10 +457,7 @@ Static Function OS_MODELLEVE()
 
     // Pos-validacao: agendamento "Nao Cobrar" so aceita servico nao cobravel.
     oModel := MPFormModel():New("FCNS002REST", NIL, {|o| OS_VALIDACOBRAR(o)}, NIL, NIL)
-    // FIX: faltava plugar OS_VALIDACAMPO como PosValidacao (4o parametro) -
-    // sem isso, Incluir/Alterar via Class oRestOS aceitava OS sem cliente/
-    // tecnico/nada, sem erro (a validacao dos 12 campos obrigatorios so
-    // existia no ModelDef002 completo da tela classica, nunca rodava aqui).
+    // OS_VALIDACAMPO como PosValidacao: obrigatorios validados tambem fora da tela.
     oModel:AddFields("SZ1MASTER", NIL, oStrSZ1, {|_f,_a,_c,_v| OS_VALIDACAMPO(_f,_a,_c,_v)}, NIL)
     oModel:SetPrimaryKey({"Z1_FILIAL", "Z1_OS"})
 
@@ -523,7 +515,7 @@ Return
 // So afeta Insert (Update/Delete carregam valor existente, nunca disparam
 // INITVALUE) - por isso a montagem esta duplicada aqui em vez de reusar
 // OS_MODELLEVE(). Uso exclusivo dos fluxos de Insert headless
-// (OS_NUCLEOCOPIAR, SaveData Incluir, OS_NUCLEOINCLUIR).
+// (OS_NUCLEOCOPIAR, OS_NUCLEOINCLUIR).
 //-------------------------------------------------------------------
 Static Function OS_MODELINSERT()
     Local oModel  := Nil
@@ -567,7 +559,6 @@ Static Function OS_NUCLEOCOPIAR(cOsOrigem)
     Local oModelSZ1  := Nil
     Local lOk        := .F.
     Local cErro      := ""
-    Local cErroModel := Nil
     Local oErroExcpt := Nil
 
     If Empty(cOsOrigem)
@@ -625,17 +616,7 @@ Static Function OS_NUCLEOCOPIAR(cOsOrigem)
         EndIf
 
         If !lOk
-            cErroModel := oModel:GetErrorMessage()
-            Do Case
-                Case ValType(cErroModel) == "C"
-                    cErro := cErroModel
-                Case ValType(cErroModel) == "O"
-                    cErro := cErroModel:GetMessage()
-                Case ValType(cErroModel) == "A"
-                    cErro := FwJsonSerialize(cErroModel)
-                Otherwise
-                    cErro := "Falha ao copiar a OS."
-            EndCase
+            cErro := OS_ERROMODEL(oModel, "Falha ao copiar a OS.")
         EndIf
 
         oModel:DeActivate(lOk)
@@ -802,177 +783,6 @@ Return
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
 //                                                                                              //
-//                       CLASS REST GENERICA - Incluir/Alterar/Visualizar                      //
-//                                                                                              //
-////////////////////////////////////////////////////////////////////////////////////////////////
-Class oRestOS From FwRestModel
-
-Method SaveData(cPK, cData, cError)
-
-EndClass
-
-//-------------------------------------------------------------------
-/*/{Protheus.doc} SaveData
-Implementacao generica de gravacao exigida pelo PUBLISH MODEL REST
-(Class oRestOS From FwRestModel). CODIGO MORTO do ponto de vista do
-front real (apia-po-cnshub): confirmado lendo os-serv.ts que
-Incluir/Alterar mandam tudo via QUERY STRING com corpo POST sempre
-`null` (nunca JSON body) - mesmo problema ja corrigido no CNS001.TLPP
-para o front de Chamados. Os endpoints DE VERDADE usados pelo front
-sao OS_APIINCLUIR/OS_APIALTERAR (@Post custom lendo query string).
-Mantido aqui so porque o PUBLISH MODEL REST exige a Class existir -
-nunca chamado por esse front. NUNCA delega pro `_Super` (ver aviso no
-topo do arquivo sobre risco de cascata no SZ2DETAIL relacionado por
-cliente), caso algum dia alguem chame o generico de verdade.
-@param  cPK      Chave primaria (vazia = Incluir, preenchida = Alterar)
-@param  cData    Corpo JSON da requisicao (nunca usado por este front)
-@param  cError   Variavel de saida com a mensagem de erro (por referencia)
-@return lOk      .T. se gravou com sucesso, .F. caso contrario
-@author Henrique
-@since 02/09/2026
-@version P12
-/*/
-//-------------------------------------------------------------------
-Method SaveData(cPK, cData, cError) Class oRestOS
-Local jBody      := Nil
-Local oModel     := Nil
-Local oModelSZ1  := Nil
-Local lOk        := .F.
-Local cErro      := ""
-Local cErroModel := Nil
-Local oErroExcpt := Nil
-Local cOs        := ""
-Local lIncluir   := Empty(cPK)
-
-    Begin Sequence
-        jBody := JsonObject():New()
-        jBody:fromJson(cData)
-        If jBody == Nil
-            cError := "Corpo da requisicao invalido (JSON malformado)."
-            lOk    := .F.
-        Else
-            If lIncluir
-                // OS_MODELINSERT (nao OS_MODELLEVE + Activate separado):
-                // monta e ativa na MESMA funcao, senao "_SetNamedPrvt:
-                // owner private environment not found" no INITVALUE do
-                // Insert.
-                oModel    := OS_MODELINSERT()
-                oModelSZ1 := oModel:GetModel("SZ1MASTER")
-
-                cOs := OS_PROXIMONUM()
-                oModelSZ1:SetValue("Z1_FILIAL",  cFilAnt)
-                // LoadValue (nao SetValue): X3_VALID do Z1_OS (ExistChav("SZ1")) quebra
-                // com type mismatch fora da tela (rota REST, sem M->Z1_OS). Numero ja
-                // vem unico do OS_PROXIMONUM.
-                oModelSZ1:LoadValue("Z1_OS", cOs)
-                oModelSZ1:SetValue("Z1_APROVAD", "N")
-                oModelSZ1:SetValue("Z1_FATURAR", "N")
-            Else
-                cOs := cPK
-                DbSelectArea("SZ1")
-                SZ1->(DbSetOrder(1))
-                If !SZ1->(DbSeek(cFilAnt + cOs))
-                    cError := "OS nao encontrada."
-                    Return .F.
-                EndIf
-                oModel := OS_MODELLEVE()
-                oModel:SetOperation(MODEL_OPERATION_UPDATE)
-                oModel:Activate()
-                oModelSZ1 := oModel:GetModel("SZ1MASTER")
-            EndIf
-
-            // Mapeamento generico: qualquer campo Z1_* que vier no JSON e
-            // setado - Incluir grava tudo, Alterar so o que veio (parcial).
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_CLI")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_LOJA")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_USR")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_MODULO")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_MOTIV")
-            OS_SETTEXTOUTF8(oModelSZ1, jBody, "Z1_SERV")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_TIPO")
-            OS_SETDATAOS(oModelSZ1, jBody, "Z1_DTOS")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_INTERNO")
-            OS_SETNUM(oModelSZ1, jBody, "Z1_INI")
-            OS_SETNUM(oModelSZ1, jBody, "Z1_FIM")
-            OS_SETNUM(oModelSZ1, jBody, "Z1_TRANS")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_PREVIST")
-            OS_SETNUM(oModelSZ1, jBody, "Z1_TOTAL")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_TEC")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_NUMPRO")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_PV")
-            OS_SETNUM(oModelSZ1, jBody, "Z1_ALMOCO")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_PROJET")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_REVISA")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_TAREFA")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_CHPSD")
-            OS_SETNUM(oModelSZ1, jBody, "Z1_CHHDK")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_OSDESE")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_OSENVCL")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_LIN")
-            OS_SETNUM(oModelSZ1, jBody, "Z1_VLRHR")
-
-            // Z1_LOJA NAO recebe default silencioso: e campo obrigatorio
-            // (aObrigatorios em OS_VALIDACAMPO) - se faltar, VldData() reprova
-            // com erro, igual o original exigia explicitamente.
-            If lIncluir .And. Empty(oModelSZ1:GetValue("Z1_INTERNO"))
-                oModelSZ1:SetValue("Z1_INTERNO", "N")
-            EndIf
-            If lIncluir .And. Empty(oModelSZ1:GetValue("Z1_OSDESE"))
-                oModelSZ1:SetValue("Z1_OSDESE", "N")
-            EndIf
-            // Z1_OSENVCL (OS Enviada, S/N) e obrigatorio - OS antigas estao
-            // vazias, entao preenche "N" tambem no Alterar.
-            If Empty(oModelSZ1:GetValue("Z1_OSENVCL"))
-                oModelSZ1:SetValue("Z1_OSENVCL", "N")
-            EndIf
-            If lIncluir .And. Empty(oModelSZ1:GetValue("Z1_DTDIGIT"))
-                oModelSZ1:SetValue("Z1_DTDIGIT", Date())
-            EndIf
-
-            If oModel:VldData()
-                lOk := oModel:CommitData()
-            Else
-                lOk := .F.
-            EndIf
-
-            If !lOk
-                cErroModel := oModel:GetErrorMessage()
-                Do Case
-                    Case ValType(cErroModel) == "C"
-                        cErro := cErroModel
-                    Case ValType(cErroModel) == "O"
-                        cErro := cErroModel:GetMessage()
-                    Case ValType(cErroModel) == "A"
-                        cErro := FwJsonSerialize(cErroModel)
-                    Otherwise
-                        cErro := "Falha ao validar/gravar a OS."
-                EndCase
-                cError := cErro
-            EndIf
-
-            oModel:DeActivate(lOk)
-
-            If lIncluir
-                If lOk
-                    ConfirmSX8()
-                Else
-                    ConfirmSX8(.F.)
-                EndIf
-            EndIf
-        EndIf
-    Recover Using oErroExcpt
-        lOk    := .F.
-        cError := "Erro interno: " + oErroExcpt:Description
-        If lIncluir
-            ConfirmSX8(.F.)
-        EndIf
-        If oModel <> Nil
-            oModel:DeActivate()
-        EndIf
-    End Sequence
-
-////////////////////////////////////////////////////////////////////////////////////////////////
-//                                                                                              //
 //                    INCLUIR/ALTERAR - endpoints REAIS usados pelo front                     //
 //                    (query string, corpo POST sempre null - confirmado                       //
 //                    lendo os-serv.ts)                                                        //
@@ -999,7 +809,6 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
     Local oModelSZ1  := Nil
     Local lOk        := .F.
     Local cErro      := ""
-    Local cErroModel := Nil
     Local oErroExcpt := Nil
     Local cOs        := ""
     Local cDtDigit   := AllTrim(OS_LERJSONTXT(jQuery, "dtDigitacao"))
@@ -1119,17 +928,7 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
         EndIf
 
         If !lOk
-            cErroModel := oModel:GetErrorMessage()
-            Do Case
-                Case ValType(cErroModel) == "C"
-                    cErro := cErroModel
-                Case ValType(cErroModel) == "O"
-                    cErro := cErroModel:GetMessage()
-                Case ValType(cErroModel) == "A"
-                    cErro := FwJsonSerialize(cErroModel)
-                Otherwise
-                    cErro := "Falha ao validar/gravar a OS."
-            EndCase
+            cErro := OS_ERROMODEL(oModel, "Falha ao validar/gravar a OS.")
         EndIf
 
         oModel:DeActivate(lOk)
@@ -1197,7 +996,6 @@ Static Function OS_NUCLEOALTERAR(jQuery)
     Local oModelSZ1  := Nil
     Local lOk        := .F.
     Local cErro      := ""
-    Local cErroModel := Nil
     Local oErroExcpt := Nil
     Local cOs        := AllTrim(OS_LERJSONTXT(jQuery,"os"))
     Local cVal       := ""
@@ -1324,17 +1122,7 @@ Static Function OS_NUCLEOALTERAR(jQuery)
         EndIf
 
         If !lOk
-            cErroModel := oModel:GetErrorMessage()
-            Do Case
-                Case ValType(cErroModel) == "C"
-                    cErro := cErroModel
-                Case ValType(cErroModel) == "O"
-                    cErro := cErroModel:GetMessage()
-                Case ValType(cErroModel) == "A"
-                    cErro := FwJsonSerialize(cErroModel)
-                Otherwise
-                    cErro := "Falha ao validar/gravar a alteracao."
-            EndCase
+            cErro := OS_ERROMODEL(oModel, "Falha ao validar/gravar a alteracao.")
         EndIf
 
         oModel:DeActivate(lOk)
@@ -1387,48 +1175,6 @@ User Function OS_APIALTERAR() As Logical
     EndIf
 
 Return oRest:setStatusResponse(200, OS_RESPOSTAOK(aResultado[3], "OS alterada com sucesso."))
-
-Return lOk
-
-// Helpers do SaveData - setam campo so se veio no JSON (Alterar parcial) ou
-// sempre (Incluir, jBody[cCampo]==Nil vira valor vazio, igual campo omitido).
-//-------------------------------------------------------------------
-/*/{Protheus.doc} OS_SETSEFICOU
-Seta um campo texto generico do Model (SZ1MASTER) a partir do JSON, so
-se o campo veio no corpo (jBody[cCampo] != Nil).
-@param  oModelSZ1   Sub-model da SZ1MASTER (FormModel)
-@param  jBody       Objeto Json com o corpo da requisicao
-@param  cCampo      Nome do campo (SX3) a setar
-@author Henrique
-@since 02/09/2026
-@version P12
-/*/
-//-------------------------------------------------------------------
-Static Function OS_SETSEFICOU(oModelSZ1, jBody, cCampo)
-    Local xVal := jBody[cCampo]
-    If xVal != Nil
-        oModelSZ1:SetValue(cCampo, AllTrim(cValToChar(xVal)))
-    EndIf
-Return
-
-//-------------------------------------------------------------------
-/*/{Protheus.doc} OS_SETTEXTOUTF8
-Seta um campo texto do Model (SZ1MASTER) a partir do JSON, so se o
-campo veio no corpo (jBody[cCampo] != Nil).
-@param  oModelSZ1   Sub-model da SZ1MASTER (FormModel)
-@param  jBody       Objeto Json com o corpo da requisicao
-@param  cCampo      Nome do campo (SX3) a setar
-@author Henrique
-@since 02/09/2026
-@version P12
-/*/
-//-------------------------------------------------------------------
-Static Function OS_SETTEXTOUTF8(oModelSZ1, jBody, cCampo)
-    Local xVal := jBody[cCampo]
-    If xVal != Nil
-        oModelSZ1:SetValue(cCampo, AllTrim(cValToChar(xVal)))
-    EndIf
-Return
 
 //-------------------------------------------------------------------
 /*/{Protheus.doc} OS_LERHORA
@@ -1497,42 +1243,31 @@ Static Function OS_HORACAMPO(cHora, cCampo)
 Return PadR(Left(cRet, nTam), nTam)
 
 //-------------------------------------------------------------------
-/*/{Protheus.doc} OS_SETNUM
-Seta um campo numerico do Model (SZ1MASTER) a partir do JSON, so se o
-campo veio no corpo (jBody[cCampo] != Nil).
-@param  oModelSZ1   Sub-model da SZ1MASTER (FormModel)
-@param  jBody       Objeto Json com o corpo da requisicao
-@param  cCampo      Nome do campo (SX3) a setar
+/*/{Protheus.doc} OS_ERROMODEL
+Mensagem de erro do Model depois de VldData/CommitData falhar (texto,
+objeto ou array, conforme o framework devolve). Usado em incluir,
+alterar, copiar e excluir.
+@param  oModel    Model que falhou
+@param  cPadrao   Mensagem quando o Model nao informa nada
+@return cErro     Mensagem de erro
 @author Henrique
-@since 02/09/2026
+@since 09/10/2026
 @version P12
 /*/
 //-------------------------------------------------------------------
-Static Function OS_SETNUM(oModelSZ1, jBody, cCampo)
-    Local xVal := jBody[cCampo]
-    If xVal != Nil
-        oModelSZ1:SetValue(cCampo, Val(cValToChar(xVal)))
-    EndIf
-Return
+Static Function OS_ERROMODEL(oModel, cPadrao)
+    Local xErro := oModel:GetErrorMessage()
 
-//-------------------------------------------------------------------
-/*/{Protheus.doc} OS_SETDATAOS
-Seta um campo data do Model (SZ1MASTER) a partir do JSON (formato
-"AAAA-MM-DD"), so se o campo veio no corpo e nao estiver vazio.
-@param  oModelSZ1   Sub-model da SZ1MASTER (FormModel)
-@param  jBody       Objeto Json com o corpo da requisicao
-@param  cCampo      Nome do campo (SX3) a setar
-@author Henrique
-@since 02/09/2026
-@version P12
-/*/
-//-------------------------------------------------------------------
-Static Function OS_SETDATAOS(oModelSZ1, jBody, cCampo)
-    Local xVal := jBody[cCampo]
-    If xVal != Nil .And. !Empty(cValToChar(xVal))
-        oModelSZ1:SetValue(cCampo, STOD(StrTran(cValToChar(xVal), "-", "")))
-    EndIf
-Return
+    Do Case
+        Case ValType(xErro) == "C"
+            Return xErro
+        Case ValType(xErro) == "O"
+            Return xErro:GetMessage()
+        Case ValType(xErro) == "A"
+            Return FwJsonSerialize(xErro)
+    EndCase
+
+Return cPadrao
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
 //                                                                                              //
@@ -2128,7 +1863,6 @@ User Function OS_APIEXCLUIR() As Logical
     Local oModel     := Nil
     Local lOk        := .F.
     Local cErro      := ""
-    Local cErroModel := Nil
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -2153,17 +1887,7 @@ User Function OS_APIEXCLUIR() As Logical
         EndIf
 
         If !lOk
-            cErroModel := oModel:GetErrorMessage()
-            Do Case
-                Case ValType(cErroModel) == "C"
-                    cErro := cErroModel
-                Case ValType(cErroModel) == "O"
-                    cErro := cErroModel:GetMessage()
-                Case ValType(cErroModel) == "A"
-                    cErro := FwJsonSerialize(cErroModel)
-                Otherwise
-                    cErro := "Falha ao excluir a OS."
-            EndCase
+            cErro := OS_ERROMODEL(oModel, "Falha ao excluir a OS.")
         EndIf
 
         oModel:DeActivate(lOk)
