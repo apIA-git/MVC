@@ -667,7 +667,7 @@ User Function OS_INCLUIRTELA()
     oModel := OS_MONTARMODEL(MODEL_OPERATION_INSERT)
     cOs    := oModel:GetModel("SZ1MASTER"):GetValue("Z1_OS")
 
-    // FWExecView devolve 0 quando grava: pergunta cliente/tecnico (OS_EMAIL "TELA").
+    // FWExecView devolve 0 quando grava: pergunta se informa o cliente (OS_EMAIL "TELA").
     If FWExecView("Ordem de Servico", "apia.cnsa002.u_cns002", MODEL_OPERATION_INSERT, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel) == 0
         OS_EMAIL("TELA", cOs)
     EndIf
@@ -692,7 +692,7 @@ User Function OS_ALTERARTELA()
     RegToMemory("SZ1", .F., .F.)
     oModel := OS_MONTARMODEL(MODEL_OPERATION_UPDATE)
 
-    // FWExecView devolve 0 quando grava: pergunta cliente/tecnico (OS_EMAIL "TELA").
+    // FWExecView devolve 0 quando grava: pergunta se informa o cliente (OS_EMAIL "TELA").
     If FWExecView("Ordem de Servico", "apia.cnsa002.u_cns002", MODEL_OPERATION_UPDATE, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel) == 0
         OS_EMAIL("TELA", cOs)
     EndIf
@@ -2516,27 +2516,27 @@ Return xRet
 
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//              E-MAIL DA OS AO CLIENTE E AO TECNICO (OS_EMAIL)               //
+//                    E-MAIL DA OS AO CLIENTE (OS_EMAIL)                      //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
-// Quem grava a OS escolhe avisar o cliente e/ou o tecnico (portal: switches;
+// Depois de gravar a OS pergunta se informa o cliente (portal: popup;
 // tela classica: janela de checkboxes do CNSA001). Portal chama o endpoint
 // POST /CNSAOSEMAIL depois de gravar (OS_APIEMAIL). Layout e envio do CNSA001
 // (apia.cnsa001.U_CH_HTMLPUB / U_CH_MAILPUB); acentos via U_CNSOUTL("TEXTO").
 // Falha no e-mail nunca desfaz a OS.
 //
-//   ENVIAR  (cOs, lCliente, lTecnico)  envia o resumo; ao cliente marca Z1_OSENVCL/Z1_ENVDT/Z1_ENVHR;
-//                                      devolve {qtd e-mails ao cliente, enviou ao tecnico}
+//   ENVIAR  (cOs)                      envia o resumo ao cliente; marca Z1_OSENVCL/Z1_ENVDT/Z1_ENVHR;
+//                                      devolve a qtd de e-mails enviados
 //   TELA    (cOs)                      tela classica: pergunta e chama ENVIAR
 //   RESUMO  ()                         linhas do cartao (SZ1 posicionada)
 //   DESTINO ()                         e-mails do cliente: chamados da OS, senao A1_EMAIL
 ////////////////////////////////////////////////////////////////////////////////
 
 /*/{Protheus.doc} OS_APIEMAIL
-Endpoint REST POST /CNSAOSEMAIL?os=&cliente=1&tecnico=1 - envia o resumo da OS
-ao cliente e/ou ao tecnico (OS_EMAIL "ENVIAR"). O portal chama depois de gravar
+Endpoint REST POST /CNSAOSEMAIL?os=&cliente=1 - envia o resumo da OS ao
+cliente (OS_EMAIL "ENVIAR"). O portal chama depois de gravar (popup "informar o cliente?")
 a OS; separado da gravacao pra nao atrasar o Salvar e poder reenviar.
-@return lOk   200 {sucesso, os, emailsCliente, emailTecnico} ou 404
+@return lOk   200 {sucesso, os, emailsCliente} ou 404
 @author Henrique
 @since 08/10/2026
 @version P12
@@ -2545,7 +2545,7 @@ a OS; separado da gravacao pra nao atrasar o Salvar e poder reenviar.
 User Function OS_APIEMAIL() As Logical
     Local jQuery := oRest:getQueryRequest() As Json
     Local cOs    := AllTrim(OS_LERJSONTXT(jQuery, "os"))
-    Local aEnvio := {}
+    Local nEnvio := 0
     Local oJson  := JsonObject():New()
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
@@ -2555,25 +2555,26 @@ User Function OS_APIEMAIL() As Logical
         Return oRest:setStatusResponse(404, '{"erro":"OS nao encontrada."}')
     EndIf
 
-    aEnvio := OS_EMAIL("ENVIAR", cOs, OS_LERJSONTXT(jQuery, "cliente") == "1", OS_LERJSONTXT(jQuery, "tecnico") == "1")
+    If OS_LERJSONTXT(jQuery, "cliente") == "1"
+        nEnvio := OS_EMAIL("ENVIAR", cOs)
+    EndIf
 
     oJson["sucesso"]      := .T.
     oJson["os"]           := cOs
-    oJson["emailsCliente"] := aEnvio[1]
-    oJson["emailTecnico"] := aEnvio[2]
+    oJson["emailsCliente"] := nEnvio
 
 Return oRest:setStatusResponse(200, oJson:ToJson())
 
 /*/{Protheus.doc} OS_EMAIL
-E-mail da OS ao cliente e/ou ao tecnico - uma funcao, uma acao por Case.
+E-mail da OS ao cliente - uma funcao, uma acao por Case.
 @param  cAcao   ENVIAR, TELA, RESUMO ou DESTINO
-@param  x1..x3  Parametros da acao (ver tabela acima)
+@param  x1      Parametro da acao (ver tabela acima)
 @return xRet    Conforme a acao
 @author Henrique
 @since 08/10/2026
 @version P12
 /*/
-Static Function OS_EMAIL(cAcao, x1, x2, x3)
+Static Function OS_EMAIL(cAcao, x1)
     Local xRet    := Nil
     Local cOs     := ""
     Local cEmail  := ""
@@ -2583,16 +2584,16 @@ Static Function OS_EMAIL(cAcao, x1, x2, x3)
     Local aResp   := {}
     Local nI      := 0
     Local nJ      := 0
-    Local lEnviou := .F.
 
     Do Case
 
-    //--- Envia o resumo da OS ao cliente e/ou ao tecnico ---------------------
+    //--- Envia o resumo da OS ao cliente ------------------------------------
     Case cAcao == "ENVIAR"
-        xRet := {0, .F.}
+        xRet := 0
         cOs  := PadR(AllTrim(cValToChar(x1)), TamSX3("Z1_OS")[1])
         SZ1->(DbSetOrder(1))
-        If !(x2 .Or. x3) .Or. Empty(cOs) .Or. !SZ1->(DbSeek(cFilAnt + cOs))
+        // OS Interna nao vai pro cliente.
+        If Empty(cOs) .Or. !SZ1->(DbSeek(cFilAnt + cOs)) .Or. AllTrim(SZ1->Z1_INTERNO) == "S"
             Return xRet
         EndIf
 
@@ -2605,45 +2606,32 @@ Static Function OS_EMAIL(cAcao, x1, x2, x3)
         EndDo
         cTexto := U_CNSOUTL("TEXTO", StrTran(cTexto, "&nbsp;", " "))
 
-        If x3
-            cEmail := AllTrim(Posicione("AA1", 1, xFilial("AA1") + PadR(AllTrim(SZ1->Z1_TEC), TamSX3("AA1_CODTEC")[1]), "AA1_EMAIL"))
-            If !Empty(cEmail)
-                xRet[2] := apia.cnsa001.U_CH_MAILPUB(cEmail, "OS " + AllTrim(cOs) + " registrada", ;
-                    apia.cnsa001.U_CH_HTMLPUB("", "OS " + AllTrim(cOs), U_CNSOUTL("TEXTO", OS_NOMETEC(AllTrim(SZ1->Z1_TEC))), ;
-                        "Uma OS foi registrada em seu nome. Confira o resumo abaixo.", aLin, "Descri&ccedil;&atilde;o", cTexto, ""))
+        aResp := OS_EMAIL("DESTINO")
+        For nI := 1 To Len(aResp)
+            If apia.cnsa001.U_CH_MAILPUB(aResp[nI], "Ordem de Servico " + AllTrim(cOs), ;
+                    apia.cnsa001.U_CH_HTMLPUB("", "Ordem de Servi&ccedil;o " + AllTrim(cOs), "", ;
+                        "Segue o resumo do atendimento realizado.", aLin, "Descri&ccedil;&atilde;o", cTexto, ;
+                        "Qualquer d&uacute;vida, entre em contato: <b>pericles@apia.com.br</b>"))
+                xRet++
             EndIf
+        Next nI
+        If xRet > 0
+            SZ1->(DbSeek(cFilAnt + cOs))
+            RecLock("SZ1", .F.)
+                SZ1->Z1_OSENVCL := "S"
+                SZ1->Z1_ENVDT   := Date()
+                SZ1->Z1_ENVHR   := OS_HORACAMPO(Left(Time(), 5), "Z1_ENVHR")
+            SZ1->(MsUnlock())
         EndIf
 
-        // OS Interna nao vai pro cliente.
-        If x2 .And. AllTrim(SZ1->Z1_INTERNO) != "S"
-            aResp := OS_EMAIL("DESTINO")
-            For nI := 1 To Len(aResp)
-                If apia.cnsa001.U_CH_MAILPUB(aResp[nI], "Ordem de Servico " + AllTrim(cOs), ;
-                        apia.cnsa001.U_CH_HTMLPUB("", "Ordem de Servi&ccedil;o " + AllTrim(cOs), "", ;
-                            "Segue o resumo do atendimento realizado.", aLin, "Descri&ccedil;&atilde;o", cTexto, ;
-                            "Qualquer d&uacute;vida, entre em contato: <b>pericles@apia.com.br</b>"))
-                    xRet[1]++
-                    lEnviou := .T.
-                EndIf
-            Next nI
-            If lEnviou
-                SZ1->(DbSeek(cFilAnt + cOs))
-                RecLock("SZ1", .F.)
-                    SZ1->Z1_OSENVCL := "S"
-                    SZ1->Z1_ENVDT   := Date()
-                    SZ1->Z1_ENVHR   := OS_HORACAMPO(Left(Time(), 5), "Z1_ENVHR")
-                SZ1->(MsUnlock())
-            EndIf
-        EndIf
-
-    //--- Tela classica: pergunta (janela do CNSA001) e envia -----------------
+    //--- Tela classica: pergunta se informa o cliente e envia ----------------
     Case cAcao == "TELA"
         cOs := PadR(AllTrim(cValToChar(x1)), TamSX3("Z1_OS")[1])
         SZ1->(DbSetOrder(1))
-        If !Empty(cOs) .And. SZ1->(DbSeek(cFilAnt + cOs))
-            aResp := apia.cnsa001.U_CH_PERGUNTAPUB("OS " + AllTrim(cOs), ;
-                AllTrim(SZ1->Z1_INTERNO) != "S", !Empty(AllTrim(SZ1->Z1_TEC)))
-            xRet := OS_EMAIL("ENVIAR", cOs, aResp[1], aResp[2])
+        If !Empty(cOs) .And. SZ1->(DbSeek(cFilAnt + cOs)) .And. AllTrim(SZ1->Z1_INTERNO) != "S"
+            If MsgYesNo("Deseja informar o cliente? Ele recebe por e-mail o resumo da OS " + AllTrim(cOs) + ".", "OS " + AllTrim(cOs))
+                xRet := OS_EMAIL("ENVIAR", cOs)
+            EndIf
         EndIf
 
     //--- Linhas do cartao do e-mail (SZ1 posicionada) ------------------------

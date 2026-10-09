@@ -6,9 +6,10 @@ Namespace apia.cnsa004
 
 //-------------------------------------------------------------------
 /*/{Protheus.doc} CNS004
-Historico de aprovacao de OS (tabela SZA) - so consulta. Cada resposta vira
-uma linha: aprovou pelo link (A), recusou pelo link (R) ou aprovacao manual
-de administrador (M). Quem grava e o fluxo de aprovacao da OS; aqui so le.
+Historico de aprovacao de OS (tabela SZA) - so consulta. Uma linha por
+evento (envio, pre-aprovacao, aprovacao, recusa, reabertura); o tipo e
+deduzido de ZA_APROVAD + ZA_APVTIPO + data preenchida (aba "Identificacao
+SZA" da planilha aprovacao-os-transacoes.xlsx). Quem grava e o U_CNSAPR.
 Chamada sem parametro mostra tudo; com o numero da OS (menu da OS, CNSA002)
 abre filtrada nela.
 @param  cOs   Numero da OS (opcional)
@@ -35,9 +36,14 @@ User Function CNS004(cOs)
             l_oBrowse:SetFilterDefault("SZA->ZA_OS == '" + PadR(AllTrim(cOs), TamSX3("ZA_OS")[1]) + "'")
         EndIf
 
-        l_oBrowse:AddLegend("SZA->ZA_TIPO=='A'", "GREEN", "Aprovada pelo cliente")
-        l_oBrowse:AddLegend("SZA->ZA_TIPO=='M'", "BLUE",  "Aprovada manualmente")
-        l_oBrowse:AddLegend("SZA->ZA_TIPO=='R'", "RED",   "Recusada pelo cliente")
+        // Primeira que casar (ordem importa): envio tem ZA_ENVDT; os demais, ZA_DTREC.
+        l_oBrowse:AddLegend("!Empty(SZA->ZA_ENVDT)",                              "YELLOW", "Envio ao cliente")
+        l_oBrowse:AddLegend("SZA->ZA_APROVAD=='S' .And. SZA->ZA_APVTIPO=='W'",    "GREEN",  "Aprovada pelo cliente")
+        l_oBrowse:AddLegend("SZA->ZA_APROVAD=='S'",                                "BLUE",   "Aprovada (manual / prazo)")
+        l_oBrowse:AddLegend("SZA->ZA_APROVAD=='R' .And. SZA->ZA_APVTIPO=='M'",    "GRAY",   "Pre-recusada (interna)")
+        l_oBrowse:AddLegend("SZA->ZA_APROVAD=='R'",                                "RED",    "Recusada (cliente / manual)")
+        l_oBrowse:AddLegend("SZA->ZA_APVTIPO=='M'",                                "ORANGE", "Pre-aprovada")
+        l_oBrowse:AddLegend(".T.",                                                 "WHITE",  "Reaberta")
 
         l_oBrowse:Activate()
 
@@ -155,7 +161,7 @@ Return
 
 //-------------------------------------------------------------------
 /*/{Protheus.doc} HA_LEGENDA
-Legenda do tipo de resposta (ZA_TIPO).
+Legenda do evento (ZA_APROVAD + ZA_APVTIPO + data).
 @author Henrique
 @since 08/10/2026
 @version P12
@@ -163,11 +169,15 @@ Legenda do tipo de resposta (ZA_TIPO).
 //-------------------------------------------------------------------
 User Function HA_LEGENDA()
 
-    BrwLegenda("Legenda", "Tipo de resposta", ;
+    BrwLegenda("Legenda", "Evento", ;
         { ;
-            { "BR_VERDE",    "Aprovada pelo cliente" }, ;
-            { "BR_AZUL",     "Aprovada manualmente"  }, ;
-            { "BR_VERMELHO", "Recusada pelo cliente" }  ;
+            { "BR_AMARELO",  "Envio ao cliente"            }, ;
+            { "BR_VERDE",    "Aprovada pelo cliente"       }, ;
+            { "BR_AZUL",     "Aprovada (manual / prazo)"   }, ;
+            { "BR_CINZA",    "Pre-recusada (interna)"      }, ;
+            { "BR_VERMELHO", "Recusada (cliente / manual)" }, ;
+            { "BR_LARANJA",  "Pre-aprovada"                }, ;
+            { "BR_BRANCO",   "Reaberta"                    }  ;
         })
 
 Return

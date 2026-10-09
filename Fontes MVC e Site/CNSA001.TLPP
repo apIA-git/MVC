@@ -4767,14 +4767,3 @@ mesma caixa remetente dos demais e-mails do chamado.
 /*/
 User Function CH_MAILPUB(cPara, cAssunto, cCorpo)
 Return CH_ENVIAREMAIL(cPara, cAssunto, cCorpo, "apia@apia.com.br")
-
-/*/{Protheus.doc} CH_PERGUNTAPUB
-Expoe a janela de e-mails (CH_PERGUNTAEMAIL, Static) pra fora do namespace -
-usada na tela classica da OS (CNSA002, OS_EMAIL "TELA").
-@return aRet   {lEnviarCliente, lEnviarTecnico}
-@author Henrique
-@since 08/10/2026
-@version P12
-/*/
-User Function CH_PERGUNTAPUB(cTitulo, lOfereceCli, lOfereceTec)
-Return CH_PERGUNTAEMAIL(cTitulo, lOfereceCli, lOfereceTec)
