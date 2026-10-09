@@ -23,8 +23,7 @@ SZ1, com as legendas de status (aprovada/faturada/negada/etc).
 User Function CNS002()
 
     Local l_oBrowse := Nil
-    // FIX: User Function precisa ser chamada com prefixo "u_" mesmo dentro do
-    // mesmo arquivo/namespace (mesmo problema real confirmado no CNS001.TLPP).
+    // User Function do mesmo namespace precisa do prefixo "u_".
     Private aRotina := u_MenuDef()
 
     l_oBrowse := FWMBrowse():New()
@@ -505,17 +504,10 @@ Static Function OS_STRUCTHEADLESS(oStrSZ1)
 
 Return
 
-// Monta E ativa o model de Insert na MESMA funcao (nao chama OS_MODELLEVE()
-// e ativa depois na funcao chamadora) - mesmo bug/fix do CH_MODELINSERT em
-// CNSA001.TLPP: FWInitCpo prende o "owner private environment" ao stack
-// frame de quem monta o model (New/AddFields); se o Activate() de Insert
-// roda numa funcao diferente de quem montou, INITVALUE quebra com
-// "_SetNamedPrvt: owner private environment not found" (campo Data do SZ1
-// - Z1_DTOS/Z1_DTDIGIT - dispara o calculo de valor inicial em branco).
-// So afeta Insert (Update/Delete carregam valor existente, nunca disparam
-// INITVALUE) - por isso a montagem esta duplicada aqui em vez de reusar
-// OS_MODELLEVE(). Uso exclusivo dos fluxos de Insert headless
-// (OS_NUCLEOCOPIAR, OS_NUCLEOINCLUIR).
+// Model de Insert montado E ativado aqui (nao reusa OS_MODELLEVE): o Activate
+// de Insert em outra funcao quebra o INITVALUE com "owner private environment
+// not found" (mesmo caso do CH_MODELINSERT no CNSA001). Usado por
+// OS_NUCLEOCOPIAR e OS_NUCLEOINCLUIR.
 //-------------------------------------------------------------------
 Static Function OS_MODELINSERT()
     Local oModel  := Nil
@@ -577,9 +569,7 @@ Static Function OS_NUCLEOCOPIAR(cOsOrigem)
         EndIf
     Next nI
 
-    // FIX: sem Begin Sequence/Recover, uma excecao real entre Activate() e
-    // DeActivate() deixava o model pendurado pra sempre (mesma classe de bug
-    // ja corrigida no CH_GRAVARAGENDA do CNS001.TLPP).
+    // Begin Sequence: excecao entre Activate() e DeActivate() nao deixa o model pendurado.
     Begin Sequence
 
         cOsNova := OS_PROXIMONUM()
@@ -1492,11 +1482,8 @@ Return cRet
 
 //-------------------------------------------------------------------
 /*/{Protheus.doc} OS_LERJSONNUM
-Le um campo numerico de um objeto Json (helper compartilhado pelos
-endpoints @Get/@Post). FIX ja existente no original (nao usa
-GetJsonText): indexacao direta jDados[cCampo] devolve Nil de verdade
-pra campo ausente, enquanto GetJsonText devolvia a string literal
-"null".
+Le um campo numerico de um objeto Json (endpoints @Get/@Post). Usa
+jDados[cCampo] (Nil se ausente), nao GetJsonText (devolvia "null").
 @param  jDados   Objeto Json (query string ou corpo)
 @param  cCampo   Nome do campo a ler
 @return nVal     Valor numerico do campo, ou 0 se ausente
@@ -1514,13 +1501,9 @@ Return Val(cValToChar(xVal))
 
 //-------------------------------------------------------------------
 /*/{Protheus.doc} OS_DECODESAFE
-FIX (caracteres acentuados bugados na descricao/texto/etc): o campo
-chega via querystring (nao corpo JSON - OsServ.ts manda tudo na URL,
-POST com body null). Faz reconstrucao manual byte a byte (mesmo
-algoritmo do CH_DECODESAFE em CNS001.TLPP) em vez de confiar no
-DecodeUTF8 nativo - remonta o par de bytes UTF-8 (0xC2/0xC3 +
-continuacao) que apareceu como 2 chars CP1252 separados. Nunca lanca
-erro (so usa Asc/Chr/SubStr).
+Corrige acentos que chegam pela query string como UTF-8 quebrado em 2
+caracteres CP1252: remonta o par de bytes (0xC2/0xC3 + continuacao), igual
+ao CH_DECODESAFE do CNSA001. Nunca lanca erro.
 @param  cTexto   Texto possivelmente com bytes UTF-8 quebrados em CP1252
 @return cRet     Texto reconstruido/decodificado
 @author Henrique
@@ -1633,20 +1616,9 @@ Static Function OS_RESPOSTAOK(cOs, cMsg)
     oJson["mensagem"] := cMsg
 Return oJson:ToJson()
 
-// LISTAGEM / VISUALIZAR / PESQUISAR - fica custom (SQL direto por performance,
-// nao cabe no generico).
-//
-// FIX (travava "sending" pra sempre, mesmo compilado): a versao anterior desta
-// funcao trocou SQL por navegacao nativa (DbSeek/DbSkip), copiando cegamente o
-// padrao do CH_APICHAMADOS - mas SZ1 (OS) e historicamente MUITO maior que ZA1
-// (chamados), e ler a tabela INTEIRA pra memoria a cada request nao escala (ao
-// contrario de ZA1, que e pequena). O comentario original deste endpoint ja
-// avisava "SQL direto por performance" - volta a usar SQL com paginacao real
-// (ROWNUM), SEM filtro de negocio nenhum no WHERE (so filial+NotDel) -
-// paginacao tecnica nao e filtro. Z1_SERV (descricao) e Memo - cursor de
-// BeginSql nao expoe Memo por nome, por isso continua vindo via
-// OS_DESC()/Posicione, so que agora so pras poucas linhas da pagina pedida
-// (nao mais pra tabela inteira).
+// LISTAGEM / VISUALIZAR / PESQUISAR - SQL direto com paginacao (ROWNUM): a SZ1
+// e grande demais pra navegar inteira (DbSeek/DbSkip) a cada request. Z1_SERV e
+// Memo (o cursor do BeginSql nao expoe) - vem por OS_DESC() so pras linhas da pagina.
 //-------------------------------------------------------------------
 /*/{Protheus.doc} OS_APILISTAR
 Endpoint REST (GET /CNSAOS) de listagem/pesquisa de OS, paginado via
