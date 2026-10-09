@@ -4563,7 +4563,6 @@ User Function CH_JOBEMAIL()
     Local cEmpAnt   := "01"
     Local cFilAnt   := "01"
     Local nCriados  := 0
-    Local nAvisos   := 0
 
     RpcSetType(3)
     If !RpcSetEnv(cEmpAnt, cFilAnt, , , "SIGAFAT", , {"ZA1"})
@@ -4575,17 +4574,6 @@ User Function CH_JOBEMAIL()
         nCriados := CH_CRIARCHAMADOEMAIL()
     Recover
         ConOut("CH_JOBEMAIL: erro durante execucao - ver log acima.")
-    End Sequence
-
-    // Respostas do Aprovador-OS (aprovacao de OS pelo cliente): avisa tecnico,
-    // Pericles e Muller e mata o link (CNSA002, OS_EMAIL "AVISAR").
-    Begin Sequence
-        nAvisos := apia.cnsa002.U_OS_JOBAPROV()
-        If nAvisos > 0
-            ConOut("CH_JOBEMAIL: " + cValToChar(nAvisos) + " resposta(s) de aprovacao de OS avisada(s).")
-        EndIf
-    Recover
-        ConOut("CH_JOBEMAIL: erro ao avisar respostas de aprovacao de OS.")
     End Sequence
 
     ConOut("CH_JOBEMAIL: " + AllTrim(Str(nCriados)) + " chamado(s) criado(s) a partir de e-mail(s) novo(s) em apia@apia.com.br.")

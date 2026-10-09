@@ -2530,13 +2530,6 @@ Return xRet
 //   TELA    (cOs)                      tela classica: pergunta e chama ENVIAR
 //   RESUMO  ()                         linhas do cartao (SZ1 posicionada)
 //   DESTINO ()                         e-mails do cliente: chamados da OS, senao A1_EMAIL
-//   HASH    (cTexto)                   SHA-256 em hexa minusculo (igual ao hash() do PHP)
-//   AVISAR  ()                         job: OS respondidas no Aprovador-OS -> avisa tecnico,
-//                                      Pericles e Muller e apaga Z1_APVTOK (link morre)
-//
-// Aprovacao pelo cliente (pagina Aprovador-OS, PHP no servidor web): o e-mail ao
-// cliente leva https://www.apia.com.br/Aprovador-OS/?t=<codigo aleatorio>; na OS
-// fica so o SHA-256 do codigo (Z1_APVTOK). Link vale 48 h (Z1_ENVDT/Z1_ENVHR).
 ////////////////////////////////////////////////////////////////////////////////
 
 /*/{Protheus.doc} OS_APIEMAIL
@@ -2571,17 +2564,6 @@ User Function OS_APIEMAIL() As Logical
 
 Return oRest:setStatusResponse(200, oJson:ToJson())
 
-/*/{Protheus.doc} OS_JOBAPROV
-Chamada pelo job de 1 minuto (CH_JOBEMAIL, CNSA001): avisa as respostas do
-Aprovador-OS (OS_EMAIL "AVISAR").
-@return nAvisos   Quantidade de OS avisadas
-@author Henrique
-@since 08/10/2026
-@version P12
-/*/
-User Function OS_JOBAPROV()
-Return OS_EMAIL("AVISAR")
-
 /*/{Protheus.doc} OS_EMAIL
 E-mail da OS ao cliente e/ou ao tecnico - uma funcao, uma acao por Case.
 @param  cAcao   ENVIAR, TELA, RESUMO ou DESTINO
@@ -2602,15 +2584,6 @@ Static Function OS_EMAIL(cAcao, x1, x2, x3)
     Local nI      := 0
     Local nJ      := 0
     Local lEnviou := .F.
-    Local cCod    := ""
-    Local cHash   := ""
-    Local cObs    := ""
-    Local dEnvio  := CToD("")
-    Local cHrEnv  := ""
-    Local cAlias  := ""
-    Local nByte   := 0
-    // Data do SZ1 como AAAAMMDD, seja campo Data ou Caractere.
-    Local bData   := {|x| If(ValType(x) == "D", DToS(x), AllTrim(cValToChar(x)))}
 
     Do Case
 
@@ -2644,24 +2617,11 @@ Static Function OS_EMAIL(cAcao, x1, x2, x3)
         // OS Interna nao vai pro cliente.
         If x2 .And. AllTrim(SZ1->Z1_INTERNO) != "S"
             aResp := OS_EMAIL("DESTINO")
-            // Link de aprovacao: codigo aleatorio (UUID sem hifens, 32 hexa) so no link;
-            // na OS fica o SHA-256. Cada envio gera um novo e o anterior deixa de valer.
-            cCod   := StrTran(FWUUIDV4(), "-", "")
-            cHash  := OS_EMAIL("HASH", cCod)
-            dEnvio := Date()
-            cHrEnv := Left(Time(), 5)
-            cObs   := '<div style="text-align:center;margin:8px 0 16px">' + ;
-                '<a href="https://www.apia.com.br/Aprovador-OS/?t=' + cCod + '" ' + ;
-                'style="display:inline-block;background-color:#1a7fc1;color:#ffffff;font-size:15px;font-weight:bold;' + ;
-                'padding:12px 28px;border-radius:6px;text-decoration:none">Responder: aprovar ou recusar</a>' + ;
-                '<br><span style="font-size:12px;color:#6b7280">Link v&aacute;lido at&eacute; ' + ;
-                DToC(dEnvio + 2) + ' &agrave;s ' + cHrEnv + ' (48 horas)</span></div>' + ;
-                "Qualquer d&uacute;vida, entre em contato: <b>pericles@apia.com.br</b>"
             For nI := 1 To Len(aResp)
                 If apia.cnsa001.U_CH_MAILPUB(aResp[nI], "Ordem de Servico " + AllTrim(cOs), ;
                         apia.cnsa001.U_CH_HTMLPUB("", "Ordem de Servi&ccedil;o " + AllTrim(cOs), "", ;
-                            "Segue o resumo do atendimento realizado. Confira e responda pelo bot&atilde;o abaixo.", ;
-                            aLin, "Descri&ccedil;&atilde;o", cTexto, cObs))
+                            "Segue o resumo do atendimento realizado.", aLin, "Descri&ccedil;&atilde;o", cTexto, ;
+                            "Qualquer d&uacute;vida, entre em contato: <b>pericles@apia.com.br</b>"))
                     xRet[1]++
                     lEnviou := .T.
                 EndIf
@@ -2670,9 +2630,8 @@ Static Function OS_EMAIL(cAcao, x1, x2, x3)
                 SZ1->(DbSeek(cFilAnt + cOs))
                 RecLock("SZ1", .F.)
                     SZ1->Z1_OSENVCL := "S"
-                    SZ1->Z1_ENVDT   := dEnvio
-                    SZ1->Z1_ENVHR   := OS_HORACAMPO(cHrEnv, "Z1_ENVHR")
-                    SZ1->Z1_APVTOK  := cHash
+                    SZ1->Z1_ENVDT   := Date()
+                    SZ1->Z1_ENVHR   := OS_HORACAMPO(Left(Time(), 5), "Z1_ENVHR")
                 SZ1->(MsUnlock())
             EndIf
         EndIf
@@ -2711,65 +2670,6 @@ Static Function OS_EMAIL(cAcao, x1, x2, x3)
             Next nI
             AAdd(xRet, {"Chamados", cTexto})
         EndIf
-
-    //--- SHA-256 em hexa minusculo (o PHP compara com hash('sha256', t)) ----------
-    Case cAcao == "HASH"
-        xRet := SHA256(x1)
-        // Se vier binario (32 bytes), converte pra hexa.
-        If Len(xRet) != 64
-            cTexto := ""
-            For nI := 1 To Len(xRet)
-                nByte  := Asc(SubStr(xRet, nI, 1))
-                cTexto += SubStr("0123456789abcdef", Int(nByte / 16) + 1, 1) + SubStr("0123456789abcdef", (nByte % 16) + 1, 1)
-            Next nI
-            xRet := cTexto
-        EndIf
-        xRet := Lower(xRet)
-
-    //--- Job: respostas do Aprovador-OS -> avisa e mata o link ---------------
-    Case cAcao == "AVISAR"
-        xRet   := 0
-        cAlias := GetNextAlias()
-        // TRIM: no Oracle o campo vazio e espacos, e '' vira NULL.
-        BeginSql Alias cAlias
-            SELECT SZ1.R_E_C_N_O_ RECNO
-            FROM %Table:SZ1% SZ1
-            WHERE SZ1.Z1_FILIAL = %xFilial:SZ1%
-              AND TRIM(SZ1.Z1_APVTOK) IS NOT NULL
-              AND TRIM(SZ1.Z1_APVDATA) IS NOT NULL
-              AND SZ1.Z1_APVDATA >= SZ1.Z1_ENVDT
-              AND SZ1.%NotDel%
-        EndSql
-        While !(cAlias)->(Eof())
-            SZ1->(DbGoTo((cAlias)->RECNO))
-            // Resposta depois do envio (mesmo dia: compara a hora, HH:MM ou HHMM).
-            If Eval(bData, SZ1->Z1_APVDATA) + StrTran(AllTrim(SZ1->Z1_APVHORA), ":", "") >= ;
-                    Eval(bData, SZ1->Z1_ENVDT) + StrTran(AllTrim(SZ1->Z1_ENVHR), ":", "")
-                cTexto := If(AllTrim(SZ1->Z1_APROVAD) == "S", "aprovada", "N&Atilde;O aprovada")
-                aLin   := OS_EMAIL("RESUMO")
-                AAdd(aLin, {"Respondido por", U_CNSOUTL("TEXTO", SZ1->Z1_APVDOR) + " (" + AllTrim(SZ1->Z1_APVMAIL) + ")"})
-                AAdd(aLin, {"Em", DToC(SToD(Eval(bData, SZ1->Z1_APVDATA))) + " &agrave;s " + AllTrim(SZ1->Z1_APVHORA) + ;
-                    If(Empty(SZ1->Z1_APVIP), "", " (IP " + AllTrim(SZ1->Z1_APVIP) + ")")})
-                aResp := {AllTrim(Posicione("AA1", 1, xFilial("AA1") + PadR(AllTrim(SZ1->Z1_TEC), TamSX3("AA1_CODTEC")[1]), "AA1_EMAIL")), ;
-                          "pericles@apia.com.br", "lmuller@apia.com.br"}
-                For nI := 1 To Len(aResp)
-                    If !Empty(aResp[nI]) .And. AScan(aResp, aResp[nI]) == nI
-                        apia.cnsa001.U_CH_MAILPUB(aResp[nI], ;
-                            "OS " + AllTrim(SZ1->Z1_OS) + If(AllTrim(SZ1->Z1_APROVAD) == "S", " aprovada", " NAO aprovada") + " pelo cliente", ;
-                            apia.cnsa001.U_CH_HTMLPUB("", "OS " + AllTrim(SZ1->Z1_OS) + " " + cTexto + " pelo cliente", "", ;
-                                "O cliente respondeu a OS pelo link de aprova&ccedil;&atilde;o.", aLin, ;
-                                "Observa&ccedil;&atilde;o do cliente", U_CNSOUTL("TEXTO", SZ1->Z1_APVOBS), ""))
-                    EndIf
-                Next nI
-                xRet++
-            EndIf
-            // Avisada (ou resposta antiga de outro envio): link morre.
-            RecLock("SZ1", .F.)
-                SZ1->Z1_APVTOK := ""
-            SZ1->(MsUnlock())
-            (cAlias)->(DbSkip())
-        EndDo
-        (cAlias)->(DbCloseArea())
 
     //--- E-mails do cliente: chamados da OS (sem repetir), senao A1_EMAIL ---------
     Case cAcao == "DESTINO"
