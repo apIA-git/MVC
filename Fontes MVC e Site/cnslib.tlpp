@@ -44,7 +44,7 @@ User Function CNS001_COMPONENTES_LISTAR() As Logical
 
         Do Case
             Case cTipoParam == "tecnico"
-                aItens := CNS001_TECLUPA(cFiltroParam)
+                aItens := CNS001_TECLUPA(cFiltroParam, AllTrim(CNS001_LUPA_JSONSTR(jQuery, "todos")) == "1")
             Case cTipoParam == "cliente"
                 aItens := CNS001_CLILUPA(cFiltroParam)
             Case cTipoParam == "projeto"
@@ -109,7 +109,7 @@ Return oRest:setStatusResponse(500, '{"resultado":false,"erro":"Erro desconhecid
 // Erro na query propaga sozinho pro Recover do @Get (que monta o 500 com
 // a descricao real) - nao precisa de Begin/Recover proprio aqui.
 ////////////////////////////////////////////////////////////////////////////////
-Static Function CNS001_TECLUPA(cFiltro)
+Static Function CNS001_TECLUPA(cFiltro, lTodos)
     Local aRet    := {}
     Local oLinha  := Nil
     Local cAlias  := GetNextAlias()
@@ -127,7 +127,13 @@ Static Function CNS001_TECLUPA(cFiltro)
     // So tecnicos disponiveis (AA1_ALOCA 1=disponivel, 2=nao disponivel). Codigo
     // exato passa sempre: o portal usa a lupa pra mostrar o nome do tecnico ja
     // gravado em chamado/OS/agenda antigos, mesmo que hoje esteja indisponivel.
+    // todos=1 (lTodos): sem esse filtro - o portal acha o usuario logado e se ele
+    // e administrador (TecnicoLogadoServ), mesmo com o tecnico indisponivel.
     Local cCodExato  := AllTrim(cFiltroUp)
+    Local cTodos     := ""
+
+    Default lTodos := .F.
+    cTodos := If(lTodos, "1", "0")
 
     BeginSql Alias cAlias
         SELECT AA1_CODTEC,
@@ -140,7 +146,7 @@ Static Function CNS001_TECLUPA(cFiltro)
             AND USR.%NotDel%
         WHERE AA1_FILIAL = %xFilial:AA1%
         AND AA1.%NotDel%
-        AND (AA1_ALOCA = '1' OR UPPER(TRIM(AA1_CODTEC)) = %Exp:cCodExato%)
+        AND (AA1_ALOCA = '1' OR UPPER(TRIM(AA1_CODTEC)) = %Exp:cCodExato% OR %Exp:cTodos% = '1')
         AND (UPPER(AA1_CODTEC) LIKE '%' || %Exp:cFiltroUp% || '%'
         OR UPPER(AA1_NOMTEC) LIKE '%' || %Exp:cFiltroUp2% || '%')
         ORDER BY AA1_NOMTEC
