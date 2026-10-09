@@ -1131,6 +1131,16 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
                 Exit
             EndIf
         Next nI
+        // Dicionario so com a sigla (Z6_TIPOAG = "NR;FE;CO;TR;MD;FA", sem "=descricao"):
+        // usa as mesmas descricoes do portal (cns009).
+        If x1 == "Z6_TIPOAG"
+            aResp := {{"NR", "Normal"}, {"FE", "Férias"}, {"CO", "Compensação"}, ;
+                      {"TR", "Treinamento"}, {"MD", "Médico"}, {"FA", "Falta"}}
+            nI := AScan(aResp, {|x| x[1] == Upper(xRet)})
+            If nI > 0
+                xRet := aResp[nI][2]
+            EndIf
+        EndIf
 
     //--- Le o Z6_IDOUTL direto na SZ6 (campo "nao usado": fora do modelo) -----------
     Case cAcao == "LERID"
