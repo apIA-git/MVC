@@ -43,8 +43,9 @@ User Function CNS004(cOs)
         l_oBrowse:AddLegend("SZA->ZA_APROVAD=='S'",                                "BLUE",   "Aprovada (manual / prazo)")
         l_oBrowse:AddLegend("SZA->ZA_APROVAD=='R' .And. SZA->ZA_APVTIPO=='M'",    "GRAY",   "Pre-recusada (interna)")
         l_oBrowse:AddLegend("SZA->ZA_APROVAD=='R'",                                "RED",    "Recusada (cliente / manual)")
+        l_oBrowse:AddLegend("SZA->ZA_APROVAD=='P'",                                "WHITE",  "Reaberta (aguarda pre-aprovacao)")
         l_oBrowse:AddLegend("SZA->ZA_APVTIPO=='M'",                                "ORANGE", "Pre-aprovada")
-        l_oBrowse:AddLegend(".T.",                                                 "WHITE",  "Reaberta")
+        l_oBrowse:AddLegend(".T.",                                                 "WHITE",  "Reaberta / reavaliada")
 
         l_oBrowse:Activate()
 
@@ -200,7 +201,7 @@ User Function HA_LEGENDA()
             { "BR_CINZA",    "Pre-recusada (interna)"      }, ;
             { "BR_VERMELHO", "Recusada (cliente / manual)" }, ;
             { "BR_LARANJA",  "Pre-aprovada"                }, ;
-            { "BR_BRANCO",   "Reaberta"                    }  ;
+            { "BR_BRANCO",   "Reaberta / reavaliada"       }  ;
         })
 
 Return
@@ -314,11 +315,18 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
                           AllTrim(oSZ1:GetValue("Z1_TAREFA")) != AllTrim(SZ1->Z1_TAREFA)
             EndIf
             If cAntes == "S" .Or. cAntes == "R"
-                // Reabre: S/R -> N (a linha da SZA sai no InTTS, fase GRV).
-                aReg := {"N", ""}
+                // Reabre: S/R -> N. Se a tarefa mudou junto, vale a regra da tarefa nova
+                // (pode cair em P). A linha da SZA sai no InTTS (fase GRV).
+                aReg := If(lMudou, U_CNSAPR("REG", {oSZ1:GetValue("Z1_PROJET"), oSZ1:GetValue("Z1_REVISA"), ;
+                    oSZ1:GetValue("Z1_TAREFA")}), {"N", ""})
                 aRet[5] := .T.
             ElseIf nOper == MODEL_OPERATION_INSERT .Or. lMudou
                 aReg := U_CNSAPR("REG", {oSZ1:GetValue("Z1_PROJET"), oSZ1:GetValue("Z1_REVISA"), oSZ1:GetValue("Z1_TAREFA")})
+                // Reavaliou uma OS ja enviada: grava evento na SZA pra matar o link antigo
+                // (o token so vale se o envio for a ULTIMA linha da OS).
+                If lMudou .And. !Empty(SZ1->Z1_ENVDT)
+                    aRet[5] := .T.
+                EndIf
             EndIf
             If !Empty(aReg)
                 oSZ1:LoadValue("Z1_APROVAD", aReg[1])
@@ -332,9 +340,12 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
             EndIf
 
         Case cFase == "GRV"
+            // Reabertura (S/R -> novo estado) ou reavaliacao de OS ja enviada: uma linha
+            // com o estado novo (invalida o link pendente).
             If AP_TXT(jDados, "reabriu") == "S"
                 aUsu := AP_USUARIO()
-                aRet := AP_GRAVASZA(cOs, {{"ZA_APROVAD", "N"}, {"ZA_APVTIPO", ""}, {"ZA_POR", aUsu[1]}, ;
+                aRet := AP_GRAVASZA(cOs, {{"ZA_APROVAD", oSZ1:GetValue("Z1_APROVAD")}, ;
+                    {"ZA_APVTIPO", oSZ1:GetValue("Z1_APVTIPO")}, {"ZA_POR", aUsu[1]}, ;
                     {"ZA_EMAIL", aUsu[2]}, {"ZA_DTREC", dHoje}, {"ZA_HRREC", cAgora}})
             EndIf
         EndCase
