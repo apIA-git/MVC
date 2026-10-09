@@ -1723,6 +1723,7 @@ User Function OS_APILISTAR() As Logical
                         Z1_DTOS, Z1_INTERNO, Z1_LOCAL, Z1_HRINI, Z1_INI, Z1_HRFIM, Z1_FIM, Z1_TRANS, Z1_PREVIST, ;
                         Z1_HRTOT, Z1_TOTAL, Z1_TEC, Z1_NUMPRO, Z1_PV, Z1_ALMOCO, Z1_PROJET, Z1_REVISA, ;
                         Z1_TAREFA, Z1_CHPSD, Z1_CHHDK, Z1_IDCH, Z1_OSDESE, Z1_OSENVCL, Z1_LIN, Z1_VLRHR, Z1_APROVAD, Z1_FATURAR, ;
+                        Z1_APVTIPO, Z1_APVDATA, Z1_ENVDT, ;
                         COUNT(*) OVER() AS SZ1_TOTAL
                     FROM %Table:SZ1% SZ1
                     WHERE Z1_FILIAL = %xFilial:SZ1%
@@ -1811,6 +1812,12 @@ User Function OS_APILISTAR() As Logical
             oLinha['linhaPv']        := AllTrim((cAlias)->Z1_LIN)
             oLinha['valorHora']      := (cAlias)->Z1_VLRHR
             oLinha['status']         := OS_STATUSCALC(AllTrim((cAlias)->Z1_APROVAD), AllTrim((cAlias)->Z1_FATURAR), cTecAtual)
+            // Aprovacao de OS (aba Legenda da planilha, U_CNSAPR "LEG"): prazo por
+            // Z1_ENVDT + MV_CNSAPRZ, sem consultar a SZA por linha.
+            oLinha['aprovad']        := AllTrim((cAlias)->Z1_APROVAD)
+            oLinha['apvtipo']        := AllTrim((cAlias)->Z1_APVTIPO)
+            oLinha['aprovacao']      := apia.cnsa004.U_CNSAPR("LEG", {(cAlias)->Z1_APROVAD, (cAlias)->Z1_APVTIPO, ;
+                                            (cAlias)->Z1_APVDATA, (cAlias)->Z1_ENVDT})[1]
             AAdd(aRetorno, oLinha)
 
             (cAlias)->(DbSkip())
