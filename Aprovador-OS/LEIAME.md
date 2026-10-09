@@ -38,6 +38,7 @@ com o usuário de serviço do Protheus (login só para esta página).
 | 200 no POST | "Obrigado! Sua resposta foi registrada" |
 | 409 | "Esta OS já foi respondida" |
 | 404 | "Link inválido ou expirado" (inválido, vencido ou já substituído - resposta genérica) |
+| sem resposta, 401, 5xx | "Sistema indisponível, tente mais tarde" (o link continua valendo) |
 | outro (ex.: 400) | formulário de novo com a mensagem do Protheus |
 
 O IP do cliente vai no cabeçalho `X-Forwarded-For` (gravado em `Z1_APVIP`/`ZA_IP`).

@@ -231,6 +231,11 @@ Static Function OS_VALIDACAMPO(p_oField, p_sAcao, p_sCampo, p_vValor)
     Local aObrigatorios := {"Z1_CLI", "Z1_LOJA", "Z1_MODULO", "Z1_MOTIV", ;
         "Z1_TIPO", "Z1_DTOS", "Z1_INI", "Z1_FIM", "Z1_TOTAL"}
 
+    // Gravacao da aprovacao (U_CNSAPR): nao barra por campo antigo vazio.
+    If Type("__lA02Interno") == "L" .And. __lA02Interno
+        Return .T.
+    EndIf
+
     If AScan(aObrigatorios, p_sCampo) > 0 .And. Empty(p_vValor)
         l_bOk := .F.
     EndIf
@@ -315,6 +320,10 @@ Static Function OS_VALIDACOBRAR(p_oModel)
     Local cTipGru   := ""
 
     If nOper != 3 .And. nOper != 4
+        Return .T.
+    EndIf
+    // Gravacao da aprovacao (U_CNSAPR): nao barra por regra de cobranca da OS.
+    If Type("__lA02Interno") == "L" .And. __lA02Interno
         Return .T.
     EndIf
 
@@ -2570,7 +2579,6 @@ Static Function OS_EMAIL(cAcao, x1)
     Local cOs     := ""
     Local cEmail  := ""
     Local cTexto  := ""
-    Local aLin    := {}
     Local aCh     := {}
     Local aResp   := {}
     Local nI      := 0
@@ -2732,9 +2740,9 @@ Instalado em OS_MONTARMODEL, OS_MODELLEVE e OS_MODELINSERT.
 Class CNS002APR From FWModelEvent
     Data lReabriu
     Method New() Constructor
-    Method ModelPosVld()
-    Method BeforeTTS()
-    Method InTTS()
+    Method ModelPosVld(oModel, cModelId)
+    Method BeforeTTS(oModel, cModelId)
+    Method InTTS(oModel, cModelId)
 EndClass
 
 Method New() Class CNS002APR

@@ -12,7 +12,8 @@
  * Toda a regra (validade, ultima linha da SZA, OS ja decidida, gravacao na
  * SZ1/SZA, e-mails) e do U_CNSAPR (CNSA004).
  *
- * Respostas do Protheus: 200 ok · 404 link invalido/expirado/usado · 409 OS ja decidida.
+ * Respostas do Protheus: 200 ok · 404 link invalido/expirado/usado · 409 OS ja decidida
+ * · sem resposta/401/5xx = sistema indisponivel (o link continua valendo).
  * Configuracao (URL e usuario de servico do REST) em config.php - fora do git.
  */
 
@@ -64,7 +65,8 @@ function protheus($metodo, $rota, array $params)
     if (isset($http_response_header[0]) && preg_match('#\s(\d{3})\s?#', $http_response_header[0], $m)) {
         $status = (int) $m[1];
     }
-    $json = json_decode((string) $corpo, true);
+    // Corpo do Protheus pode vir em CP1252 (acento invalido em UTF-8 faz o json_decode falhar).
+    $json = json_decode(txt($corpo), true);
     return [$status, is_array($json) ? $json : []];
 }
 
@@ -106,7 +108,15 @@ if (preg_match('/^[0-9a-f]{64}$/', $token)) {
     // Dados da OS (formulario de novo, em caso de erro, ou primeira abertura).
     if ($tela !== 'ok' && ($_SERVER['REQUEST_METHOD'] !== 'POST' || $erro !== '')) {
         [$st, $os] = protheus('GET', '/rest/CNSAAPROVA', ['token' => $token]);
-        $tela = $st === 200 ? 'form' : ($st === 409 ? 'ja' : 'exp');
+        if ($st === 200) {
+            $tela = 'form';
+        } elseif ($st === 409) {
+            $tela = 'ja';
+        } elseif ($st === 404 || $st === 400) {
+            $tela = 'exp';
+        } else {
+            $tela = 'fora';   // Protheus fora do ar / usuario de servico invalido: nao dizer que o link venceu
+        }
     }
 }
 ?>
@@ -182,6 +192,14 @@ if (preg_match('/^[0-9a-f]{64}$/', $token)) {
     <div class="icone">ℹ️</div>
     <h1>Esta OS já foi respondida</h1>
     <p class="sub">Para dúvidas, fale com a Ápia: <?= h(TELEFONE_APIA) ?>.</p>
+  </div>
+
+<?php elseif ($tela === 'fora'): ?>
+  <div class="estado">
+    <div class="icone">🔧</div>
+    <h1>Sistema indisponível no momento</h1>
+    <p class="sub">Seu link continua valendo. Tente novamente mais tarde.<br>
+    Se precisar, fale com a Ápia: <?= h(TELEFONE_APIA) ?>.</p>
   </div>
 
 <?php else: ?>
