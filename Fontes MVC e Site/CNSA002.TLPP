@@ -69,6 +69,12 @@ Local aRotina  := {}
     ADD OPTION aRotina TITLE "Legenda"      ACTION "apia.cnsa002.U_OS_LEGENDA"       OPERATION 0 ACCESS 0
     // Historico de aprovacao da OS posicionada (SZA, CNSA004 - so consulta).
     ADD OPTION aRotina TITLE "Historico Aprovacao" ACTION "apia.cnsa004.U_CNS004(SZ1->Z1_OS)" OPERATION 0 ACCESS 0
+    // Aprovacao de OS (U_CNSAPR, CNSA004) - a regra (estado e permissao) e do U_CNSAPR.
+    ADD OPTION aRotina TITLE "Enviar ao cliente" ACTION "apia.cnsa002.U_OS_APRTELA('ENV')" OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Pre-aprovar"       ACTION "apia.cnsa002.U_OS_APRTELA('PRE')" OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Pre-recusar"       ACTION "apia.cnsa002.U_OS_APRTELA('PRR')" OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Aprovar OS"        ACTION "apia.cnsa002.U_OS_APRTELA('APR')" OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Recusar OS"        ACTION "apia.cnsa002.U_OS_APRTELA('REC')" OPERATION 0 ACCESS 0
 
 Return aRotina
 
@@ -2758,6 +2764,74 @@ Method InTTS(oModel, cModelId) Class CNS002APR
         jFase["reabriu"] := "S"
         apia.cnsa004.U_CNSAPR("OS", oModel, "", jFase)
         ::lReabriu := .F.
+    EndIf
+
+Return
+
+/*/{Protheus.doc} OS_APRTELA
+Menu da tela classica - acoes de aprovacao da OS posicionada. So pergunta e
+traduz: estado, permissao (RESPMAN) e e-mails ficam no U_CNSAPR (CNSA004).
+  ENV  Enviar ao cliente (link com token)       PRE  Pre-aprovar   PRR  Pre-recusar (motivo)
+  APR  Aprovar OS manualmente (origem I)        REC  Recusar OS manualmente (origem I, motivo)
+@param  cTrans  Transacao do U_CNSAPR
+@author Henrique
+@since 09/10/2026
+@version P12
+/*/
+User Function OS_APRTELA(cTrans)
+    Local cOs     := AllTrim(SZ1->Z1_OS)
+    Local jDados  := JsonObject():New()
+    Local aRet    := {}
+    Local cTexto  := ""
+    Local cOrigem := ""
+    Local oDlg    := Nil
+    Local oBtnOk  := Nil
+    Private cMotAprov := Space(240)
+    Private lMotConf  := .F.
+
+    If SZ1->(Eof()) .Or. SZ1->(Bof()) .Or. Empty(cOs)
+        MsgAlert("Nenhuma OS selecionada.", "Aprovacao de OS")
+        Return
+    EndIf
+
+    Do Case
+    Case cTrans == "ENV"
+        cTexto  := "Enviar a OS " + cOs + " ao cliente? Ele recebe por e-mail o link para aprovar ou recusar (valido por " + ;
+                   cValToChar(SuperGetMV("MV_CNSAVLD", .F., 2)) + " dias)."
+    Case cTrans == "PRE"
+        cTexto  := "Pre-aprovar a OS " + cOs + "?"
+        cOrigem := "M"
+    Case cTrans == "PRR"
+        cTexto  := "Pre-recusar a OS " + cOs + "?"
+        cOrigem := "M"
+    Case cTrans == "APR"
+        cTexto  := "Aprovar manualmente a OS " + cOs + "?"
+        cOrigem := "I"
+    Case cTrans == "REC"
+        cTexto  := "Recusar manualmente a OS " + cOs + "?"
+        cOrigem := "I"
+    EndCase
+
+    If cTrans == "PRR" .Or. cTrans == "REC"
+        // Motivo obrigatorio (ZA_DESCRI) - janela simples, ate 240 caracteres.
+        DEFINE MSDIALOG oDlg TITLE cTexto FROM 0,0 TO 220,460 PIXEL
+            @ 08,10 SAY "Motivo (obrigatorio):" SIZE 200,10 PIXEL OF oDlg
+            @ 20,10 GET cMotAprov MEMO SIZE 210,60 PIXEL OF oDlg
+            oBtnOk := TButton():New(88, 160, "Confirmar", oDlg, {|| lMotConf := .T., oDlg:End()}, 60,14,,,.F.,.T.,.F.,,.F.,,,.F.)
+        ACTIVATE MSDIALOG oDlg CENTERED
+        If !lMotConf
+            Return
+        EndIf
+        jDados["motivo"] := AllTrim(cMotAprov)
+    ElseIf !MsgYesNo(cTexto, "Aprovacao de OS")
+        Return
+    EndIf
+
+    aRet := apia.cnsa004.U_CNSAPR(cTrans, cOs, cOrigem, jDados)
+    If aRet[1]
+        MsgInfo("OS " + cOs + ": feito.", "Aprovacao de OS")
+    Else
+        MsgAlert(aRet[2], "Aprovacao de OS")
     EndIf
 
 Return
