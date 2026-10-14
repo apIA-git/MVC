@@ -2788,8 +2788,16 @@ User Function OS_APRPUB(cAcao, x1, x2)
         oModel:SetOperation(MODEL_OPERATION_UPDATE)
         oModel:Activate()
         oSZ1 := oModel:GetModel("SZ1MASTER")
+        // SetValue (nao LoadValue): LoadValue nao marca o model como alterado e, na
+        // alteracao, o CommitData nao gravava nada na SZ1 (a OS nao mudava de estado).
+        // VALID/WHEN do dicionario ja sao .T. no model leve; as nossas validacoes
+        // ignoram a gravacao interna (__lA02Interno).
         For nI := 1 To Len(x2)
-            oSZ1:LoadValue(x2[nI][1], x2[nI][2])
+            If !oSZ1:SetValue(x2[nI][1], x2[nI][2])
+                xRet := {.F., OS_ERROMODEL(oModel, "Campo " + x2[nI][1] + " nao aceitou o valor.")}
+                oModel:DeActivate()
+                Return xRet
+            EndIf
         Next nI
         If oModel:VldData() .And. oModel:CommitData()
             xRet := {.T., ""}
