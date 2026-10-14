@@ -100,8 +100,9 @@ User Function ViewDef()
     Local l_oStruSZ2 := FWFormStruct(2, "SZ2")
 
     // Sem Model ativo (FWExecView sem oModel): monta aqui em vez de devolver
-    // Nil - Nil vira "Undefined View for apia.cnsa002.u_cns002".
-    If l_oModel == Nil
+    // Nil - Nil vira "Undefined View for apia.cnsa002.u_cns002". Model ativo de
+    // OUTRA rotina (chamado, historico) tambem nao serve: monta o da OS.
+    If l_oModel == Nil .Or. Left(l_oModel:GetId(), 7) != "FCNS002"
         l_oModel := OS_MONTARMODEL()
     EndIf
 

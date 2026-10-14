@@ -100,7 +100,8 @@ User Function ViewDef()
     // dentro do Namespace (mesmo padrao do CNSA001/CNSA002).
     Local oModel := FWModelActive()
 
-    If oModel == Nil
+    // Model ativo de OUTRA rotina (chamado, OS) nao serve: monta o do historico.
+    If oModel == Nil .Or. oModel:GetId() != "FCNS004"
         oModel := HA_MONTARMODEL()
     EndIf
 
