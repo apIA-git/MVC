@@ -114,6 +114,13 @@ User Function ViewDef()
     Local l_oStruZA2 := FWFormStruct(2, "ZA2")
     Local l_oStruSZ6 := FWFormStruct(2, "SZ6")
 
+    // Model ativo de OUTRA rotina (ex.: historico de aprovacao, FCNS004) quebrava
+    // o Alterar (GetModel("ZA2DETAIL") num model sem esse grid): so serve o do
+    // chamado; senao monta aqui, igual ao ViewDef da OS (CNSA002).
+    If l_oModel == Nil .Or. l_oModel:GetId() != "FCNS001"
+        l_oModel := CH_MONTARMODEL()
+    EndIf
+
     l_oView := FWFormView():New()
     l_oView:SetModel(l_oModel)
 
