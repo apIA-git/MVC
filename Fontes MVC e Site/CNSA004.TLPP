@@ -223,7 +223,7 @@ Return
 //    ENV, PRR e REC manual = vazio. Quem fez fica na SZA (ZA_POR/ZA_EMAIL).
 //  - Estado da OS calculado no BeforeTTS (fase ANT); ModelPosVld (VLD) so
 //    confere permissao; InTTS (GRV) grava a reabertura na SZA.
-//  - AF9_APVMAN aceita "1" ou "S" (opcoes ainda em definicao).
+//  - AF9_APVMAN: S=Sim / N=Nao (a planilha usa 1; decidido S/N em 14/10/2026).
 //
 // Transacoes (cTrans):
 //   OS   (oModel, "", {fase})        evento do model da OS: VLD / ANT / GRV
@@ -572,7 +572,7 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
         EndIf
         aTaf := AP_TAREFA(xAlvo[1], xAlvo[2], xAlvo[3])
         Do Case
-        Case aTaf[1] == "1" .Or. aTaf[1] == "S"   // AF9_APVMAN (opcoes 1/2 ou S/N - em definicao)
+        Case aTaf[1] == "S"   // AF9_APVMAN S=Sim: precisa pre-aprovacao interna
             aRet := {"P", "M"}
         Case aTaf[2] == "VB"
             aRet := {"A", ""}
