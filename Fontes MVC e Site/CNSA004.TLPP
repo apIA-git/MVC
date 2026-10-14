@@ -234,6 +234,7 @@ Return
 //   ENV  (cOs)                       so em N: token no link, so o SHA-256 na SZA - qualquer analista
 //   CNS  (cToken)                    link valido? devolve {lOk, cErro, jOs}
 //   LEG  ({aprovad, apvtipo, apvdata, envdt})   {cLegenda, cCor} (aba Legenda)
+//   LEGS ()                                      todas as {cLegenda, cCor} (browse classico)
 //   REG  (cOs ou {proj, rev, tarefa})           {cAprovad, cApvTipo} pela tarefa (AF9)
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -549,6 +550,17 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
     //--- Legenda (aba Legenda - primeira que casar) ----------------------------
     Case cTrans == "LEG"
         aRet  := AP_LEGENDA(xAlvo)
+
+    //--- Todas as legendas, na ordem (browse e tela Legenda do CNSA002) --------
+    // Mesmos textos do AP_LEGENDA: o browse compara o texto do LEG da linha.
+    Case cTrans == "LEGS"
+        aRet := {{"Nao requer aprovacao", "cinza"}, {"Pre-aprovada (sem aprovacao do cliente)", "azul"}, ;
+                 {"Aguardando pre-aprovacao interna", "amarelo"}, {"Pre-recusada (interna)", "cinzaEscuro"}, ;
+                 {"Recusada (manual / cliente)", "rosa"}, {"Recusada (legado)", "rosa"}, ;
+                 {"Pre-aprovada, a enviar", "azul"}, {"A enviar ao cliente", "azul"}, ;
+                 {"Aguardando cliente", "amarelo"}, {"Prazo vencido (aguarda o schedule)", "rosa"}, ;
+                 {"Aprovada pelo cliente", "verde"}, {"Aprovada por prazo", "azul"}, ;
+                 {"Aprovada manualmente", "azul"}, {"Aprovada", "verde"}}
 
     //--- Estado que a regra daria (pura, nao grava) ----------------------------
     Case cTrans == "REG"
