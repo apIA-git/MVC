@@ -857,7 +857,7 @@ User Function CH_DARNUMERO(cNumero)
     Default cNumero := ""
     cNumero := AllTrim(cNumero)
     If !Empty(cNumero)
-        cNumero := PadR(StrZero(Val(cNumero), Len(AllTrim(ZA1->ZA1_IDCH)) + If(Empty(ZA1->ZA1_IDCH), 6, 0)), TamSX3("ZA1_IDCH")[1])
+        cNumero := PadR(StrZero(Val(cNumero), 6), TamSX3("ZA1_IDCH")[1])   // mesmo formato dos IDs (000259)
     EndIf
 
     If !CH_TEMACESSOGRUPO()
@@ -898,13 +898,22 @@ User Function CH_DARNUMERO(cNumero)
     EndDo
     (cAlias)->(DbCloseArea())
 
+    // Numero informado nao pode ja existir.
+    If !Empty(cNumero)
+        ZA1->(DbSetOrder(1))
+        If ZA1->(DbSeek(xFilial("ZA1") + cNumero))
+            MsgStop("Ja existe chamado " + AllTrim(cNumero) + ". Nada foi alterado.", "Numerar chamado")
+            Return
+        EndIf
+    EndIf
+
     ZA1->(DbGoto(nRecZA1))
     If !MsgYesNo("Chamado sem numero: " + AllTrim(ZA1->ZA1_ASSUNT) + " (cliente " + AllTrim(ZA1->ZA1_CLIENT) + ")." + CRLF + ;
-            "Interacoes sem numero de hoje: " + cValToChar(Len(aZA2)) + "." + CRLF + "Dar o proximo numero agora?", "Numerar chamado")
+            "Interacoes sem numero de hoje: " + cValToChar(Len(aZA2)) + "." + CRLF + "Gravar o numero " + If(Empty(cNumero), "proximo da sequencia", AllTrim(cNumero)) + " agora?", "Numerar chamado")
         Return
     EndIf
 
-    cIdCh := GetSxeNum("ZA1", "ZA1_IDCH")
+    cIdCh := If(Empty(cNumero), GetSxeNum("ZA1", "ZA1_IDCH"), cNumero)
     Begin Transaction
         RecLock("ZA1", .F.)
             ZA1->ZA1_IDCH := cIdCh
@@ -916,7 +925,9 @@ User Function CH_DARNUMERO(cNumero)
             ZA2->(MsUnlock())
         Next nI
     End Transaction
-    ConfirmSX8()
+    If Empty(cNumero)
+        ConfirmSX8()
+    EndIf
 
     MsgInfo("Chamado numerado: " + AllTrim(cIdCh) + " (" + cValToChar(Len(aZA2)) + " interacao(oes)).", "Numerar chamado")
 Return
