@@ -106,7 +106,7 @@ User Function ViewDef()
         oModel := HA_MONTARMODEL()
     EndIf
 
-    oView := FWFormView():New()
+    oView:=FWFormView():New()
     oView:SetModel(oModel)
     oView:AddField("VIEW_SZA", FWFormStruct(2, "SZA"), "SZAMASTER")
     oView:CreateHorizontalBox("TELA", 100)
@@ -276,7 +276,6 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
     Local nOper    := 0
     Local dHoje    := Date()
     Local cAgora   := Left(Time(), 5)
-    Local dPrazo   := CToD("")
     Local lMudou   := .F.
     Local jOs      := Nil
     Local cAlias   := ""
