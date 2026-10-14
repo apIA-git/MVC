@@ -2,11 +2,19 @@
 /*
  * Configuracao da pagina Aprovador-OS.
  *
- * Copie este arquivo para config.php NO SERVIDOR e preencha. O config.php fica
- * fora do git (tem a senha do usuario de servico).
+ * COMO CRIAR O config.php (so no servidor, uma vez):
+ *   1. Nesta pasta (\\10.0.0.3\SistemasWeb\Mais_Aplicacoes\Aprovador-OS),
+ *      copie este arquivo e renomeie a copia para  config.php
+ *      (confira que nao ficou "config.php.txt" - mostre as extensoes no Explorer).
+ *   2. Abra o config.php no Bloco de Notas e preencha:
+ *        REST_USUARIO = 'Aprovador de OS'   (login do usuario de servico no Protheus)
+ *        REST_SENHA   = a senha desse usuario
+ *      REST_BASE e TELEFONE_APIA ja vem certos.
+ *   3. Salve. Nao copie o config.php para outro lugar nem para o git.
  *
- * REST_USUARIO/REST_SENHA: usuario de servico do Protheus, criado so para esta
- * pagina (sem acesso a telas). Ele so chama GET/POST /CNSAAPROVA.
+ * O config.php fica fora do git (tem a senha). O usuario de servico nao abre
+ * telas e so consegue usar o /CNSAAPROVA (os demais endpoints recusam com 403).
+ * Se a senha mudar no Protheus, atualize aqui.
  */
 
 define('REST_BASE', 'https://10.0.0.3:8624');   // REST do Protheus (rede interna)

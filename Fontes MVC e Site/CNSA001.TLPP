@@ -114,6 +114,13 @@ User Function ViewDef()
     Local l_oStruZA2 := FWFormStruct(2, "ZA2")
     Local l_oStruSZ6 := FWFormStruct(2, "SZ6")
 
+    // Model ativo de OUTRA rotina (ex.: historico de aprovacao, FCNS004) quebrava
+    // o Alterar (GetModel("ZA2DETAIL") num model sem esse grid): so serve o do
+    // chamado; senao monta aqui, igual ao ViewDef da OS (CNSA002).
+    If l_oModel == Nil .Or. l_oModel:GetId() != "FCNS001"
+        l_oModel := CH_MONTARMODEL()
+    EndIf
+
     l_oView := FWFormView():New()
     l_oView:SetModel(l_oModel)
 
@@ -776,8 +783,9 @@ Opcao de menu "Incluir" da tela classica: abre a View em modo inclusao.
 @version P12
 /*/
 User Function CH_INCLUIRTELA()
-    Local oModel := Nil
-    Local aEnvio := {}
+    Local oModel   := Nil
+    Local aEnvio   := {}
+    Local lNumerou := .F.
 
     // Monta E ativa o Model AQUI (mesma funcao) - igual padrao ja usado em
     // CNSA_INTERAGIR/CH_MONTAAGENDA. Necessario pro Insert: FWInitCpo prende
@@ -794,8 +802,21 @@ User Function CH_INCLUIRTELA()
 
     oModel := CH_MONTARMODEL(.T.)
 
+    // Numero do chamado igual ao Incluir do portal (CH_NUCLEOINCLUIR): o
+    // dicionario nao inicializa ZA1_IDCH - sem isto o chamado gravava sem ID.
+    If Empty(oModel:GetValue("ZA1MASTER", "ZA1_IDCH"))
+        oModel:GetModel("ZA1MASTER"):LoadValue("ZA1_IDCH", GetSxeNum("ZA1", "ZA1_IDCH"))
+        lNumerou := .T.
+    EndIf
+
     // FWExecView devolve 0 quando o usuario confirma e grava.
+    // Model desta tela como ativo: o ViewDef usa o ativo, e o de uma tela anterior
+    // (ex.: Visualizar) fazia o Incluir abrir com a OS anterior, travada.
+    FWModelActive(oModel)
     If FWExecView("Registro de Chamados", "apia.cnsa001.u_cns001", MODEL_OPERATION_INSERT, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel) == 0
+        If lNumerou
+            ConfirmSX8()
+        EndIf
         // Mesma escolha do portal: tecnico (designacao, se ja nasceu com tecnico) e
         // cliente ("Chamado Aberto"). Depois do commit a ZA1 fica no chamado gravado.
         aEnvio := CH_PERGUNTAEMAIL("Inclusao do Chamado " + AllTrim(ZA1->ZA1_IDCH), ;
@@ -806,6 +827,8 @@ User Function CH_INCLUIRTELA()
         If aEnvio[1]
             CH_NOTIFICARCHAMADOCRIADO(AllTrim(ZA1->ZA1_EMAIL), AllTrim(ZA1->ZA1_IDCH))
         EndIf
+    ElseIf lNumerou
+        RollBackSX8()
     EndIf
 Return
 
@@ -1574,6 +1597,11 @@ User Function CH_APIINCLUIR() As Logical
     Local aResultado := {}
     Local cEmailCli  := ""
 
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
+
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     aResultado := CH_NUCLEOINCLUIR(AllTrim(CH_LERJSONTXT(jQuery,"assunto")), AllTrim(CH_LERJSONTXT(jQuery,"dtAbertura")), AllTrim(CH_LERJSONTXT(jQuery,"tipo")), ;
@@ -1783,6 +1811,11 @@ User Function CH_APIALTERAR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
+
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     aResultado := CH_NUCLEOALTERAR(AllTrim(CH_LERJSONTXT(jQuery,"idCh")), AllTrim(CH_LERJSONTXT(jQuery,"assunto")), AllTrim(CH_LERJSONTXT(jQuery,"dtAbertura")), AllTrim(CH_LERJSONTXT(jQuery,"tipo")), ;
@@ -1921,6 +1954,11 @@ User Function CH_APIASSUMIR() As Logical
     Local aResultado := {}
     Local oJson      := JsonObject():New()
 
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
+
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     aResultado := CH_NUCLEOASSUMIR(cIdCh, AllTrim(CH_LERJSONTXT(jQuery,"notificarCliente")) == "1", AllTrim(CH_LERJSONTXT(jQuery,"notificarTecnico")) != "0")
@@ -1995,6 +2033,11 @@ Static Function CH_NUCLEOEXCLUIR(cIdCh, cMotivo, lNotificarCliente, lNotificarTe
         cNomeCli := AllTrim(Posicione("SA1", 1, xFilial("SA1") + cClienteAnt + cLojaAnt, "A1_NREDUZ"))
 
         nCham  := Val(cIdCh)
+        // Chamado sem numero: Val("") = 0 casaria com TODA agenda sem chamado
+        // (Z6_CHAMADO = 0) e o Excluir apagaria todas - -1 nao casa com nenhuma.
+        If nCham <= 0
+            nCham := -1
+        EndIf
         cAlias := GetNextAlias()
         BeginSql Alias cAlias
             SELECT Z6_DTAGE, Z6_HMINI, Z6_HMFIM
@@ -2088,6 +2131,11 @@ User Function CH_APIEXCLUIR() As Logical
     Local cIdCh      := AllTrim(CH_LERJSONTXT(jQuery,"idCh"))
     Local aResultado := {}
     Local oJson      := JsonObject():New()
+
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -2184,6 +2232,11 @@ User Function CH_APICHAMADOS() As Logical
     Local cFCli      := ""
     Local dFDataDe   := CToD("")
     Local dFDataAte  := CToD("")
+
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -2627,6 +2680,11 @@ User Function CH_APIAGENDAR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
+
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     aResultado := CH_GRAVARAGENDA(AllTrim(CH_LERJSONTXT(jQuery,"idCh")), AllTrim(CH_LERJSONTXT(jQuery,"dataInicio")), AllTrim(CH_LERJSONTXT(jQuery,"dataFim")), ;
@@ -2732,6 +2790,11 @@ User Function CH_APIMEUCONSULTOR() As Logical
     Local cConsultor := Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC")
     Local cNomeTec   := ""
 
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
+
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     If !Empty(cConsultor)
@@ -2760,6 +2823,11 @@ chamado (idCh via query), chamando CH_AGENDAJSON.
 User Function CH_APIVERAGENDA() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
+
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -2945,6 +3013,11 @@ User Function CH_APILISTAINTERACOES() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
+
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     aResultado := CH_LISTARINTERACOES(AllTrim(CH_LERJSONTXT(jQuery,"idCh")))
@@ -3051,6 +3124,11 @@ para um chamado (idCh/texto via query), chamando CH_INCLUIRINTERACAO.
 User Function CH_APINOVAINTERACAO() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
+
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -3166,6 +3244,11 @@ User Function CH_APIEXCLUIRINTERACAO() As Logical
     Local cSeq       := AllTrim(CH_LERJSONTXT(jQuery,"seq"))
     Local aResultado := {}
     Local oJson      := JsonObject():New()
+
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -4534,6 +4617,11 @@ e-mail (mesma rotina do job CH_JOBEMAIL) sob demanda, chamado pelo botao
 User Function CH_APIVERIFICAEMAIL() As Logical
     Local oJson    := JsonObject():New()
     Local nCriados := 0
+
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 

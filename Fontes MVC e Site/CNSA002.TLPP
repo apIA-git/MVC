@@ -23,6 +23,8 @@ SZ1, com as legendas de status (aprovada/faturada/negada/etc).
 User Function CNS002()
 
     Local l_oBrowse := Nil
+    Local aLeg      := apia.cnsa004.U_CNSAPR("LEGS")
+    Local nI        := 0
     // User Function do mesmo namespace precisa do prefixo "u_".
     Private aRotina := u_MenuDef()
 
@@ -32,13 +34,12 @@ User Function CNS002()
         l_oBrowse:SetDescription("OS - APIA")
         l_oBrowse:SetAlias("SZ1")
 
-        // Mesmas cores do portal (shared/paleta-status.ts): verde=concluido,
-        // rosa=pendencia, azul=aprovado, amarelo=aguardando, preto=negada.
-        l_oBrowse:AddLegend("(SZ1->Z1_APROVAD=='S'.OR.SZ1->Z1_APROVAD=='A').AND.SZ1->Z1_FATURAR=='S'",   "GREEN",    "Aprovada e Faturada")
-        l_oBrowse:AddLegend("SZ1->Z1_FATURAR=='S'.AND.SZ1->Z1_APROVAD!='S'.AND.SZ1->Z1_APROVAD!='A'",    "PINK",     "Faturada sem Aprovacao")
-        l_oBrowse:AddLegend("(SZ1->Z1_APROVAD=='S'.OR.SZ1->Z1_APROVAD=='A').AND.SZ1->Z1_FATURAR!='S'",   "BLUE",     "Aprovada")
-        l_oBrowse:AddLegend("SZ1->Z1_APROVAD!='S'.AND.SZ1->Z1_APROVAD!='A'.AND.!Empty(SZ1->Z1_TEC)",     "YELLOW",   "Aguardando Aprovacao")
-        l_oBrowse:AddLegend("SZ1->Z1_APROVAD!='S'.AND.SZ1->Z1_APROVAD!='A'.AND.Empty(SZ1->Z1_TEC)",      "BLACK",    "Negada")
+        // Legenda da aprovacao - a mesma da coluna Aprovacao do portal (U_CNSAPR "LEG").
+        For nI := 1 To Len(aLeg)
+            l_oBrowse:AddLegend("apia.cnsa004.U_CNSAPR('LEG',{SZ1->Z1_APROVAD,SZ1->Z1_APVTIPO,SZ1->Z1_APVDATA,SZ1->Z1_ENVDT})[1]=='" + ;
+                aLeg[nI][1] + "'", OS_CORAPR(aLeg[nI][2])[1], aLeg[nI][1])
+        Next nI
+        l_oBrowse:AddLegend(".T.", "WHITE", "Sem aprovacao (legado)")
 
         l_oBrowse:Activate()
 
@@ -99,8 +100,9 @@ User Function ViewDef()
     Local l_oStruSZ2 := FWFormStruct(2, "SZ2")
 
     // Sem Model ativo (FWExecView sem oModel): monta aqui em vez de devolver
-    // Nil - Nil vira "Undefined View for apia.cnsa002.u_cns002".
-    If l_oModel == Nil
+    // Nil - Nil vira "Undefined View for apia.cnsa002.u_cns002". Model ativo de
+    // OUTRA rotina (chamado, historico) tambem nao serve: monta o da OS.
+    If l_oModel == Nil .Or. Left(l_oModel:GetId(), 7) != "FCNS002"
         l_oModel := OS_MONTARMODEL()
     EndIf
 
@@ -665,6 +667,9 @@ User Function OS_VISUALIZARTELA()
     // dos campos virtuais quebra com "owner private environment not found".
     Local oModel := OS_MONTARMODEL(MODEL_OPERATION_VIEW)
 
+    // Model desta tela como ativo: o ViewDef usa o ativo, e o de uma tela anterior
+    // (ex.: Visualizar) fazia o Incluir abrir com a OS anterior, travada.
+    FWModelActive(oModel)
     FWExecView("Ordem de Servico", "apia.cnsa002.u_cns002", MODEL_OPERATION_VIEW, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel)
 Return
 
@@ -689,6 +694,9 @@ User Function OS_INCLUIRTELA()
     cOs    := oModel:GetModel("SZ1MASTER"):GetValue("Z1_OS")
 
     // FWExecView devolve 0 quando grava: OS em N pergunta "Deseja enviar ao cliente?" (OS_EMAIL "TELA").
+    // Model desta tela como ativo: o ViewDef usa o ativo, e o de uma tela anterior
+    // (ex.: Visualizar) fazia o Incluir abrir com a OS anterior, travada.
+    FWModelActive(oModel)
     If FWExecView("Ordem de Servico", "apia.cnsa002.u_cns002", MODEL_OPERATION_INSERT, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel) == 0
         OS_EMAIL("TELA", cOs)
     EndIf
@@ -714,6 +722,9 @@ User Function OS_ALTERARTELA()
     oModel := OS_MONTARMODEL(MODEL_OPERATION_UPDATE)
 
     // FWExecView devolve 0 quando grava: OS em N pergunta "Deseja enviar ao cliente?" (OS_EMAIL "TELA").
+    // Model desta tela como ativo: o ViewDef usa o ativo, e o de uma tela anterior
+    // (ex.: Visualizar) fazia o Incluir abrir com a OS anterior, travada.
+    FWModelActive(oModel)
     If FWExecView("Ordem de Servico", "apia.cnsa002.u_cns002", MODEL_OPERATION_UPDATE, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel) == 0
         OS_EMAIL("TELA", cOs)
     EndIf
@@ -732,6 +743,9 @@ mesmo padrao do OS_VISUALIZARTELA/OS_ALTERARTELA.
 User Function OS_EXCLUIRTELA()
     Local oModel := OS_MONTARMODEL(MODEL_OPERATION_DELETE)
 
+    // Model desta tela como ativo: o ViewDef usa o ativo, e o de uma tela anterior
+    // (ex.: Visualizar) fazia o Incluir abrir com a OS anterior, travada.
+    FWModelActive(oModel)
     FWExecView("Ordem de Servico", "apia.cnsa002.u_cns002", MODEL_OPERATION_DELETE, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel)
 Return
 
@@ -772,8 +786,8 @@ Return
 
 //-------------------------------------------------------------------
 /*/{Protheus.doc} OS_LEGENDA
-Exibe a legenda de status da OS (BrwLegenda) - identico a funcao
-LEGENDA original.
+Exibe a legenda da aprovacao da OS (BrwLegenda) - a mesma do browse
+e da coluna Aprovacao do portal (U_CNSAPR "LEGS").
 @author Henrique
 @since 02/09/2026
 @version P12
@@ -781,16 +795,40 @@ LEGENDA original.
 //-------------------------------------------------------------------
 User Function OS_LEGENDA()
 
-    BrwLegenda("Legenda de Status", "Status da OS", ;
-        { ;
-            { "BR_VERDE",     "Faturada e Aprovada"    }, ;
-            { "BR_PINK",      "Faturada sem Aprovacao" }, ;
-            { "BR_AZUL",      "Aprovada"               }, ;
-            { "BR_AMARELO",   "Aguardando Aprovacao"   }, ;
-            { "BR_PRETO",     "Negada"                 }  ;
-        })
+    Local aLeg := apia.cnsa004.U_CNSAPR("LEGS")
+    Local aCor := {}
+    Local nI   := 0
+
+    For nI := 1 To Len(aLeg)
+        AAdd(aCor, {OS_CORAPR(aLeg[nI][2])[2], aLeg[nI][1]})
+    Next nI
+    AAdd(aCor, {"BR_BRANCO", "Sem aprovacao (legado)"})
+    BrwLegenda("Legenda de Aprovacao", "Aprovacao da OS", aCor)
 
 Return
+
+/*/{Protheus.doc} OS_CORAPR
+Cor da legenda da aprovacao (nome do U_CNSAPR "LEG", igual ao portal) -> cor do
+browse e imagem da tela Legenda.
+@return aRet  {cCorBrowse, cImagem}
+@author Henrique
+@since 14/10/2026
+@version P12
+/*/
+Static Function OS_CORAPR(cCor)
+    Do Case
+    Case cCor == "verde"
+        Return {"GREEN", "BR_VERDE"}
+    Case cCor == "azul"
+        Return {"BLUE", "BR_AZUL"}
+    Case cCor == "amarelo"
+        Return {"YELLOW", "BR_AMARELO"}
+    Case cCor == "rosa"
+        Return {"PINK", "BR_PINK"}
+    Case cCor == "cinzaEscuro"
+        Return {"BLACK", "BR_PRETO"}
+    EndCase
+Return {"GRAY", "BR_CINZA"}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
 //                                                                                              //
@@ -978,6 +1016,11 @@ resultado em JSON.
 User Function OS_APIINCLUIR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
+
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -1173,6 +1216,11 @@ encontrada, 400 para os demais erros).
 User Function OS_APIALTERAR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
+
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -1687,6 +1735,13 @@ User Function OS_APILISTAR() As Logical
     Local cSemCli    := ""
     Local cSemDe     := ""
     Local cSemAte    := ""
+    Local cFApv      := ""
+    Local cSemApv    := ""
+
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -1723,6 +1778,10 @@ User Function OS_APILISTAR() As Logical
         cSemCli := If(Empty(cFCli),     "S", "N")
         cSemDe  := If(Empty(cFDataDe),  "S", "N")
         cSemAte := If(Empty(cFDataAte), "S", "N")
+        // Estado da aprovacao (Z1_APROVAD), um ou mais: aprovad=P,N -> ",P,N,".
+        cFApv   := StrTran(Upper(AllTrim(OS_LERJSONTXT(jQuery, "aprovad"))), " ", "")
+        cSemApv := If(Empty(cFApv), "S", "N")
+        cFApv   := "," + cFApv + ","
 
         BeginSql Alias cAlias
             SELECT * FROM (
@@ -1741,6 +1800,7 @@ User Function OS_APILISTAR() As Logical
                       AND (%Exp:cSemCli% = 'S' OR Z1_CLI = %Exp:cFCli%)
                       AND (%Exp:cSemDe% = 'S' OR Z1_DTOS >= %Exp:cFDataDe%)
                       AND (%Exp:cSemAte% = 'S' OR Z1_DTOS <= %Exp:cFDataAte%)
+                      AND (%Exp:cSemApv% = 'S' OR INSTR(%Exp:cFApv%, ',' || Z1_APROVAD || ',') > 0)
                       AND (
                             %Exp:cTextoUp% = ''
                             OR UPPER(Z1_OS) LIKE '%'||%Exp:cTextoUp%||'%'
@@ -1870,6 +1930,11 @@ User Function OS_APIEXCLUIR() As Logical
     Local lOk        := .F.
     Local cErro      := ""
 
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
+
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     Begin Sequence
@@ -1933,6 +1998,11 @@ User Function OS_APICOPIAR() As Logical
     Local oJson     := JsonObject():New()
     Local oErro     := Nil
     Local aResultado := {}
+
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -2238,6 +2308,11 @@ User Function OS_APILISTAINTERACOES() As Logical
     Local cConsul := ""
     Local aCh     := {}
 
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
+
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     Begin Sequence
@@ -2380,6 +2455,11 @@ User Function OS_APINOVAINTERACAO() As Logical
     Local cTexto     := OS_TEXTOPURO(OS_LERJSONTXT(jQuery,"texto"))
     Local oJson      := JsonObject():New()
     Local oErro      := Nil
+
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -2737,12 +2817,13 @@ Instalado em OS_MONTARMODEL, OS_MODELLEVE e OS_MODELINSERT.
 @since 09/10/2026
 @version P12
 /*/
+// TLPP: membro sem visibilidade e PRIVATE - o MVC chama New e os eventos de fora.
 Class CNS002APR From FWModelEvent
-    Data lReabriu
-    Method New() Constructor
-    Method ModelPosVld(oModel, cModelId)
-    Method BeforeTTS(oModel, cModelId)
-    Method InTTS(oModel, cModelId)
+    Public Data lReabriu
+    Public Method New() Constructor
+    Public Method ModelPosVld(oModel, cModelId)
+    Public Method BeforeTTS(oModel, cModelId)
+    Public Method InTTS(oModel, cModelId)
 EndClass
 
 Method New() Class CNS002APR

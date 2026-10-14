@@ -100,7 +100,8 @@ User Function ViewDef()
     // dentro do Namespace (mesmo padrao do CNSA001/CNSA002).
     Local oModel := FWModelActive()
 
-    If oModel == Nil
+    // Model ativo de OUTRA rotina (chamado, OS) nao serve: monta o do historico.
+    If oModel == Nil .Or. oModel:GetId() != "FCNS004"
         oModel := HA_MONTARMODEL()
     EndIf
 
@@ -179,6 +180,9 @@ Opcao "Visualizar": abre a resposta posicionada so para leitura.
 User Function HA_VISUALIZAR()
     Local oModel := HA_MONTARMODEL(MODEL_OPERATION_VIEW)
 
+    // Model desta tela como ativo: o ViewDef usa o ativo, e o de uma tela anterior
+    // (ex.: Visualizar) fazia o Incluir abrir com a OS anterior, travada.
+    FWModelActive(oModel)
     FWExecView("Historico de Aprovacao de OS", "apia.cnsa004.u_cns004", MODEL_OPERATION_VIEW, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel)
 Return
 
@@ -223,7 +227,7 @@ Return
 //    ENV, PRR e REC manual = vazio. Quem fez fica na SZA (ZA_POR/ZA_EMAIL).
 //  - Estado da OS calculado no BeforeTTS (fase ANT); ModelPosVld (VLD) so
 //    confere permissao; InTTS (GRV) grava a reabertura na SZA.
-//  - AF9_APVMAN aceita "1" ou "S" (opcoes ainda em definicao).
+//  - AF9_APVMAN: S=Sim / N=Nao (a planilha usa 1; decidido S/N em 14/10/2026).
 //
 // Transacoes (cTrans):
 //   OS   (oModel, "", {fase})        evento do model da OS: VLD / ANT / GRV
@@ -234,6 +238,7 @@ Return
 //   ENV  (cOs)                       so em N: token no link, so o SHA-256 na SZA - qualquer analista
 //   CNS  (cToken)                    link valido? devolve {lOk, cErro, jOs}
 //   LEG  ({aprovad, apvtipo, apvdata, envdt})   {cLegenda, cCor} (aba Legenda)
+//   LEGS ()                                      todas as {cLegenda, cCor} (browse classico)
 //   REG  (cOs ou {proj, rev, tarefa})           {cAprovad, cApvTipo} pela tarefa (AF9)
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -550,6 +555,17 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
     Case cTrans == "LEG"
         aRet  := AP_LEGENDA(xAlvo)
 
+    //--- Todas as legendas, na ordem (browse e tela Legenda do CNSA002) --------
+    // Mesmos textos do AP_LEGENDA: o browse compara o texto do LEG da linha.
+    Case cTrans == "LEGS"
+        aRet := {{"Nao requer aprovacao", "cinza"}, {"Pre-aprovada (sem aprovacao do cliente)", "azul"}, ;
+                 {"Aguardando pre-aprovacao interna", "amarelo"}, {"Pre-recusada (interna)", "cinzaEscuro"}, ;
+                 {"Recusada (manual / cliente)", "rosa"}, {"Recusada (legado)", "rosa"}, ;
+                 {"Pre-aprovada, a enviar", "azul"}, {"A enviar ao cliente", "azul"}, ;
+                 {"Aguardando cliente", "amarelo"}, {"Prazo vencido (aguarda o schedule)", "rosa"}, ;
+                 {"Aprovada pelo cliente", "verde"}, {"Aprovada por prazo", "azul"}, ;
+                 {"Aprovada manualmente", "azul"}, {"Aprovada", "verde"}}
+
     //--- Estado que a regra daria (pura, nao grava) ----------------------------
     Case cTrans == "REG"
         If ValType(xAlvo) == "C"
@@ -560,7 +576,7 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
         EndIf
         aTaf := AP_TAREFA(xAlvo[1], xAlvo[2], xAlvo[3])
         Do Case
-        Case aTaf[1] == "1" .Or. aTaf[1] == "S"   // AF9_APVMAN (opcoes 1/2 ou S/N - em definicao)
+        Case aTaf[1] == "S"   // AF9_APVMAN S=Sim: precisa pre-aprovacao interna
             aRet := {"P", "M"}
         Case aTaf[2] == "VB"
             aRet := {"A", ""}
@@ -1078,6 +1094,11 @@ User Function CNSAP_API() As Logical
     Local jDados := JsonObject():New()
     Local aRet   := {}
     Local oJson  := JsonObject():New()
+
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
     If !(cTrans $ "PRE|PRR|APR|REC|ENV") .Or. Len(cTrans) != 3 .Or. Empty(cOs)

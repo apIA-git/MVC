@@ -20,6 +20,11 @@ User Function CNS001_COMPONENTES_LISTAR() As Logical
     Local nI            := 0
     Local oErro         := Nil
 
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
+
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     Begin Sequence
@@ -1257,3 +1262,18 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
     EndCase
 
 Return xRet
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CNSSERVICO
+.T. quando quem chamou o REST e o usuario de servico da pagina do cliente
+(Aprovador-OS). Ele so pode usar o /CNSAAPROVA (CNSA004); os demais
+endpoints proprios recusam com 403 - se a senha dele vazar, nao abre o resto.
+Login do usuario: MV_CNSASRV (sem o parametro: "Aprovador de OS").
+@return lServico
+@author Henrique
+@since 14/10/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+User Function CNSSERVICO()
+Return Upper(AllTrim(UsrRetName(__cUserId))) == Upper(AllTrim(SuperGetMV("MV_CNSASRV", .F., "Aprovador de OS")))
