@@ -832,6 +832,87 @@ User Function CH_INCLUIRTELA()
     EndIf
 Return
 
+/*/{Protheus.doc} CH_DARNUMERO
+USO UNICO (14/10/2026) - REMOVER depois de rodar. O Incluir da tela classica
+gravou um chamado sem ZA1_IDCH (antes da correcao em CH_INCLUIRTELA). Da a ele
+o proximo numero da numeracao automatica (GetSxeNum/ConfirmSX8) e passa as
+interacoes sem numero DE HOJE pra ele. Nao mexe na agenda (SZ6).
+So roda se houver exatamente 1 chamado sem numero; so administrador.
+Executar: apia.cnsa001.U_CH_DARNUMERO()
+@author Henrique
+@since 14/10/2026
+@version P12
+/*/
+User Function CH_DARNUMERO()
+    Local cAlias  := GetNextAlias()
+    Local aZA2    := {}
+    Local nRecZA1 := 0
+    Local nQtd    := 0
+    Local cIdCh   := ""
+    Local cHoje   := DToS(Date())
+    Local nI      := 0
+
+    If !CH_TEMACESSOGRUPO()
+        MsgStop("Somente administrador.", "Numerar chamado")
+        Return
+    EndIf
+
+    BeginSql Alias cAlias
+        SELECT R_E_C_N_O_ REC
+        FROM %Table:ZA1% ZA1
+        WHERE ZA1_FILIAL = %xFilial:ZA1%
+          AND TRIM(ZA1_IDCH) IS NULL
+          AND %NotDel%
+    EndSql
+    While !(cAlias)->(Eof())
+        nQtd++
+        nRecZA1 := (cAlias)->REC
+        (cAlias)->(DbSkip())
+    EndDo
+    (cAlias)->(DbCloseArea())
+    If nQtd != 1
+        MsgStop("Esperado 1 chamado sem numero; encontrados: " + cValToChar(nQtd) + ". Nada foi alterado.", "Numerar chamado")
+        Return
+    EndIf
+
+    cAlias := GetNextAlias()
+    BeginSql Alias cAlias
+        SELECT R_E_C_N_O_ REC
+        FROM %Table:ZA2% ZA2
+        WHERE ZA2_FILIAL = %xFilial:ZA2%
+          AND TRIM(ZA2_IDCH) IS NULL
+          AND ZA2_DATA = %Exp:cHoje%
+          AND %NotDel%
+    EndSql
+    While !(cAlias)->(Eof())
+        AAdd(aZA2, (cAlias)->REC)
+        (cAlias)->(DbSkip())
+    EndDo
+    (cAlias)->(DbCloseArea())
+
+    ZA1->(DbGoto(nRecZA1))
+    If !MsgYesNo("Chamado sem numero: " + AllTrim(ZA1->ZA1_ASSUNT) + " (cliente " + AllTrim(ZA1->ZA1_CLIENT) + ")." + CRLF + ;
+            "Interacoes sem numero de hoje: " + cValToChar(Len(aZA2)) + "." + CRLF + "Dar o proximo numero agora?", "Numerar chamado")
+        Return
+    EndIf
+
+    cIdCh := GetSxeNum("ZA1", "ZA1_IDCH")
+    Begin Transaction
+        RecLock("ZA1", .F.)
+            ZA1->ZA1_IDCH := cIdCh
+        ZA1->(MsUnlock())
+        For nI := 1 To Len(aZA2)
+            ZA2->(DbGoto(aZA2[nI]))
+            RecLock("ZA2", .F.)
+                ZA2->ZA2_IDCH := cIdCh
+            ZA2->(MsUnlock())
+        Next nI
+    End Transaction
+    ConfirmSX8()
+
+    MsgInfo("Chamado numerado: " + AllTrim(cIdCh) + " (" + cValToChar(Len(aZA2)) + " interacao(oes)).", "Numerar chamado")
+Return
+
 /*/{Protheus.doc} GETIDGRID
 Calcula a proxima sequencia de linha (nao deletada) do grid ZA2DETAIL do
 Model ativo, para numerar uma nova interacao.
