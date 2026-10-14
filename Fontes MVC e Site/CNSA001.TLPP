@@ -4466,7 +4466,8 @@ Static Function CH_EHRESPOSTAAUTO(cAssunto)
     Local cAss  := Upper(FwNoAccent(AllTrim(cAssunto)))
     Local aTerm := {"RESPOSTA AUTOMATICA", "AUTOMATIC REPLY", "AUTO-REPLY", "AUTOREPLY", "FORA DO ESCRITORIO", ;
                     "OUT OF OFFICE", "UNDELIVERABLE", "NAO E POSSIVEL ENTREGAR", "NAO FOI POSSIVEL ENTREGAR", ;
-                    "DELIVERY STATUS", "MAIL DELIVERY", "RETORNADO", "SEU E-MAIL NAO ESTA CADASTRADO", "CHAMADO ABERTO"}
+                    "DELIVERY STATUS", "MAIL DELIVERY", "RETORNADO", "SEU E-MAIL NAO ESTA CADASTRADO", "CHAMADO ABERTO", ;
+                    "APROVACAO DA ORDEM DE SERVICO", "APROVADA O.S.", "RECUSADA O.S."}
     Local nI    := 0
 
     For nI := 1 To Len(aTerm)
@@ -4767,14 +4768,3 @@ mesma caixa remetente dos demais e-mails do chamado.
 /*/
 User Function CH_MAILPUB(cPara, cAssunto, cCorpo)
 Return CH_ENVIAREMAIL(cPara, cAssunto, cCorpo, "apia@apia.com.br")
-
-/*/{Protheus.doc} CH_PERGUNTAPUB
-Expoe a janela de e-mails (CH_PERGUNTAEMAIL, Static) pra fora do namespace -
-usada na tela classica da OS (CNSA002, OS_EMAIL "TELA").
-@return aRet   {lEnviarCliente, lEnviarTecnico}
-@author Henrique
-@since 08/10/2026
-@version P12
-/*/
-User Function CH_PERGUNTAPUB(cTitulo, lOfereceCli, lOfereceTec)
-Return CH_PERGUNTAEMAIL(cTitulo, lOfereceCli, lOfereceTec)

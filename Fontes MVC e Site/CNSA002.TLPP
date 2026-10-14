@@ -9,8 +9,6 @@
 
 Namespace apia.cnsa002
 
-PUBLISH MODEL REST NAME OS RESOURCE OBJECT oRestOS
-
 
 //-------------------------------------------------------------------
 /*/{Protheus.doc} CNS002
@@ -25,8 +23,7 @@ SZ1, com as legendas de status (aprovada/faturada/negada/etc).
 User Function CNS002()
 
     Local l_oBrowse := Nil
-    // FIX: User Function precisa ser chamada com prefixo "u_" mesmo dentro do
-    // mesmo arquivo/namespace (mesmo problema real confirmado no CNS001.TLPP).
+    // User Function do mesmo namespace precisa do prefixo "u_".
     Private aRotina := u_MenuDef()
 
     l_oBrowse := FWMBrowse():New()
@@ -64,9 +61,6 @@ User Function MenuDef()
 Local aRotina  := {}
 
     ADD OPTION aRotina TITLE "Pesquisar"    ACTION "AxPesqui"                        OPERATION 1 ACCESS 0
-    // Mesmo padrao do CNSA001 (Chamado): ACTION "ViewDef.<fonte>" nao dispara
-    // nada dentro do Namespace - cada opcao chama uma User Function que abre a
-    // View via FWExecView com o identificador do namespace.
     ADD OPTION aRotina TITLE "Visualizar"   ACTION "apia.cnsa002.U_OS_VISUALIZARTELA" OPERATION 2 ACCESS 0
     ADD OPTION aRotina TITLE "Incluir"      ACTION "apia.cnsa002.U_OS_INCLUIRTELA"    OPERATION 3 ACCESS 0
     ADD OPTION aRotina TITLE "Alterar"      ACTION "apia.cnsa002.U_OS_ALTERARTELA"    OPERATION 4 ACCESS 0
@@ -75,6 +69,12 @@ Local aRotina  := {}
     ADD OPTION aRotina TITLE "Legenda"      ACTION "apia.cnsa002.U_OS_LEGENDA"       OPERATION 0 ACCESS 0
     // Historico de aprovacao da OS posicionada (SZA, CNSA004 - so consulta).
     ADD OPTION aRotina TITLE "Historico Aprovacao" ACTION "apia.cnsa004.U_CNS004(SZ1->Z1_OS)" OPERATION 0 ACCESS 0
+    // Aprovacao de OS (U_CNSAPR, CNSA004) - a regra (estado e permissao) e do U_CNSAPR.
+    ADD OPTION aRotina TITLE "Enviar ao cliente" ACTION "apia.cnsa002.U_OS_APRTELA('ENV')" OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Pre-aprovar"       ACTION "apia.cnsa002.U_OS_APRTELA('PRE')" OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Pre-recusar"       ACTION "apia.cnsa002.U_OS_APRTELA('PRR')" OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Aprovar OS"        ACTION "apia.cnsa002.U_OS_APRTELA('APR')" OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Recusar OS"        ACTION "apia.cnsa002.U_OS_APRTELA('REC')" OPERATION 0 ACCESS 0
 
 Return aRotina
 
@@ -192,6 +192,8 @@ Static Function OS_MONTARMODEL(nOperAtivar)
     l_oModel:SetRelation("SZ2DETAIL", aRelSZ2, SZ2->(IndexKey(2)))
 
     l_oModel:SetPrimaryKey({"Z1_FILIAL","Z1_OS"})
+    // Aprovacao de OS (U_CNSAPR, CNSA004): estado inicial, reavaliacao e reabertura.
+    l_oModel:InstallEvent("CNS002APR", /*cOwner*/, CNS002APR():New())
 
     If nOperAtivar > 0
         l_oModel:SetOperation(nOperAtivar)
@@ -228,6 +230,11 @@ Static Function OS_VALIDACAMPO(p_oField, p_sAcao, p_sCampo, p_vValor)
     // Z1_TEC (Analista) tambem nao - OS pode ser criada sem tecnico.
     Local aObrigatorios := {"Z1_CLI", "Z1_LOJA", "Z1_MODULO", "Z1_MOTIV", ;
         "Z1_TIPO", "Z1_DTOS", "Z1_INI", "Z1_FIM", "Z1_TOTAL"}
+
+    // Gravacao da aprovacao (U_CNSAPR): nao barra por campo antigo vazio.
+    If Type("__lA02Interno") == "L" .And. __lA02Interno
+        Return .T.
+    EndIf
 
     If AScan(aObrigatorios, p_sCampo) > 0 .And. Empty(p_vValor)
         l_bOk := .F.
@@ -313,6 +320,10 @@ Static Function OS_VALIDACOBRAR(p_oModel)
     Local cTipGru   := ""
 
     If nOper != 3 .And. nOper != 4
+        Return .T.
+    EndIf
+    // Gravacao da aprovacao (U_CNSAPR): nao barra por regra de cobranca da OS.
+    If Type("__lA02Interno") == "L" .And. __lA02Interno
         Return .T.
     EndIf
 
@@ -462,12 +473,11 @@ Static Function OS_MODELLEVE()
 
     // Pos-validacao: agendamento "Nao Cobrar" so aceita servico nao cobravel.
     oModel := MPFormModel():New("FCNS002REST", NIL, {|o| OS_VALIDACOBRAR(o)}, NIL, NIL)
-    // FIX: faltava plugar OS_VALIDACAMPO como PosValidacao (4o parametro) -
-    // sem isso, Incluir/Alterar via Class oRestOS aceitava OS sem cliente/
-    // tecnico/nada, sem erro (a validacao dos 12 campos obrigatorios so
-    // existia no ModelDef002 completo da tela classica, nunca rodava aqui).
+    // OS_VALIDACAMPO como PosValidacao: obrigatorios validados tambem fora da tela.
     oModel:AddFields("SZ1MASTER", NIL, oStrSZ1, {|_f,_a,_c,_v| OS_VALIDACAMPO(_f,_a,_c,_v)}, NIL)
     oModel:SetPrimaryKey({"Z1_FILIAL", "Z1_OS"})
+    // Aprovacao de OS (U_CNSAPR, CNSA004) - o portal grava pelo model leve.
+    oModel:InstallEvent("CNS002APR", /*cOwner*/, CNS002APR():New())
 
 Return oModel
 
@@ -513,17 +523,10 @@ Static Function OS_STRUCTHEADLESS(oStrSZ1)
 
 Return
 
-// Monta E ativa o model de Insert na MESMA funcao (nao chama OS_MODELLEVE()
-// e ativa depois na funcao chamadora) - mesmo bug/fix do CH_MODELINSERT em
-// CNSA001.TLPP: FWInitCpo prende o "owner private environment" ao stack
-// frame de quem monta o model (New/AddFields); se o Activate() de Insert
-// roda numa funcao diferente de quem montou, INITVALUE quebra com
-// "_SetNamedPrvt: owner private environment not found" (campo Data do SZ1
-// - Z1_DTOS/Z1_DTDIGIT - dispara o calculo de valor inicial em branco).
-// So afeta Insert (Update/Delete carregam valor existente, nunca disparam
-// INITVALUE) - por isso a montagem esta duplicada aqui em vez de reusar
-// OS_MODELLEVE(). Uso exclusivo dos fluxos de Insert headless
-// (OS_NUCLEOCOPIAR, SaveData Incluir, OS_NUCLEOINCLUIR).
+// Model de Insert montado E ativado aqui (nao reusa OS_MODELLEVE): o Activate
+// de Insert em outra funcao quebra o INITVALUE com "owner private environment
+// not found" (mesmo caso do CH_MODELINSERT no CNSA001). Usado por
+// OS_NUCLEOCOPIAR e OS_NUCLEOINCLUIR.
 //-------------------------------------------------------------------
 Static Function OS_MODELINSERT()
     Local oModel  := Nil
@@ -536,6 +539,8 @@ Static Function OS_MODELINSERT()
     oModel := MPFormModel():New("FCNS002REST", NIL, {|o| OS_PREVALIDA(o) .And. OS_VALIDACOBRAR(o)}, NIL, NIL)
     oModel:AddFields("SZ1MASTER", NIL, oStrSZ1, {|_f,_a,_c,_v| OS_VALIDACAMPO(_f,_a,_c,_v)}, NIL)
     oModel:SetPrimaryKey({"Z1_FILIAL", "Z1_OS"})
+    // Aprovacao de OS (U_CNSAPR, CNSA004) - o portal grava pelo model leve.
+    oModel:InstallEvent("CNS002APR", /*cOwner*/, CNS002APR():New())
 
     oModel:SetOperation(MODEL_OPERATION_INSERT)
     oModel:Activate()
@@ -567,7 +572,6 @@ Static Function OS_NUCLEOCOPIAR(cOsOrigem)
     Local oModelSZ1  := Nil
     Local lOk        := .F.
     Local cErro      := ""
-    Local cErroModel := Nil
     Local oErroExcpt := Nil
 
     If Empty(cOsOrigem)
@@ -586,9 +590,7 @@ Static Function OS_NUCLEOCOPIAR(cOsOrigem)
         EndIf
     Next nI
 
-    // FIX: sem Begin Sequence/Recover, uma excecao real entre Activate() e
-    // DeActivate() deixava o model pendurado pra sempre (mesma classe de bug
-    // ja corrigida no CH_GRAVARAGENDA do CNS001.TLPP).
+    // Begin Sequence: excecao entre Activate() e DeActivate() nao deixa o model pendurado.
     Begin Sequence
 
         cOsNova := OS_PROXIMONUM()
@@ -625,17 +627,7 @@ Static Function OS_NUCLEOCOPIAR(cOsOrigem)
         EndIf
 
         If !lOk
-            cErroModel := oModel:GetErrorMessage()
-            Do Case
-                Case ValType(cErroModel) == "C"
-                    cErro := cErroModel
-                Case ValType(cErroModel) == "O"
-                    cErro := cErroModel:GetMessage()
-                Case ValType(cErroModel) == "A"
-                    cErro := FwJsonSerialize(cErroModel)
-                Otherwise
-                    cErro := "Falha ao copiar a OS."
-            EndCase
+            cErro := OS_ERROMODEL(oModel, "Falha ao copiar a OS.")
         EndIf
 
         oModel:DeActivate(lOk)
@@ -696,7 +688,7 @@ User Function OS_INCLUIRTELA()
     oModel := OS_MONTARMODEL(MODEL_OPERATION_INSERT)
     cOs    := oModel:GetModel("SZ1MASTER"):GetValue("Z1_OS")
 
-    // FWExecView devolve 0 quando grava: pergunta cliente/tecnico (OS_EMAIL "TELA").
+    // FWExecView devolve 0 quando grava: OS em N pergunta "Deseja enviar ao cliente?" (OS_EMAIL "TELA").
     If FWExecView("Ordem de Servico", "apia.cnsa002.u_cns002", MODEL_OPERATION_INSERT, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel) == 0
         OS_EMAIL("TELA", cOs)
     EndIf
@@ -721,7 +713,7 @@ User Function OS_ALTERARTELA()
     RegToMemory("SZ1", .F., .F.)
     oModel := OS_MONTARMODEL(MODEL_OPERATION_UPDATE)
 
-    // FWExecView devolve 0 quando grava: pergunta cliente/tecnico (OS_EMAIL "TELA").
+    // FWExecView devolve 0 quando grava: OS em N pergunta "Deseja enviar ao cliente?" (OS_EMAIL "TELA").
     If FWExecView("Ordem de Servico", "apia.cnsa002.u_cns002", MODEL_OPERATION_UPDATE, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel) == 0
         OS_EMAIL("TELA", cOs)
     EndIf
@@ -802,177 +794,6 @@ Return
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
 //                                                                                              //
-//                       CLASS REST GENERICA - Incluir/Alterar/Visualizar                      //
-//                                                                                              //
-////////////////////////////////////////////////////////////////////////////////////////////////
-Class oRestOS From FwRestModel
-
-Method SaveData(cPK, cData, cError)
-
-EndClass
-
-//-------------------------------------------------------------------
-/*/{Protheus.doc} SaveData
-Implementacao generica de gravacao exigida pelo PUBLISH MODEL REST
-(Class oRestOS From FwRestModel). CODIGO MORTO do ponto de vista do
-front real (apia-po-cnshub): confirmado lendo os-serv.ts que
-Incluir/Alterar mandam tudo via QUERY STRING com corpo POST sempre
-`null` (nunca JSON body) - mesmo problema ja corrigido no CNS001.TLPP
-para o front de Chamados. Os endpoints DE VERDADE usados pelo front
-sao OS_APIINCLUIR/OS_APIALTERAR (@Post custom lendo query string).
-Mantido aqui so porque o PUBLISH MODEL REST exige a Class existir -
-nunca chamado por esse front. NUNCA delega pro `_Super` (ver aviso no
-topo do arquivo sobre risco de cascata no SZ2DETAIL relacionado por
-cliente), caso algum dia alguem chame o generico de verdade.
-@param  cPK      Chave primaria (vazia = Incluir, preenchida = Alterar)
-@param  cData    Corpo JSON da requisicao (nunca usado por este front)
-@param  cError   Variavel de saida com a mensagem de erro (por referencia)
-@return lOk      .T. se gravou com sucesso, .F. caso contrario
-@author Henrique
-@since 02/09/2026
-@version P12
-/*/
-//-------------------------------------------------------------------
-Method SaveData(cPK, cData, cError) Class oRestOS
-Local jBody      := Nil
-Local oModel     := Nil
-Local oModelSZ1  := Nil
-Local lOk        := .F.
-Local cErro      := ""
-Local cErroModel := Nil
-Local oErroExcpt := Nil
-Local cOs        := ""
-Local lIncluir   := Empty(cPK)
-
-    Begin Sequence
-        jBody := JsonObject():New()
-        jBody:fromJson(cData)
-        If jBody == Nil
-            cError := "Corpo da requisicao invalido (JSON malformado)."
-            lOk    := .F.
-        Else
-            If lIncluir
-                // OS_MODELINSERT (nao OS_MODELLEVE + Activate separado):
-                // monta e ativa na MESMA funcao, senao "_SetNamedPrvt:
-                // owner private environment not found" no INITVALUE do
-                // Insert.
-                oModel    := OS_MODELINSERT()
-                oModelSZ1 := oModel:GetModel("SZ1MASTER")
-
-                cOs := OS_PROXIMONUM()
-                oModelSZ1:SetValue("Z1_FILIAL",  cFilAnt)
-                // LoadValue (nao SetValue): X3_VALID do Z1_OS (ExistChav("SZ1")) quebra
-                // com type mismatch fora da tela (rota REST, sem M->Z1_OS). Numero ja
-                // vem unico do OS_PROXIMONUM.
-                oModelSZ1:LoadValue("Z1_OS", cOs)
-                oModelSZ1:SetValue("Z1_APROVAD", "N")
-                oModelSZ1:SetValue("Z1_FATURAR", "N")
-            Else
-                cOs := cPK
-                DbSelectArea("SZ1")
-                SZ1->(DbSetOrder(1))
-                If !SZ1->(DbSeek(cFilAnt + cOs))
-                    cError := "OS nao encontrada."
-                    Return .F.
-                EndIf
-                oModel := OS_MODELLEVE()
-                oModel:SetOperation(MODEL_OPERATION_UPDATE)
-                oModel:Activate()
-                oModelSZ1 := oModel:GetModel("SZ1MASTER")
-            EndIf
-
-            // Mapeamento generico: qualquer campo Z1_* que vier no JSON e
-            // setado - Incluir grava tudo, Alterar so o que veio (parcial).
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_CLI")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_LOJA")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_USR")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_MODULO")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_MOTIV")
-            OS_SETTEXTOUTF8(oModelSZ1, jBody, "Z1_SERV")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_TIPO")
-            OS_SETDATAOS(oModelSZ1, jBody, "Z1_DTOS")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_INTERNO")
-            OS_SETNUM(oModelSZ1, jBody, "Z1_INI")
-            OS_SETNUM(oModelSZ1, jBody, "Z1_FIM")
-            OS_SETNUM(oModelSZ1, jBody, "Z1_TRANS")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_PREVIST")
-            OS_SETNUM(oModelSZ1, jBody, "Z1_TOTAL")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_TEC")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_NUMPRO")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_PV")
-            OS_SETNUM(oModelSZ1, jBody, "Z1_ALMOCO")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_PROJET")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_REVISA")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_TAREFA")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_CHPSD")
-            OS_SETNUM(oModelSZ1, jBody, "Z1_CHHDK")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_OSDESE")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_OSENVCL")
-            OS_SETSEFICOU(oModelSZ1, jBody, "Z1_LIN")
-            OS_SETNUM(oModelSZ1, jBody, "Z1_VLRHR")
-
-            // Z1_LOJA NAO recebe default silencioso: e campo obrigatorio
-            // (aObrigatorios em OS_VALIDACAMPO) - se faltar, VldData() reprova
-            // com erro, igual o original exigia explicitamente.
-            If lIncluir .And. Empty(oModelSZ1:GetValue("Z1_INTERNO"))
-                oModelSZ1:SetValue("Z1_INTERNO", "N")
-            EndIf
-            If lIncluir .And. Empty(oModelSZ1:GetValue("Z1_OSDESE"))
-                oModelSZ1:SetValue("Z1_OSDESE", "N")
-            EndIf
-            // Z1_OSENVCL (OS Enviada, S/N) e obrigatorio - OS antigas estao
-            // vazias, entao preenche "N" tambem no Alterar.
-            If Empty(oModelSZ1:GetValue("Z1_OSENVCL"))
-                oModelSZ1:SetValue("Z1_OSENVCL", "N")
-            EndIf
-            If lIncluir .And. Empty(oModelSZ1:GetValue("Z1_DTDIGIT"))
-                oModelSZ1:SetValue("Z1_DTDIGIT", Date())
-            EndIf
-
-            If oModel:VldData()
-                lOk := oModel:CommitData()
-            Else
-                lOk := .F.
-            EndIf
-
-            If !lOk
-                cErroModel := oModel:GetErrorMessage()
-                Do Case
-                    Case ValType(cErroModel) == "C"
-                        cErro := cErroModel
-                    Case ValType(cErroModel) == "O"
-                        cErro := cErroModel:GetMessage()
-                    Case ValType(cErroModel) == "A"
-                        cErro := FwJsonSerialize(cErroModel)
-                    Otherwise
-                        cErro := "Falha ao validar/gravar a OS."
-                EndCase
-                cError := cErro
-            EndIf
-
-            oModel:DeActivate(lOk)
-
-            If lIncluir
-                If lOk
-                    ConfirmSX8()
-                Else
-                    ConfirmSX8(.F.)
-                EndIf
-            EndIf
-        EndIf
-    Recover Using oErroExcpt
-        lOk    := .F.
-        cError := "Erro interno: " + oErroExcpt:Description
-        If lIncluir
-            ConfirmSX8(.F.)
-        EndIf
-        If oModel <> Nil
-            oModel:DeActivate()
-        EndIf
-    End Sequence
-
-////////////////////////////////////////////////////////////////////////////////////////////////
-//                                                                                              //
 //                    INCLUIR/ALTERAR - endpoints REAIS usados pelo front                     //
 //                    (query string, corpo POST sempre null - confirmado                       //
 //                    lendo os-serv.ts)                                                        //
@@ -999,7 +820,6 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
     Local oModelSZ1  := Nil
     Local lOk        := .F.
     Local cErro      := ""
-    Local cErroModel := Nil
     Local oErroExcpt := Nil
     Local cOs        := ""
     Local cDtDigit   := AllTrim(OS_LERJSONTXT(jQuery, "dtDigitacao"))
@@ -1119,17 +939,7 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
         EndIf
 
         If !lOk
-            cErroModel := oModel:GetErrorMessage()
-            Do Case
-                Case ValType(cErroModel) == "C"
-                    cErro := cErroModel
-                Case ValType(cErroModel) == "O"
-                    cErro := cErroModel:GetMessage()
-                Case ValType(cErroModel) == "A"
-                    cErro := FwJsonSerialize(cErroModel)
-                Otherwise
-                    cErro := "Falha ao validar/gravar a OS."
-            EndCase
+            cErro := OS_ERROMODEL(oModel, "Falha ao validar/gravar a OS.")
         EndIf
 
         oModel:DeActivate(lOk)
@@ -1197,7 +1007,6 @@ Static Function OS_NUCLEOALTERAR(jQuery)
     Local oModelSZ1  := Nil
     Local lOk        := .F.
     Local cErro      := ""
-    Local cErroModel := Nil
     Local oErroExcpt := Nil
     Local cOs        := AllTrim(OS_LERJSONTXT(jQuery,"os"))
     Local cVal       := ""
@@ -1324,17 +1133,7 @@ Static Function OS_NUCLEOALTERAR(jQuery)
         EndIf
 
         If !lOk
-            cErroModel := oModel:GetErrorMessage()
-            Do Case
-                Case ValType(cErroModel) == "C"
-                    cErro := cErroModel
-                Case ValType(cErroModel) == "O"
-                    cErro := cErroModel:GetMessage()
-                Case ValType(cErroModel) == "A"
-                    cErro := FwJsonSerialize(cErroModel)
-                Otherwise
-                    cErro := "Falha ao validar/gravar a alteracao."
-            EndCase
+            cErro := OS_ERROMODEL(oModel, "Falha ao validar/gravar a alteracao.")
         EndIf
 
         oModel:DeActivate(lOk)
@@ -1387,48 +1186,6 @@ User Function OS_APIALTERAR() As Logical
     EndIf
 
 Return oRest:setStatusResponse(200, OS_RESPOSTAOK(aResultado[3], "OS alterada com sucesso."))
-
-Return lOk
-
-// Helpers do SaveData - setam campo so se veio no JSON (Alterar parcial) ou
-// sempre (Incluir, jBody[cCampo]==Nil vira valor vazio, igual campo omitido).
-//-------------------------------------------------------------------
-/*/{Protheus.doc} OS_SETSEFICOU
-Seta um campo texto generico do Model (SZ1MASTER) a partir do JSON, so
-se o campo veio no corpo (jBody[cCampo] != Nil).
-@param  oModelSZ1   Sub-model da SZ1MASTER (FormModel)
-@param  jBody       Objeto Json com o corpo da requisicao
-@param  cCampo      Nome do campo (SX3) a setar
-@author Henrique
-@since 02/09/2026
-@version P12
-/*/
-//-------------------------------------------------------------------
-Static Function OS_SETSEFICOU(oModelSZ1, jBody, cCampo)
-    Local xVal := jBody[cCampo]
-    If xVal != Nil
-        oModelSZ1:SetValue(cCampo, AllTrim(cValToChar(xVal)))
-    EndIf
-Return
-
-//-------------------------------------------------------------------
-/*/{Protheus.doc} OS_SETTEXTOUTF8
-Seta um campo texto do Model (SZ1MASTER) a partir do JSON, so se o
-campo veio no corpo (jBody[cCampo] != Nil).
-@param  oModelSZ1   Sub-model da SZ1MASTER (FormModel)
-@param  jBody       Objeto Json com o corpo da requisicao
-@param  cCampo      Nome do campo (SX3) a setar
-@author Henrique
-@since 02/09/2026
-@version P12
-/*/
-//-------------------------------------------------------------------
-Static Function OS_SETTEXTOUTF8(oModelSZ1, jBody, cCampo)
-    Local xVal := jBody[cCampo]
-    If xVal != Nil
-        oModelSZ1:SetValue(cCampo, AllTrim(cValToChar(xVal)))
-    EndIf
-Return
 
 //-------------------------------------------------------------------
 /*/{Protheus.doc} OS_LERHORA
@@ -1497,42 +1254,31 @@ Static Function OS_HORACAMPO(cHora, cCampo)
 Return PadR(Left(cRet, nTam), nTam)
 
 //-------------------------------------------------------------------
-/*/{Protheus.doc} OS_SETNUM
-Seta um campo numerico do Model (SZ1MASTER) a partir do JSON, so se o
-campo veio no corpo (jBody[cCampo] != Nil).
-@param  oModelSZ1   Sub-model da SZ1MASTER (FormModel)
-@param  jBody       Objeto Json com o corpo da requisicao
-@param  cCampo      Nome do campo (SX3) a setar
+/*/{Protheus.doc} OS_ERROMODEL
+Mensagem de erro do Model depois de VldData/CommitData falhar (texto,
+objeto ou array, conforme o framework devolve). Usado em incluir,
+alterar, copiar e excluir.
+@param  oModel    Model que falhou
+@param  cPadrao   Mensagem quando o Model nao informa nada
+@return cErro     Mensagem de erro
 @author Henrique
-@since 02/09/2026
+@since 09/10/2026
 @version P12
 /*/
 //-------------------------------------------------------------------
-Static Function OS_SETNUM(oModelSZ1, jBody, cCampo)
-    Local xVal := jBody[cCampo]
-    If xVal != Nil
-        oModelSZ1:SetValue(cCampo, Val(cValToChar(xVal)))
-    EndIf
-Return
+Static Function OS_ERROMODEL(oModel, cPadrao)
+    Local xErro := oModel:GetErrorMessage()
 
-//-------------------------------------------------------------------
-/*/{Protheus.doc} OS_SETDATAOS
-Seta um campo data do Model (SZ1MASTER) a partir do JSON (formato
-"AAAA-MM-DD"), so se o campo veio no corpo e nao estiver vazio.
-@param  oModelSZ1   Sub-model da SZ1MASTER (FormModel)
-@param  jBody       Objeto Json com o corpo da requisicao
-@param  cCampo      Nome do campo (SX3) a setar
-@author Henrique
-@since 02/09/2026
-@version P12
-/*/
-//-------------------------------------------------------------------
-Static Function OS_SETDATAOS(oModelSZ1, jBody, cCampo)
-    Local xVal := jBody[cCampo]
-    If xVal != Nil .And. !Empty(cValToChar(xVal))
-        oModelSZ1:SetValue(cCampo, STOD(StrTran(cValToChar(xVal), "-", "")))
-    EndIf
-Return
+    Do Case
+        Case ValType(xErro) == "C"
+            Return xErro
+        Case ValType(xErro) == "O"
+            Return xErro:GetMessage()
+        Case ValType(xErro) == "A"
+            Return FwJsonSerialize(xErro)
+    EndCase
+
+Return cPadrao
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
 //                                                                                              //
@@ -1757,11 +1503,8 @@ Return cRet
 
 //-------------------------------------------------------------------
 /*/{Protheus.doc} OS_LERJSONNUM
-Le um campo numerico de um objeto Json (helper compartilhado pelos
-endpoints @Get/@Post). FIX ja existente no original (nao usa
-GetJsonText): indexacao direta jDados[cCampo] devolve Nil de verdade
-pra campo ausente, enquanto GetJsonText devolvia a string literal
-"null".
+Le um campo numerico de um objeto Json (endpoints @Get/@Post). Usa
+jDados[cCampo] (Nil se ausente), nao GetJsonText (devolvia "null").
 @param  jDados   Objeto Json (query string ou corpo)
 @param  cCampo   Nome do campo a ler
 @return nVal     Valor numerico do campo, ou 0 se ausente
@@ -1779,13 +1522,9 @@ Return Val(cValToChar(xVal))
 
 //-------------------------------------------------------------------
 /*/{Protheus.doc} OS_DECODESAFE
-FIX (caracteres acentuados bugados na descricao/texto/etc): o campo
-chega via querystring (nao corpo JSON - OsServ.ts manda tudo na URL,
-POST com body null). Faz reconstrucao manual byte a byte (mesmo
-algoritmo do CH_DECODESAFE em CNS001.TLPP) em vez de confiar no
-DecodeUTF8 nativo - remonta o par de bytes UTF-8 (0xC2/0xC3 +
-continuacao) que apareceu como 2 chars CP1252 separados. Nunca lanca
-erro (so usa Asc/Chr/SubStr).
+Corrige acentos que chegam pela query string como UTF-8 quebrado em 2
+caracteres CP1252: remonta o par de bytes (0xC2/0xC3 + continuacao), igual
+ao CH_DECODESAFE do CNSA001. Nunca lanca erro.
 @param  cTexto   Texto possivelmente com bytes UTF-8 quebrados em CP1252
 @return cRet     Texto reconstruido/decodificado
 @author Henrique
@@ -1896,22 +1635,17 @@ Static Function OS_RESPOSTAOK(cOs, cMsg)
     oJson["sucesso"]  := .T.
     oJson["os"]       := cOs
     oJson["mensagem"] := cMsg
+    // Estado da aprovacao depois de gravar (portal pergunta "Enviar ao cliente?" so em N).
+    SZ1->(DbSetOrder(1))
+    If SZ1->(DbSeek(cFilAnt + PadR(AllTrim(cOs), TamSX3("Z1_OS")[1])))
+        oJson["aprovad"] := AllTrim(SZ1->Z1_APROVAD)
+        oJson["interna"] := AllTrim(SZ1->Z1_INTERNO) == "S"
+    EndIf
 Return oJson:ToJson()
 
-// LISTAGEM / VISUALIZAR / PESQUISAR - fica custom (SQL direto por performance,
-// nao cabe no generico).
-//
-// FIX (travava "sending" pra sempre, mesmo compilado): a versao anterior desta
-// funcao trocou SQL por navegacao nativa (DbSeek/DbSkip), copiando cegamente o
-// padrao do CH_APICHAMADOS - mas SZ1 (OS) e historicamente MUITO maior que ZA1
-// (chamados), e ler a tabela INTEIRA pra memoria a cada request nao escala (ao
-// contrario de ZA1, que e pequena). O comentario original deste endpoint ja
-// avisava "SQL direto por performance" - volta a usar SQL com paginacao real
-// (ROWNUM), SEM filtro de negocio nenhum no WHERE (so filial+NotDel) -
-// paginacao tecnica nao e filtro. Z1_SERV (descricao) e Memo - cursor de
-// BeginSql nao expoe Memo por nome, por isso continua vindo via
-// OS_DESC()/Posicione, so que agora so pras poucas linhas da pagina pedida
-// (nao mais pra tabela inteira).
+// LISTAGEM / VISUALIZAR / PESQUISAR - SQL direto com paginacao (ROWNUM): a SZ1
+// e grande demais pra navegar inteira (DbSeek/DbSkip) a cada request. Z1_SERV e
+// Memo (o cursor do BeginSql nao expoe) - vem por OS_DESC() so pras linhas da pagina.
 //-------------------------------------------------------------------
 /*/{Protheus.doc} OS_APILISTAR
 Endpoint REST (GET /CNSAOS) de listagem/pesquisa de OS, paginado via
@@ -1998,6 +1732,7 @@ User Function OS_APILISTAR() As Logical
                         Z1_DTOS, Z1_INTERNO, Z1_LOCAL, Z1_HRINI, Z1_INI, Z1_HRFIM, Z1_FIM, Z1_TRANS, Z1_PREVIST, ;
                         Z1_HRTOT, Z1_TOTAL, Z1_TEC, Z1_NUMPRO, Z1_PV, Z1_ALMOCO, Z1_PROJET, Z1_REVISA, ;
                         Z1_TAREFA, Z1_CHPSD, Z1_CHHDK, Z1_IDCH, Z1_OSDESE, Z1_OSENVCL, Z1_LIN, Z1_VLRHR, Z1_APROVAD, Z1_FATURAR, ;
+                        Z1_APVTIPO, Z1_APVDATA, Z1_ENVDT, ;
                         COUNT(*) OVER() AS SZ1_TOTAL
                     FROM %Table:SZ1% SZ1
                     WHERE Z1_FILIAL = %xFilial:SZ1%
@@ -2086,6 +1821,12 @@ User Function OS_APILISTAR() As Logical
             oLinha['linhaPv']        := AllTrim((cAlias)->Z1_LIN)
             oLinha['valorHora']      := (cAlias)->Z1_VLRHR
             oLinha['status']         := OS_STATUSCALC(AllTrim((cAlias)->Z1_APROVAD), AllTrim((cAlias)->Z1_FATURAR), cTecAtual)
+            // Aprovacao de OS (aba Legenda da planilha, U_CNSAPR "LEG"): prazo por
+            // Z1_ENVDT + MV_CNSAPRZ, sem consultar a SZA por linha.
+            oLinha['aprovad']        := AllTrim((cAlias)->Z1_APROVAD)
+            oLinha['apvtipo']        := AllTrim((cAlias)->Z1_APVTIPO)
+            oLinha['aprovacao']      := apia.cnsa004.U_CNSAPR("LEG", {(cAlias)->Z1_APROVAD, (cAlias)->Z1_APVTIPO, ;
+                                            (cAlias)->Z1_APVDATA, (cAlias)->Z1_ENVDT})[1]
             AAdd(aRetorno, oLinha)
 
             (cAlias)->(DbSkip())
@@ -2128,7 +1869,6 @@ User Function OS_APIEXCLUIR() As Logical
     Local oModel     := Nil
     Local lOk        := .F.
     Local cErro      := ""
-    Local cErroModel := Nil
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -2153,17 +1893,7 @@ User Function OS_APIEXCLUIR() As Logical
         EndIf
 
         If !lOk
-            cErroModel := oModel:GetErrorMessage()
-            Do Case
-                Case ValType(cErroModel) == "C"
-                    cErro := cErroModel
-                Case ValType(cErroModel) == "O"
-                    cErro := cErroModel:GetMessage()
-                Case ValType(cErroModel) == "A"
-                    cErro := FwJsonSerialize(cErroModel)
-                Otherwise
-                    cErro := "Falha ao excluir a OS."
-            EndCase
+            cErro := OS_ERROMODEL(oModel, "Falha ao excluir a OS.")
         EndIf
 
         oModel:DeActivate(lOk)
@@ -2820,134 +2550,57 @@ Return xRet
 
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//              E-MAIL DA OS AO CLIENTE E AO TECNICO (OS_EMAIL)               //
+//              DADOS DA OS PARA O E-MAIL DE APROVACAO (OS_EMAIL)             //
 //                                                                            //
 ////////////////////////////////////////////////////////////////////////////////
-// Quem grava a OS escolhe avisar o cliente e/ou o tecnico (portal: switches;
-// tela classica: janela de checkboxes do CNSA001). Portal chama o endpoint
-// POST /CNSAOSEMAIL depois de gravar (OS_APIEMAIL). Layout e envio do CNSA001
-// (apia.cnsa001.U_CH_HTMLPUB / U_CH_MAILPUB); acentos via U_CNSOUTL("TEXTO").
-// Falha no e-mail nunca desfaz a OS.
+// Depois de gravar a OS em N pergunta "Deseja enviar ao cliente?" (portal:
+// popup que chama POST /CNSAPR trans=ENV; tela classica: TELA). O envio, o
+// token e o e-mail com o link sao do U_CNSAPR (CNSA004); aqui ficam so os
+// dados da OS que ele usa (via U_OS_APRPUB). Acentos via U_CNSOUTL("TEXTO").
 //
-//   ENVIAR  (cOs, lCliente, lTecnico)  envia o resumo; ao cliente marca Z1_OSENVCL/Z1_ENVDT/Z1_ENVHR;
-//                                      devolve {qtd e-mails ao cliente, enviou ao tecnico}
-//   TELA    (cOs)                      tela classica: pergunta e chama ENVIAR
+//   TELA    (cOs)                      tela classica: OS em N -> pergunta e chama U_CNSAPR("ENV")
 //   RESUMO  ()                         linhas do cartao (SZ1 posicionada)
+//   DESCRICAO (cOs)                    descricao em texto puro (sem interacoes e sem tags)
+//   CHAMADOS  ()                       {"#id - assunto"} (SZ1 posicionada)
 //   DESTINO ()                         e-mails do cliente: chamados da OS, senao A1_EMAIL
 ////////////////////////////////////////////////////////////////////////////////
 
-/*/{Protheus.doc} OS_APIEMAIL
-Endpoint REST POST /CNSAOSEMAIL?os=&cliente=1&tecnico=1 - envia o resumo da OS
-ao cliente e/ou ao tecnico (OS_EMAIL "ENVIAR"). O portal chama depois de gravar
-a OS; separado da gravacao pra nao atrasar o Salvar e poder reenviar.
-@return lOk   200 {sucesso, os, emailsCliente, emailTecnico} ou 404
-@author Henrique
-@since 08/10/2026
-@version P12
-/*/
-@Post(endpoint="/CNSAOSEMAIL")
-User Function OS_APIEMAIL() As Logical
-    Local jQuery := oRest:getQueryRequest() As Json
-    Local cOs    := AllTrim(OS_LERJSONTXT(jQuery, "os"))
-    Local aEnvio := {}
-    Local oJson  := JsonObject():New()
-
-    oRest:setKeyHeaderResponse("Content-Type", "application/json")
-
-    SZ1->(DbSetOrder(1))
-    If Empty(cOs) .Or. !SZ1->(DbSeek(cFilAnt + PadR(cOs, TamSX3("Z1_OS")[1])))
-        Return oRest:setStatusResponse(404, '{"erro":"OS nao encontrada."}')
-    EndIf
-
-    aEnvio := OS_EMAIL("ENVIAR", cOs, OS_LERJSONTXT(jQuery, "cliente") == "1", OS_LERJSONTXT(jQuery, "tecnico") == "1")
-
-    oJson["sucesso"]      := .T.
-    oJson["os"]           := cOs
-    oJson["emailsCliente"] := aEnvio[1]
-    oJson["emailTecnico"] := aEnvio[2]
-
-Return oRest:setStatusResponse(200, oJson:ToJson())
-
 /*/{Protheus.doc} OS_EMAIL
-E-mail da OS ao cliente e/ou ao tecnico - uma funcao, uma acao por Case.
-@param  cAcao   ENVIAR, TELA, RESUMO ou DESTINO
-@param  x1..x3  Parametros da acao (ver tabela acima)
+E-mail da OS ao cliente - uma funcao, uma acao por Case.
+@param  cAcao   TELA, RESUMO, DESCRICAO, CHAMADOS ou DESTINO
+@param  x1      Parametro da acao (ver tabela acima)
 @return xRet    Conforme a acao
 @author Henrique
 @since 08/10/2026
 @version P12
 /*/
-Static Function OS_EMAIL(cAcao, x1, x2, x3)
+Static Function OS_EMAIL(cAcao, x1)
     Local xRet    := Nil
     Local cOs     := ""
     Local cEmail  := ""
     Local cTexto  := ""
-    Local aLin    := {}
     Local aCh     := {}
     Local aResp   := {}
     Local nI      := 0
     Local nJ      := 0
-    Local lEnviou := .F.
 
     Do Case
 
-    //--- Envia o resumo da OS ao cliente e/ou ao tecnico ---------------------
-    Case cAcao == "ENVIAR"
-        xRet := {0, .F.}
-        cOs  := PadR(AllTrim(cValToChar(x1)), TamSX3("Z1_OS")[1])
-        SZ1->(DbSetOrder(1))
-        If !(x2 .Or. x3) .Or. Empty(cOs) .Or. !SZ1->(DbSeek(cFilAnt + cOs))
-            Return xRet
-        EndIf
-
-        aLin := OS_EMAIL("RESUMO")
-        // Descricao sem as interacoes do Memo e sem tags (editor do portal manda HTML).
-        cTexto := OS_SEPARAINTERACOES(OS_DESC(cOs))[1]
-        cTexto := StrTran(StrTran(StrTran(cTexto, "</p>", Chr(10)), "<br>", Chr(10)), "<br/>", Chr(10))
-        While At("<", cTexto) > 0 .And. At(">", cTexto) > At("<", cTexto)
-            cTexto := Stuff(cTexto, At("<", cTexto), At(">", cTexto) - At("<", cTexto) + 1, "")
-        EndDo
-        cTexto := U_CNSOUTL("TEXTO", StrTran(cTexto, "&nbsp;", " "))
-
-        If x3
-            cEmail := AllTrim(Posicione("AA1", 1, xFilial("AA1") + PadR(AllTrim(SZ1->Z1_TEC), TamSX3("AA1_CODTEC")[1]), "AA1_EMAIL"))
-            If !Empty(cEmail)
-                xRet[2] := apia.cnsa001.U_CH_MAILPUB(cEmail, "OS " + AllTrim(cOs) + " registrada", ;
-                    apia.cnsa001.U_CH_HTMLPUB("", "OS " + AllTrim(cOs), U_CNSOUTL("TEXTO", OS_NOMETEC(AllTrim(SZ1->Z1_TEC))), ;
-                        "Uma OS foi registrada em seu nome. Confira o resumo abaixo.", aLin, "Descri&ccedil;&atilde;o", cTexto, ""))
-            EndIf
-        EndIf
-
-        // OS Interna nao vai pro cliente.
-        If x2 .And. AllTrim(SZ1->Z1_INTERNO) != "S"
-            aResp := OS_EMAIL("DESTINO")
-            For nI := 1 To Len(aResp)
-                If apia.cnsa001.U_CH_MAILPUB(aResp[nI], "Ordem de Servico " + AllTrim(cOs), ;
-                        apia.cnsa001.U_CH_HTMLPUB("", "Ordem de Servi&ccedil;o " + AllTrim(cOs), "", ;
-                            "Segue o resumo do atendimento realizado.", aLin, "Descri&ccedil;&atilde;o", cTexto, ;
-                            "Qualquer d&uacute;vida, entre em contato: <b>pericles@apia.com.br</b>"))
-                    xRet[1]++
-                    lEnviou := .T.
-                EndIf
-            Next nI
-            If lEnviou
-                SZ1->(DbSeek(cFilAnt + cOs))
-                RecLock("SZ1", .F.)
-                    SZ1->Z1_OSENVCL := "S"
-                    SZ1->Z1_ENVDT   := Date()
-                    SZ1->Z1_ENVHR   := OS_HORACAMPO(Left(Time(), 5), "Z1_ENVHR")
-                SZ1->(MsUnlock())
-            EndIf
-        EndIf
-
-    //--- Tela classica: pergunta (janela do CNSA001) e envia -----------------
+    //--- Tela classica: OS em N -> "Deseja enviar ao cliente?" (U_CNSAPR ENV) --
     Case cAcao == "TELA"
         cOs := PadR(AllTrim(cValToChar(x1)), TamSX3("Z1_OS")[1])
         SZ1->(DbSetOrder(1))
-        If !Empty(cOs) .And. SZ1->(DbSeek(cFilAnt + cOs))
-            aResp := apia.cnsa001.U_CH_PERGUNTAPUB("OS " + AllTrim(cOs), ;
-                AllTrim(SZ1->Z1_INTERNO) != "S", !Empty(AllTrim(SZ1->Z1_TEC)))
-            xRet := OS_EMAIL("ENVIAR", cOs, aResp[1], aResp[2])
+        If !Empty(cOs) .And. SZ1->(DbSeek(cFilAnt + cOs)) .And. AllTrim(SZ1->Z1_APROVAD) == "N" .And. ;
+                AllTrim(SZ1->Z1_INTERNO) != "S"
+            If MsgYesNo("Deseja enviar ao cliente? Ele recebe por e-mail o link para aprovar ou recusar a OS " + ;
+                    AllTrim(cOs) + " (valido por " + cValToChar(SuperGetMV("MV_CNSAVLD", .F., 2)) + " dias).", "OS " + AllTrim(cOs))
+                aResp := apia.cnsa004.U_CNSAPR("ENV", cOs)
+                If aResp[1]
+                    MsgInfo("OS " + AllTrim(cOs) + " enviada ao cliente.", "OS " + AllTrim(cOs))
+                Else
+                    MsgAlert(aResp[2], "OS " + AllTrim(cOs))
+                EndIf
+            EndIf
         EndIf
 
     //--- Linhas do cartao do e-mail (SZ1 posicionada) ------------------------
@@ -2975,6 +2628,23 @@ Static Function OS_EMAIL(cAcao, x1, x2, x3)
             AAdd(xRet, {"Chamados", cTexto})
         EndIf
 
+    //--- Descricao da OS em texto puro (sem interacoes do Memo e sem tags HTML) ---
+    Case cAcao == "DESCRICAO"
+        xRet := OS_SEPARAINTERACOES(OS_DESC(x1))[1]
+        xRet := StrTran(StrTran(StrTran(xRet, "</p>", Chr(10)), "<br>", Chr(10)), "<br/>", Chr(10))
+        While At("<", xRet) > 0 .And. At(">", xRet) > At("<", xRet)
+            xRet := Stuff(xRet, At("<", xRet), At(">", xRet) - At("<", xRet) + 1, "")
+        EndDo
+        xRet := StrTran(xRet, "&nbsp;", " ")
+
+    //--- Chamados da OS em texto puro ("#id - assunto") - SZ1 posicionada ------
+    Case cAcao == "CHAMADOS"
+        xRet := {}
+        aCh  := OS_ZA3("LER", AllTrim(SZ1->Z1_OS), AllTrim(SZ1->Z1_IDCH))
+        For nI := 1 To Len(aCh)
+            AAdd(xRet, "#" + aCh[nI] + " - " + AllTrim(Posicione("ZA1", 1, xFilial("ZA1") + aCh[nI], "ZA1_ASSUNT")))
+        Next nI
+
     //--- E-mails do cliente: chamados da OS (sem repetir), senao A1_EMAIL ---------
     Case cAcao == "DESTINO"
         xRet := {}
@@ -3001,3 +2671,182 @@ Static Function OS_EMAIL(cAcao, x1, x2, x3)
     EndCase
 
 Return xRet
+
+////////////////////////////////////////////////////////////////////////////////
+//                                                                            //
+//         APROVACAO DE OS - ponte com o U_CNSAPR (CNSA004) e evento          //
+//                                                                            //
+////////////////////////////////////////////////////////////////////////////////
+
+/*/{Protheus.doc} OS_APRPUB
+Expoe ao CNSA004 (U_CNSAPR) o que e Static aqui: model leve da OS e dados do
+e-mail. Uma funcao, uma acao por Case.
+  GRAVAR    (cOs, {{campo, valor}})  grava a SZ1 pelo model leve (LoadValue) -> {lOk, cErro}
+  RESUMO    (cOs)                    linhas do cartao do e-mail
+  DESTINO   (cOs)                    e-mails do cliente (chamados da OS, senao cadastro)
+  DESCRICAO (cOs)                    descricao em texto puro
+  CHAMADOS  (cOs)                    {"#id - assunto"}
+@author Henrique
+@since 09/10/2026
+@version P12
+/*/
+User Function OS_APRPUB(cAcao, x1, x2)
+    Local xRet   := Nil
+    Local cOs    := PadR(AllTrim(cValToChar(x1)), TamSX3("Z1_OS")[1])
+    Local oModel := Nil
+    Local oSZ1   := Nil
+    Local nI     := 0
+
+    SZ1->(DbSetOrder(1))
+    If !SZ1->(DbSeek(cFilAnt + cOs))
+        Return If(cAcao == "GRAVAR", {.F., "OS nao encontrada."}, If(cAcao == "DESCRICAO", "", {}))
+    EndIf
+
+    Do Case
+    Case cAcao == "GRAVAR"
+        oModel := OS_MODELLEVE()
+        oModel:SetOperation(MODEL_OPERATION_UPDATE)
+        oModel:Activate()
+        oSZ1 := oModel:GetModel("SZ1MASTER")
+        For nI := 1 To Len(x2)
+            oSZ1:LoadValue(x2[nI][1], x2[nI][2])
+        Next nI
+        If oModel:VldData() .And. oModel:CommitData()
+            xRet := {.T., ""}
+        Else
+            xRet := {.F., OS_ERROMODEL(oModel, "Falha ao gravar a aprovacao na OS.")}
+        EndIf
+        oModel:DeActivate()
+
+    Case cAcao == "DESCRICAO"
+        xRet := OS_EMAIL("DESCRICAO", cOs)
+
+    Otherwise   // RESUMO, DESTINO, CHAMADOS (SZ1 posicionada)
+        xRet := OS_EMAIL(cAcao)
+    EndCase
+
+Return xRet
+
+/*/{Protheus.doc} CNS002APR
+Evento do model da OS para a aprovacao (mesmo padrao do CNS003OUTL):
+  ModelPosVld -> U_CNSAPR("OS", fase VLD): so confere permissao (S/R so RESPMAN)
+  BeforeTTS   -> fase ANT: calcula Z1_APROVAD/Z1_APVTIPO (inclusao, reavaliacao, reabertura)
+  InTTS       -> fase GRV: grava a reabertura na SZA
+Instalado em OS_MONTARMODEL, OS_MODELLEVE e OS_MODELINSERT.
+@author Henrique
+@since 09/10/2026
+@version P12
+/*/
+Class CNS002APR From FWModelEvent
+    Data lReabriu
+    Method New() Constructor
+    Method ModelPosVld(oModel, cModelId)
+    Method BeforeTTS(oModel, cModelId)
+    Method InTTS(oModel, cModelId)
+EndClass
+
+Method New() Class CNS002APR
+    ::lReabriu := .F.
+Return Self
+
+Method ModelPosVld(oModel, cModelId) Class CNS002APR
+    Local jFase := JsonObject():New()
+    Local aRet  := {}
+
+    jFase["fase"] := "VLD"
+    aRet := apia.cnsa004.U_CNSAPR("OS", oModel, "", jFase)
+    If !aRet[1]
+        oModel:SetErrorMessage("SZ1MASTER", "Z1_APROVAD", "SZ1MASTER", "Z1_APROVAD", "CNS002APR", aRet[2])
+    EndIf
+
+Return aRet[1]
+
+Method BeforeTTS(oModel, cModelId) Class CNS002APR
+    Local jFase := JsonObject():New()
+    Local aRet  := {}
+
+    jFase["fase"] := "ANT"
+    aRet := apia.cnsa004.U_CNSAPR("OS", oModel, "", jFase)
+    ::lReabriu := Len(aRet) >= 5 .And. aRet[5]
+
+Return
+
+Method InTTS(oModel, cModelId) Class CNS002APR
+    Local jFase := JsonObject():New()
+
+    If ::lReabriu
+        jFase["fase"]    := "GRV"
+        jFase["reabriu"] := "S"
+        apia.cnsa004.U_CNSAPR("OS", oModel, "", jFase)
+        ::lReabriu := .F.
+    EndIf
+
+Return
+
+/*/{Protheus.doc} OS_APRTELA
+Menu da tela classica - acoes de aprovacao da OS posicionada. So pergunta e
+traduz: estado, permissao (RESPMAN) e e-mails ficam no U_CNSAPR (CNSA004).
+  ENV  Enviar ao cliente (link com token)       PRE  Pre-aprovar   PRR  Pre-recusar (motivo)
+  APR  Aprovar OS manualmente (origem I)        REC  Recusar OS manualmente (origem I, motivo)
+@param  cTrans  Transacao do U_CNSAPR
+@author Henrique
+@since 09/10/2026
+@version P12
+/*/
+User Function OS_APRTELA(cTrans)
+    Local cOs     := AllTrim(SZ1->Z1_OS)
+    Local jDados  := JsonObject():New()
+    Local aRet    := {}
+    Local cTexto  := ""
+    Local cOrigem := ""
+    Local oDlg    := Nil
+    Local oBtnOk  := Nil
+    Private cMotAprov := Space(240)
+    Private lMotConf  := .F.
+
+    If SZ1->(Eof()) .Or. SZ1->(Bof()) .Or. Empty(cOs)
+        MsgAlert("Nenhuma OS selecionada.", "Aprovacao de OS")
+        Return
+    EndIf
+
+    Do Case
+    Case cTrans == "ENV"
+        cTexto  := "Enviar a OS " + cOs + " ao cliente? Ele recebe por e-mail o link para aprovar ou recusar (valido por " + ;
+                   cValToChar(SuperGetMV("MV_CNSAVLD", .F., 2)) + " dias)."
+    Case cTrans == "PRE"
+        cTexto  := "Pre-aprovar a OS " + cOs + "?"
+        cOrigem := "M"
+    Case cTrans == "PRR"
+        cTexto  := "Pre-recusar a OS " + cOs + "?"
+        cOrigem := "M"
+    Case cTrans == "APR"
+        cTexto  := "Aprovar manualmente a OS " + cOs + "?"
+        cOrigem := "I"
+    Case cTrans == "REC"
+        cTexto  := "Recusar manualmente a OS " + cOs + "?"
+        cOrigem := "I"
+    EndCase
+
+    If cTrans == "PRR" .Or. cTrans == "REC"
+        // Motivo obrigatorio (ZA_DESCRI) - janela simples, ate 240 caracteres.
+        DEFINE MSDIALOG oDlg TITLE cTexto FROM 0,0 TO 220,460 PIXEL
+            @ 08,10 SAY "Motivo (obrigatorio):" SIZE 200,10 PIXEL OF oDlg
+            @ 20,10 GET cMotAprov MEMO SIZE 210,60 PIXEL OF oDlg
+            oBtnOk := TButton():New(88, 160, "Confirmar", oDlg, {|| lMotConf := .T., oDlg:End()}, 60,14,,,.F.,.T.,.F.,,.F.,,,.F.)
+        ACTIVATE MSDIALOG oDlg CENTERED
+        If !lMotConf
+            Return
+        EndIf
+        jDados["motivo"] := AllTrim(cMotAprov)
+    ElseIf !MsgYesNo(cTexto, "Aprovacao de OS")
+        Return
+    EndIf
+
+    aRet := apia.cnsa004.U_CNSAPR(cTrans, cOs, cOrigem, jDados)
+    If aRet[1]
+        MsgInfo("OS " + cOs + ": feito.", "Aprovacao de OS")
+    Else
+        MsgAlert(aRet[2], "Aprovacao de OS")
+    EndIf
+
+Return

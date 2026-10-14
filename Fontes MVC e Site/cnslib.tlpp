@@ -44,7 +44,7 @@ User Function CNS001_COMPONENTES_LISTAR() As Logical
 
         Do Case
             Case cTipoParam == "tecnico"
-                aItens := CNS001_TECLUPA(cFiltroParam)
+                aItens := CNS001_TECLUPA(cFiltroParam, AllTrim(CNS001_LUPA_JSONSTR(jQuery, "todos")) == "1")
             Case cTipoParam == "cliente"
                 aItens := CNS001_CLILUPA(cFiltroParam)
             Case cTipoParam == "projeto"
@@ -75,6 +75,12 @@ User Function CNS001_COMPONENTES_LISTAR() As Logical
             OtherWise
                 Return oRest:setStatusResponse(400, '{"resultado":false,"erro":"Informe um tipo valido (?tipo=tecnico, cliente, projeto, tarefa, modulo, motivo, servico, proposta ou chamado)."}')
         EndCase
+
+        // sugestao=1: lista do portal enquanto digita (fora da lupa) - mesma busca,
+        // so reordenada e cortada. Sem o parametro a lupa continua igual.
+        If AllTrim(CNS001_LUPA_JSONSTR(jQuery, "sugestao")) == "1"
+            aItens := CNS001_LUPA_SUGERIR(aItens, cFiltroParam)
+        EndIf
 
         // Monta o array "items" na mao (nao aninha JsonObject dentro de
         // JsonObject) - funciona igual com 0, 1 ou N linhas.
@@ -109,7 +115,7 @@ Return oRest:setStatusResponse(500, '{"resultado":false,"erro":"Erro desconhecid
 // Erro na query propaga sozinho pro Recover do @Get (que monta o 500 com
 // a descricao real) - nao precisa de Begin/Recover proprio aqui.
 ////////////////////////////////////////////////////////////////////////////////
-Static Function CNS001_TECLUPA(cFiltro)
+Static Function CNS001_TECLUPA(cFiltro, lTodos)
     Local aRet    := {}
     Local oLinha  := Nil
     Local cAlias  := GetNextAlias()
@@ -124,6 +130,16 @@ Static Function CNS001_TECLUPA(cFiltro)
     // concatenacao ('%' || valor).
     Local cFiltroUp  := Upper(cFiltro)
     Local cFiltroUp2 := cFiltroUp
+    // So tecnicos disponiveis (AA1_ALOCA 1=disponivel, 2=nao disponivel). Codigo
+    // exato passa sempre: o portal usa a lupa pra mostrar o nome do tecnico ja
+    // gravado em chamado/OS/agenda antigos, mesmo que hoje esteja indisponivel.
+    // todos=1 (lTodos): sem esse filtro - o portal acha o usuario logado e se ele
+    // e administrador (TecnicoLogadoServ), mesmo com o tecnico indisponivel.
+    Local cCodExato  := AllTrim(cFiltroUp)
+    Local cTodos     := ""
+
+    Default lTodos := .F.
+    cTodos := If(lTodos, "1", "0")
 
     BeginSql Alias cAlias
         SELECT AA1_CODTEC,
@@ -136,6 +152,7 @@ Static Function CNS001_TECLUPA(cFiltro)
             AND USR.%NotDel%
         WHERE AA1_FILIAL = %xFilial:AA1%
         AND AA1.%NotDel%
+        AND (AA1_ALOCA = '1' OR UPPER(TRIM(AA1_CODTEC)) = %Exp:cCodExato% OR %Exp:cTodos% = '1')
         AND (UPPER(AA1_CODTEC) LIKE '%' || %Exp:cFiltroUp% || '%'
         OR UPPER(AA1_NOMTEC) LIKE '%' || %Exp:cFiltroUp2% || '%')
         ORDER BY AA1_NOMTEC
@@ -627,6 +644,38 @@ Return aRet
 // inteiro cair (erro nao capturavel pelo Begin/Recover). Blinda cada valor
 // antes de expor no JSON.
 ////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+// Sugestao enquanto digita (sugestao=1): quem COMECA com o texto (codigo, nome
+// ou nome reduzido) vem primeiro, depois quem so CONTEM - ate 10 itens.
+////////////////////////////////////////////////////////////////////////////////
+Static Function CNS001_LUPA_SUGERIR(aItens, cFiltro)
+    Local aComeca := {}
+    Local aContem := {}
+    Local aRet    := {}
+    Local cIni    := Upper(AllTrim(cFiltro))
+    Local nTam    := Len(cIni)
+    Local nI      := 0
+
+    For nI := 1 To Len(aItens)
+        If nTam > 0 .And. (Left(Upper(CNS001_LUPA_JSONSTR(aItens[nI], "descricao")), nTam) == cIni .Or. ;
+                Left(Upper(CNS001_LUPA_JSONSTR(aItens[nI], "codigo")), nTam) == cIni .Or. ;
+                Left(Upper(CNS001_LUPA_JSONSTR(aItens[nI], "nomeReduzido")), nTam) == cIni)
+            AAdd(aComeca, aItens[nI])
+        Else
+            AAdd(aContem, aItens[nI])
+        EndIf
+    Next nI
+
+    For nI := 1 To Len(aComeca)
+        AAdd(aRet, aComeca[nI])
+    Next nI
+    For nI := 1 To Len(aContem)
+        AAdd(aRet, aContem[nI])
+    Next nI
+    ASize(aRet, Min(Len(aRet), 10))
+
+Return aRet
+
 Static Function CNS001_LUPA_COMPSTR(xValor)
     If ValType(xValor) == "C"
         Return AllTrim(xValor)
@@ -1126,6 +1175,16 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
                 Exit
             EndIf
         Next nI
+        // Dicionario so com a sigla (Z6_TIPOAG = "NR;FE;CO;TR;MD;FA", sem "=descricao"):
+        // usa as mesmas descricoes do portal (cns009).
+        If x1 == "Z6_TIPOAG"
+            aResp := {{"NR", "Normal"}, {"FE", "Férias"}, {"CO", "Compensação"}, ;
+                      {"TR", "Treinamento"}, {"MD", "Médico"}, {"FA", "Falta"}}
+            nI := AScan(aResp, {|x| x[1] == Upper(xRet)})
+            If nI > 0
+                xRet := aResp[nI][2]
+            EndIf
+        EndIf
 
     //--- Le o Z6_IDOUTL direto na SZ6 (campo "nao usado": fora do modelo) -----------
     Case cAcao == "LERID"
