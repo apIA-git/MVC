@@ -776,8 +776,9 @@ Opcao de menu "Incluir" da tela classica: abre a View em modo inclusao.
 @version P12
 /*/
 User Function CH_INCLUIRTELA()
-    Local oModel := Nil
-    Local aEnvio := {}
+    Local oModel   := Nil
+    Local aEnvio   := {}
+    Local lNumerou := .F.
 
     // Monta E ativa o Model AQUI (mesma funcao) - igual padrao ja usado em
     // CNSA_INTERAGIR/CH_MONTAAGENDA. Necessario pro Insert: FWInitCpo prende
@@ -794,8 +795,18 @@ User Function CH_INCLUIRTELA()
 
     oModel := CH_MONTARMODEL(.T.)
 
+    // Numero do chamado igual ao Incluir do portal (CH_NUCLEOINCLUIR): o
+    // dicionario nao inicializa ZA1_IDCH - sem isto o chamado gravava sem ID.
+    If Empty(oModel:GetValue("ZA1MASTER", "ZA1_IDCH"))
+        oModel:GetModel("ZA1MASTER"):LoadValue("ZA1_IDCH", GetSxeNum("ZA1", "ZA1_IDCH"))
+        lNumerou := .T.
+    EndIf
+
     // FWExecView devolve 0 quando o usuario confirma e grava.
     If FWExecView("Registro de Chamados", "apia.cnsa001.u_cns001", MODEL_OPERATION_INSERT, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel) == 0
+        If lNumerou
+            ConfirmSX8()
+        EndIf
         // Mesma escolha do portal: tecnico (designacao, se ja nasceu com tecnico) e
         // cliente ("Chamado Aberto"). Depois do commit a ZA1 fica no chamado gravado.
         aEnvio := CH_PERGUNTAEMAIL("Inclusao do Chamado " + AllTrim(ZA1->ZA1_IDCH), ;
@@ -806,6 +817,8 @@ User Function CH_INCLUIRTELA()
         If aEnvio[1]
             CH_NOTIFICARCHAMADOCRIADO(AllTrim(ZA1->ZA1_EMAIL), AllTrim(ZA1->ZA1_IDCH))
         EndIf
+    ElseIf lNumerou
+        RollBackSX8()
     EndIf
 Return
 
@@ -1995,6 +2008,11 @@ Static Function CH_NUCLEOEXCLUIR(cIdCh, cMotivo, lNotificarCliente, lNotificarTe
         cNomeCli := AllTrim(Posicione("SA1", 1, xFilial("SA1") + cClienteAnt + cLojaAnt, "A1_NREDUZ"))
 
         nCham  := Val(cIdCh)
+        // Chamado sem numero: Val("") = 0 casaria com TODA agenda sem chamado
+        // (Z6_CHAMADO = 0) e o Excluir apagaria todas - -1 nao casa com nenhuma.
+        If nCham <= 0
+            nCham := -1
+        EndIf
         cAlias := GetNextAlias()
         BeginSql Alias cAlias
             SELECT Z6_DTAGE, Z6_HMINI, Z6_HMFIM

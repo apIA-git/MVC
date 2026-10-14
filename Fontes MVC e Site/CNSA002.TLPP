@@ -2769,12 +2769,13 @@ Instalado em OS_MONTARMODEL, OS_MODELLEVE e OS_MODELINSERT.
 @since 09/10/2026
 @version P12
 /*/
+// TLPP: membro sem visibilidade e PRIVATE - o MVC chama New e os eventos de fora.
 Class CNS002APR From FWModelEvent
-    Data lReabriu
-    Method New() Constructor
-    Method ModelPosVld(oModel, cModelId)
-    Method BeforeTTS(oModel, cModelId)
-    Method InTTS(oModel, cModelId)
+    Public Data lReabriu
+    Public Method New() Constructor
+    Public Method ModelPosVld(oModel, cModelId)
+    Public Method BeforeTTS(oModel, cModelId)
+    Public Method InTTS(oModel, cModelId)
 EndClass
 
 Method New() Class CNS002APR
