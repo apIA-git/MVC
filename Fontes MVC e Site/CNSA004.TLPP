@@ -180,6 +180,9 @@ Opcao "Visualizar": abre a resposta posicionada so para leitura.
 User Function HA_VISUALIZAR()
     Local oModel := HA_MONTARMODEL(MODEL_OPERATION_VIEW)
 
+    // Model desta tela como ativo: o ViewDef usa o ativo, e o de uma tela anterior
+    // (ex.: Visualizar) fazia o Incluir abrir com a OS anterior, travada.
+    FWModelActive(oModel)
     FWExecView("Historico de Aprovacao de OS", "apia.cnsa004.u_cns004", MODEL_OPERATION_VIEW, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel)
 Return
 

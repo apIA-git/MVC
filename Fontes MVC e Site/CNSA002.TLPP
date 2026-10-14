@@ -667,6 +667,9 @@ User Function OS_VISUALIZARTELA()
     // dos campos virtuais quebra com "owner private environment not found".
     Local oModel := OS_MONTARMODEL(MODEL_OPERATION_VIEW)
 
+    // Model desta tela como ativo: o ViewDef usa o ativo, e o de uma tela anterior
+    // (ex.: Visualizar) fazia o Incluir abrir com a OS anterior, travada.
+    FWModelActive(oModel)
     FWExecView("Ordem de Servico", "apia.cnsa002.u_cns002", MODEL_OPERATION_VIEW, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel)
 Return
 
@@ -691,6 +694,9 @@ User Function OS_INCLUIRTELA()
     cOs    := oModel:GetModel("SZ1MASTER"):GetValue("Z1_OS")
 
     // FWExecView devolve 0 quando grava: OS em N pergunta "Deseja enviar ao cliente?" (OS_EMAIL "TELA").
+    // Model desta tela como ativo: o ViewDef usa o ativo, e o de uma tela anterior
+    // (ex.: Visualizar) fazia o Incluir abrir com a OS anterior, travada.
+    FWModelActive(oModel)
     If FWExecView("Ordem de Servico", "apia.cnsa002.u_cns002", MODEL_OPERATION_INSERT, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel) == 0
         OS_EMAIL("TELA", cOs)
     EndIf
@@ -716,6 +722,9 @@ User Function OS_ALTERARTELA()
     oModel := OS_MONTARMODEL(MODEL_OPERATION_UPDATE)
 
     // FWExecView devolve 0 quando grava: OS em N pergunta "Deseja enviar ao cliente?" (OS_EMAIL "TELA").
+    // Model desta tela como ativo: o ViewDef usa o ativo, e o de uma tela anterior
+    // (ex.: Visualizar) fazia o Incluir abrir com a OS anterior, travada.
+    FWModelActive(oModel)
     If FWExecView("Ordem de Servico", "apia.cnsa002.u_cns002", MODEL_OPERATION_UPDATE, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel) == 0
         OS_EMAIL("TELA", cOs)
     EndIf
@@ -734,6 +743,9 @@ mesmo padrao do OS_VISUALIZARTELA/OS_ALTERARTELA.
 User Function OS_EXCLUIRTELA()
     Local oModel := OS_MONTARMODEL(MODEL_OPERATION_DELETE)
 
+    // Model desta tela como ativo: o ViewDef usa o ativo, e o de uma tela anterior
+    // (ex.: Visualizar) fazia o Incluir abrir com a OS anterior, travada.
+    FWModelActive(oModel)
     FWExecView("Ordem de Servico", "apia.cnsa002.u_cns002", MODEL_OPERATION_DELETE, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel)
 Return
 
