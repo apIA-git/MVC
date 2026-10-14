@@ -839,7 +839,7 @@ o numero informado (ex.: "000259", que ficou reservado - a sequencia ja passou
 dele) ou, sem parametro, o proximo da numeracao automatica; e passa as
 interacoes sem numero DE HOJE pra ele. Nao mexe na agenda (SZ6).
 So roda se houver exatamente 1 chamado sem numero; so administrador.
-Executar: apia.cnsa001.U_CH_DARNUMERO("000259")
+Executar: apia.cnsa001.U_CH_DARNUMERO (menu: pergunta o numero) ou U_CH_DARNUMERO("000259")
 @param  cNumero  Numero a gravar (opcional; nao pode existir)
 @author Henrique
 @since 14/10/2026
@@ -854,8 +854,11 @@ User Function CH_DARNUMERO(cNumero)
     Local cHoje   := DToS(Date())
     Local nI      := 0
 
-    Default cNumero := ""
-    cNumero := AllTrim(cNumero)
+    // Pelo menu nao vem parametro: pergunta (vazio = proximo da sequencia).
+    If ValType(cNumero) != "C" .Or. Empty(cNumero)
+        cNumero := FWInputBox("Numero do chamado (ex.: 259). Vazio = proximo da sequencia:", "")
+    EndIf
+    cNumero := AllTrim(cValToChar(cNumero))
     If !Empty(cNumero)
         cNumero := PadR(StrZero(Val(cNumero), 6), TamSX3("ZA1_IDCH")[1])   // mesmo formato dos IDs (000259)
     EndIf
