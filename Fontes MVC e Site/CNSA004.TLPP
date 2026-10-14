@@ -1095,6 +1095,11 @@ User Function CNSAP_API() As Logical
     Local aRet   := {}
     Local oJson  := JsonObject():New()
 
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
+
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
     If !(cTrans $ "PRE|PRR|APR|REC|ENV") .Or. Len(cTrans) != 3 .Or. Empty(cOs)
         Return oRest:setStatusResponse(400, '{"erro":"Informe os e trans (PRE, PRR, APR, REC ou ENV)."}')

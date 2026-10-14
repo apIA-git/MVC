@@ -1597,6 +1597,11 @@ User Function CH_APIINCLUIR() As Logical
     Local aResultado := {}
     Local cEmailCli  := ""
 
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
+
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     aResultado := CH_NUCLEOINCLUIR(AllTrim(CH_LERJSONTXT(jQuery,"assunto")), AllTrim(CH_LERJSONTXT(jQuery,"dtAbertura")), AllTrim(CH_LERJSONTXT(jQuery,"tipo")), ;
@@ -1806,6 +1811,11 @@ User Function CH_APIALTERAR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
+
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     aResultado := CH_NUCLEOALTERAR(AllTrim(CH_LERJSONTXT(jQuery,"idCh")), AllTrim(CH_LERJSONTXT(jQuery,"assunto")), AllTrim(CH_LERJSONTXT(jQuery,"dtAbertura")), AllTrim(CH_LERJSONTXT(jQuery,"tipo")), ;
@@ -1943,6 +1953,11 @@ User Function CH_APIASSUMIR() As Logical
     Local cIdCh      := AllTrim(CH_LERJSONTXT(jQuery,"idCh"))
     Local aResultado := {}
     Local oJson      := JsonObject():New()
+
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -2117,6 +2132,11 @@ User Function CH_APIEXCLUIR() As Logical
     Local aResultado := {}
     Local oJson      := JsonObject():New()
 
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
+
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     aResultado := CH_NUCLEOEXCLUIR(cIdCh, AllTrim(CH_LERJSONTXT(jQuery,"motivo")), ;
@@ -2212,6 +2232,11 @@ User Function CH_APICHAMADOS() As Logical
     Local cFCli      := ""
     Local dFDataDe   := CToD("")
     Local dFDataAte  := CToD("")
+
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -2655,6 +2680,11 @@ User Function CH_APIAGENDAR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
+
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     aResultado := CH_GRAVARAGENDA(AllTrim(CH_LERJSONTXT(jQuery,"idCh")), AllTrim(CH_LERJSONTXT(jQuery,"dataInicio")), AllTrim(CH_LERJSONTXT(jQuery,"dataFim")), ;
@@ -2760,6 +2790,11 @@ User Function CH_APIMEUCONSULTOR() As Logical
     Local cConsultor := Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC")
     Local cNomeTec   := ""
 
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
+
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     If !Empty(cConsultor)
@@ -2788,6 +2823,11 @@ chamado (idCh via query), chamando CH_AGENDAJSON.
 User Function CH_APIVERAGENDA() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
+
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -2973,6 +3013,11 @@ User Function CH_APILISTAINTERACOES() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
+
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     aResultado := CH_LISTARINTERACOES(AllTrim(CH_LERJSONTXT(jQuery,"idCh")))
@@ -3079,6 +3124,11 @@ para um chamado (idCh/texto via query), chamando CH_INCLUIRINTERACAO.
 User Function CH_APINOVAINTERACAO() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
+
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -3194,6 +3244,11 @@ User Function CH_APIEXCLUIRINTERACAO() As Logical
     Local cSeq       := AllTrim(CH_LERJSONTXT(jQuery,"seq"))
     Local aResultado := {}
     Local oJson      := JsonObject():New()
+
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -4562,6 +4617,11 @@ e-mail (mesma rotina do job CH_JOBEMAIL) sob demanda, chamado pelo botao
 User Function CH_APIVERIFICAEMAIL() As Logical
     Local oJson    := JsonObject():New()
     Local nCriados := 0
+
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 

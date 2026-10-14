@@ -1017,6 +1017,11 @@ User Function OS_APIINCLUIR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
 
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
+
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     aResultado := OS_NUCLEOINCLUIR(jQuery)
@@ -1211,6 +1216,11 @@ encontrada, 400 para os demais erros).
 User Function OS_APIALTERAR() As Logical
     Local jQuery     := oRest:getQueryRequest() As Json
     Local aResultado := {}
+
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -1728,6 +1738,11 @@ User Function OS_APILISTAR() As Logical
     Local cFApv      := ""
     Local cSemApv    := ""
 
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
+
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     Begin Sequence
@@ -1915,6 +1930,11 @@ User Function OS_APIEXCLUIR() As Logical
     Local lOk        := .F.
     Local cErro      := ""
 
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
+
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     Begin Sequence
@@ -1978,6 +1998,11 @@ User Function OS_APICOPIAR() As Logical
     Local oJson     := JsonObject():New()
     Local oErro     := Nil
     Local aResultado := {}
+
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -2283,6 +2308,11 @@ User Function OS_APILISTAINTERACOES() As Logical
     Local cConsul := ""
     Local aCh     := {}
 
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
+
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     Begin Sequence
@@ -2425,6 +2455,11 @@ User Function OS_APINOVAINTERACAO() As Logical
     Local cTexto     := OS_TEXTOPURO(OS_LERJSONTXT(jQuery,"texto"))
     Local oJson      := JsonObject():New()
     Local oErro      := Nil
+
+    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+    EndIf
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
