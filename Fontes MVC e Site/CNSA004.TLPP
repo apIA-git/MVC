@@ -66,9 +66,7 @@ User Function MenuDef()
 
 Local aRotina := {}
 
-    ADD OPTION aRotina TITLE "Pesquisar"  ACTION "AxPesqui"                         OPERATION 1 ACCESS 0
-    // Mesmo padrao do CNSA002: dentro do Namespace cada opcao chama uma User
-    // Function que abre a View via FWExecView.
+    ADD OPTION aRotina TITLE "Pesquisar"  ACTION "AxPesqui"                       OPERATION 1 ACCESS 0
     ADD OPTION aRotina TITLE "Visualizar" ACTION "apia.cnsa004.U_HA_VISUALIZAR"   OPERATION 2 ACCESS 0
     ADD OPTION aRotina TITLE "Legenda"    ACTION "apia.cnsa004.U_HA_LEGENDA"      OPERATION 0 ACCESS 0
 
@@ -149,8 +147,6 @@ Static Function HA_MONTARMODEL(nOperAtivar, lSemTela)
             Else
                 oStr:SetProperty(aCampos[nI][MODEL_FIELD_IDFIELD], MODEL_FIELD_VALID,   {|| .T.})
                 oStr:SetProperty(aCampos[nI][MODEL_FIELD_IDFIELD], MODEL_FIELD_WHEN,    {|| .T.})
-                // Cada linha preenche so os seus campos (aba Identificacao SZA): nada obrigatorio
-                // e sem inicializador do dicionario (senao o envio ganharia ZA_DTREC).
                 oStr:SetProperty(aCampos[nI][MODEL_FIELD_IDFIELD], MODEL_FIELD_OBRIGAT, .F.)
                 oStr:SetProperty(aCampos[nI][MODEL_FIELD_IDFIELD], MODEL_FIELD_INIT,    {|| Nil})
             EndIf
@@ -181,7 +177,6 @@ Opcao "Visualizar": abre a resposta posicionada so para leitura.
 /*/
 //-------------------------------------------------------------------
 User Function HA_VISUALIZAR()
-    // MODEL_OPERATION_VIEW e 1 (o "2" do ADD OPTION e so o codigo do botao).
     Local oModel := HA_MONTARMODEL(MODEL_OPERATION_VIEW)
 
     FWExecView("Historico de Aprovacao de OS", "apia.cnsa004.u_cns004", MODEL_OPERATION_VIEW, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel)
