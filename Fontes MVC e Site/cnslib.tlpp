@@ -76,6 +76,12 @@ User Function CNS001_COMPONENTES_LISTAR() As Logical
                 Return oRest:setStatusResponse(400, '{"resultado":false,"erro":"Informe um tipo valido (?tipo=tecnico, cliente, projeto, tarefa, modulo, motivo, servico, proposta ou chamado)."}')
         EndCase
 
+        // sugestao=1: lista do portal enquanto digita (fora da lupa) - mesma busca,
+        // so reordenada e cortada. Sem o parametro a lupa continua igual.
+        If AllTrim(CNS001_LUPA_JSONSTR(jQuery, "sugestao")) == "1"
+            aItens := CNS001_LUPA_SUGERIR(aItens, cFiltroParam)
+        EndIf
+
         // Monta o array "items" na mao (nao aninha JsonObject dentro de
         // JsonObject) - funciona igual com 0, 1 ou N linhas.
         cItensJson := "["
@@ -638,6 +644,38 @@ Return aRet
 // inteiro cair (erro nao capturavel pelo Begin/Recover). Blinda cada valor
 // antes de expor no JSON.
 ////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+// Sugestao enquanto digita (sugestao=1): quem COMECA com o texto (codigo, nome
+// ou nome reduzido) vem primeiro, depois quem so CONTEM - ate 10 itens.
+////////////////////////////////////////////////////////////////////////////////
+Static Function CNS001_LUPA_SUGERIR(aItens, cFiltro)
+    Local aComeca := {}
+    Local aContem := {}
+    Local aRet    := {}
+    Local cIni    := Upper(AllTrim(cFiltro))
+    Local nTam    := Len(cIni)
+    Local nI      := 0
+
+    For nI := 1 To Len(aItens)
+        If nTam > 0 .And. (Left(Upper(CNS001_LUPA_JSONSTR(aItens[nI], "descricao")), nTam) == cIni .Or. ;
+                Left(Upper(CNS001_LUPA_JSONSTR(aItens[nI], "codigo")), nTam) == cIni .Or. ;
+                Left(Upper(CNS001_LUPA_JSONSTR(aItens[nI], "nomeReduzido")), nTam) == cIni)
+            AAdd(aComeca, aItens[nI])
+        Else
+            AAdd(aContem, aItens[nI])
+        EndIf
+    Next nI
+
+    For nI := 1 To Len(aComeca)
+        AAdd(aRet, aComeca[nI])
+    Next nI
+    For nI := 1 To Len(aContem)
+        AAdd(aRet, aContem[nI])
+    Next nI
+    ASize(aRet, Min(Len(aRet), 10))
+
+Return aRet
+
 Static Function CNS001_LUPA_COMPSTR(xValor)
     If ValType(xValor) == "C"
         Return AllTrim(xValor)
