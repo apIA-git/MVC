@@ -1268,7 +1268,7 @@ Return xRet
 .T. quando quem chamou o REST e o usuario de servico da pagina do cliente
 (Aprovador-OS). Ele so pode usar o /CNSAAPROVA (CNSA004); os demais
 endpoints proprios recusam com 403 - se a senha dele vazar, nao abre o resto.
-Login do usuario: MV_CNSASRV (sem o parametro: "aprovador_os").
+Login do usuario: MV_CNSASRV (sem o parametro: "Aprovador de OS").
 @return lServico
 @author Henrique
 @since 14/10/2026
@@ -1276,4 +1276,4 @@ Login do usuario: MV_CNSASRV (sem o parametro: "aprovador_os").
 /*/
 //-------------------------------------------------------------------
 User Function CNSSERVICO()
-Return Upper(AllTrim(UsrRetName(__cUserId))) == Upper(AllTrim(SuperGetMV("MV_CNSASRV", .F., "aprovador_os")))
+Return Upper(AllTrim(UsrRetName(__cUserId))) == Upper(AllTrim(SuperGetMV("MV_CNSASRV", .F., "Aprovador de OS")))
