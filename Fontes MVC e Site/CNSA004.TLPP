@@ -235,7 +235,8 @@ Return
 //   PRR  (cOs, "M", {motivo})        P -> R                      - so RESPMAN
 //   APR  (cOs, W|I|D, {ip})          N -> S        (I so RESPMAN; W/D sem checagem)
 //   REC  (cOs, W|I, {motivo, ip})    N -> R        (I so RESPMAN; W sem checagem)
-//   ENV  (cOs)                       so em N: token no link, so o SHA-256 na SZA - qualquer analista
+//   ENV  (cOs)                       so em N: token no link, so o SHA-256 na SZA - qualquer analista;
+//                                    aRet[5] = "E-mail enviado para: ... Falhou para: ..." 
 //   CNS  (cToken)                    link valido? devolve {lOk, cErro, jOs}
 //   LEG  ({aprovad, apvtipo, apvdata, envdt})   {cLegenda, cCor} (aba Legenda)
 //   LEGS ()                                      todas as {cLegenda, cCor} (browse classico)
@@ -279,6 +280,8 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
     Local lMudou   := .F.
     Local jOs      := Nil
     Local cAlias   := ""
+    Local aEnv     := {}
+    Local cMsgEnv  := ""
 
     Default cOrigem := ""
     Default jDados  := JsonObject():New()
@@ -489,23 +492,28 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
         cToken := Lower(StrTran(FWUUIDV4(), "-", "") + StrTran(FWUUIDV4(), "-", ""))
         cHash  := AP_HASH(cToken)
         aUsu   := AP_USUARIO()
+        // E-mail primeiro: se nenhum sair, nada e gravado (a OS nao fica "aguardando" um
+        // link que o cliente nao recebeu, nem e aprovada por prazo). Grava so quem recebeu.
+        aEnv := AP_ENVIAR(cOs, aPara, cToken, dHoje + SuperGetMV("MV_CNSAVLD", .F., 2))
+        If Empty(aEnv[1])
+            AP_DESTRAVAR(cOs)
+            Return {.F., "Nenhum e-mail foi enviado ao cliente (" + AP_JUNTA(aEnv[2], ", ") + "). Confira o e-mail " + ;
+                "do chamado da OS ou do cadastro do cliente. A OS nao foi marcada como enviada.", "", ""}
+        EndIf
+        cEmail := AP_JUNTA(aEnv[1], ";")
+        cMsgEnv := "E-mail enviado para: " + AP_JUNTA(aEnv[1], ", ") + ;
+            If(Empty(aEnv[2]), "", ". Falhou para: " + AP_JUNTA(aEnv[2], ", ")) + "."
         aSZ1   := {{"Z1_APVMAIL", cEmail}, {"Z1_ENVDT", dHoje}, {"Z1_ENVHR", cAgora}, {"Z1_OSENVCL", "S"}, ;
                    {"Z1_APVDOR", ""}, {"Z1_APVDATA", ""}, {"Z1_APVHORA", ""}, {"Z1_APVIP", ""}}
         aSZA   := {{"ZA_APROVAD", "N"}, {"ZA_APVTIPO", cNovo}, {"ZA_HASH", cHash}, ;
                    {"ZA_ENVDT", dHoje}, {"ZA_ENVHR", cAgora}, {"ZA_PRAZO", dHoje + SuperGetMV("MV_CNSAPRZ", .F., 2)}, ;
                    {"ZA_VALID", dHoje + SuperGetMV("MV_CNSAVLD", .F., 2)}, {"ZA_EMAIL", cEmail}, {"ZA_POR", aUsu[1]}}
-        // E-mail primeiro: se nenhum sair, nada e gravado (a OS nao fica "aguardando" um
-        // link que o cliente nao recebeu, nem e aprovada por prazo).
-        If AP_ENVIAR(cOs, aPara, cToken, dHoje + SuperGetMV("MV_CNSAVLD", .F., 2)) == 0
-            AP_DESTRAVAR(cOs)
-            Return {.F., "Nenhum e-mail foi enviado ao cliente - a OS nao foi marcada como enviada.", "", ""}
-        EndIf
         aRet := AP_GRAVAR(cOs, aSZ1, aSZA)
         AP_DESTRAVAR(cOs)
         If aRet[1]
-            aRet := {.T., "", "N", cNovo}
+            aRet := {.T., "", "N", cNovo, cMsgEnv}
         Else
-            aRet[2] := "E-mail enviado, mas a OS nao foi gravada (o link nao vai funcionar - envie de novo): " + aRet[2]
+            aRet[2] := cMsgEnv + " Mas a OS nao foi gravada (o link nao vai funcionar - envie de novo): " + aRet[2]
         EndIf
 
     //--- Consulta do link (pagina do cliente) ----------------------------------
@@ -940,14 +948,17 @@ Static Function AP_LEGENDA(aDados)
 Return {"", ""}
 
 /*/{Protheus.doc} AP_ENVIAR
-E-mail do envio (ENV): resumo da OS + botao com o link de aprovacao.
-@return nOk  quantos e-mails sairam
+E-mail do envio (ENV): resumo da OS + botao com o link de aprovacao. Endereco sem
+formato de e-mail nem vai pro Graph (ele recusaria a mensagem inteira).
+@return aRet  {aEnviados, aFalhas} - falha vem com o motivo: "x (e-mail invalido)"
 @author Henrique
 @since 09/10/2026
 @version P12
 /*/
 Static Function AP_ENVIAR(cOs, aPara, cToken, dValid)
-    Local nOk   := 0
+    Local aOk   := {}
+    Local aErro := {}
+    Local cPara := ""
     Local aLin  := apia.cnsa002.U_OS_APRPUB("RESUMO", cOs)
     Local cDesc := U_CNSOUTL("TEXTO", apia.cnsa002.U_OS_APRPUB("DESCRICAO", cOs))
     Local cLink := AllTrim(SuperGetMV("MV_CNSAURL", .F., "https://www.apia.com.br/Aprovador-OS")) + "/?t=" + cToken
@@ -961,15 +972,44 @@ Static Function AP_ENVIAR(cOs, aPara, cToken, dValid)
         DToC(dValid) + '</span></div>Qualquer d&uacute;vida, entre em contato: <b>pericles@apia.com.br</b>'
 
     For nI := 1 To Len(aPara)
-        If apia.cnsa001.U_CH_MAILPUB(aPara[nI], "Aprovacao da Ordem de Servico " + AllTrim(cOs), ;
+        cPara := AllTrim(aPara[nI])
+        If !AP_EMAILOK(cPara)
+            AAdd(aErro, cPara + " (e-mail invalido)")
+        ElseIf apia.cnsa001.U_CH_MAILPUB(cPara, "Aprovacao da Ordem de Servico " + AllTrim(cOs), ;
                 apia.cnsa001.U_CH_HTMLPUB("", "Aprova&ccedil;&atilde;o da Ordem de Servi&ccedil;o " + AllTrim(cOs), "", ;
                     "Segue o resumo do atendimento realizado. Confira e responda pelo bot&atilde;o abaixo.", ;
                     aLin, "Descri&ccedil;&atilde;o", cDesc, cObs))
-            nOk++
+            AAdd(aOk, cPara)
+        Else
+            AAdd(aErro, cPara + " (falha no envio)")
         EndIf
     Next nI
 
-Return nOk
+Return {aOk, aErro}
+
+/*/{Protheus.doc} AP_EMAILOK
+Formato minimo de e-mail: algo@dominio.ext, sem espaco.
+@author Henrique
+@since 14/10/2026
+@version P12
+/*/
+Static Function AP_EMAILOK(cEmail)
+    Local nArr := At("@", cEmail)
+Return nArr > 1 .And. !(" " $ cEmail) .And. "." $ SubStr(cEmail, nArr + 2) .And. Right(cEmail, 1) != "."
+
+/*/{Protheus.doc} AP_JUNTA
+Junta um array de texto com o separador.
+@author Henrique
+@since 14/10/2026
+@version P12
+/*/
+Static Function AP_JUNTA(aLista, cSep)
+    Local cRet := ""
+    Local nI   := 0
+    For nI := 1 To Len(aLista)
+        cRet += If(nI > 1, cSep, "") + aLista[nI]
+    Next nI
+Return cRet
 
 /*/{Protheus.doc} AP_AVISAR
 E-mails da decisao (como o legado): APR -> cliente + tecnico + MV_CNSACCO;
@@ -1115,6 +1155,10 @@ User Function CNSAP_API() As Logical
     oJson["os"]      := cOs
     oJson["aprovad"] := aRet[3]
     oJson["apvtipo"] := aRet[4]
+    // ENV: "E-mail enviado para: ... Falhou para: ..." (o portal mostra).
+    If Len(aRet) >= 5
+        oJson["mensagem"] := aRet[5]
+    EndIf
 
 Return oRest:setStatusResponse(200, oJson:ToJson())
 

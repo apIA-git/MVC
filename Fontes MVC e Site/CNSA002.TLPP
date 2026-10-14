@@ -2676,7 +2676,7 @@ Static Function OS_EMAIL(cAcao, x1)
                     AllTrim(cOs) + " (valido por " + cValToChar(SuperGetMV("MV_CNSAVLD", .F., 2)) + " dias).", "OS " + AllTrim(cOs))
                 aResp := apia.cnsa004.U_CNSAPR("ENV", cOs)
                 If aResp[1]
-                    MsgInfo("OS " + AllTrim(cOs) + " enviada ao cliente.", "OS " + AllTrim(cOs))
+                    MsgInfo("OS " + AllTrim(cOs) + " enviada ao cliente." + CRLF + aResp[5], "OS " + AllTrim(cOs))
                 Else
                     MsgAlert(aResp[2], "OS " + AllTrim(cOs))
                 EndIf
@@ -2788,8 +2788,16 @@ User Function OS_APRPUB(cAcao, x1, x2)
         oModel:SetOperation(MODEL_OPERATION_UPDATE)
         oModel:Activate()
         oSZ1 := oModel:GetModel("SZ1MASTER")
+        // SetValue (nao LoadValue): LoadValue nao marca o model como alterado e, na
+        // alteracao, o CommitData nao gravava nada na SZ1 (a OS nao mudava de estado).
+        // VALID/WHEN do dicionario ja sao .T. no model leve; as nossas validacoes
+        // ignoram a gravacao interna (__lA02Interno).
         For nI := 1 To Len(x2)
-            oSZ1:LoadValue(x2[nI][1], x2[nI][2])
+            If !oSZ1:SetValue(x2[nI][1], x2[nI][2])
+                xRet := {.F., OS_ERROMODEL(oModel, "Campo " + x2[nI][1] + " nao aceitou o valor.")}
+                oModel:DeActivate()
+                Return xRet
+            EndIf
         Next nI
         If oModel:VldData() .And. oModel:CommitData()
             xRet := {.T., ""}
@@ -2925,7 +2933,7 @@ User Function OS_APRTELA(cTrans)
 
     aRet := apia.cnsa004.U_CNSAPR(cTrans, cOs, cOrigem, jDados)
     If aRet[1]
-        MsgInfo("OS " + cOs + ": feito.", "Aprovacao de OS")
+        MsgInfo("OS " + cOs + ": feito." + If(Len(aRet) >= 5, CRLF + aRet[5], ""), "Aprovacao de OS")
     Else
         MsgAlert(aRet[2], "Aprovacao de OS")
     EndIf
