@@ -24,6 +24,12 @@ header('Referrer-Policy: no-referrer');
 
 require __DIR__ . '/config.php';   // REST_BASE, REST_USUARIO, REST_SENHA, TELEFONE_APIA
 
+/** Valor de um array ou o padrao (PHP 5.3 nao tem o operador ??). */
+function v($lista, $chave, $padrao = '')
+{
+    return (is_array($lista) && isset($lista[$chave])) ? $lista[$chave] : $padrao;
+}
+
 function h($s)
 {
     return htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
@@ -39,9 +45,9 @@ function txt($s)
 /** IP do cliente (atras de proxy vem no X-Forwarded-For). */
 function ipCliente()
 {
-    $ip = $_SERVER['REMOTE_ADDR'] ?? '';
+    $ip = v($_SERVER, 'REMOTE_ADDR');
     if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
-        $ip = trim(explode(',', $_SERVER['HTTP_X_FORWARDED_FOR'])[0]);
+        $ip = trim(current(explode(',', $_SERVER['HTTP_X_FORWARDED_FOR'])));
     }
     return filter_var($ip, FILTER_VALIDATE_IP) ? $ip : '';
 }
@@ -55,11 +61,11 @@ function protheus($metodo, $rota, array $params)
     if (ipCliente() !== '') {
         $cabecalho .= "X-Forwarded-For: " . ipCliente() . "\r\n";
     }
-    $ctx = stream_context_create([
-        'http' => ['method' => $metodo, 'header' => $cabecalho, 'ignore_errors' => true, 'timeout' => 30],
+    $ctx = stream_context_create(array(
+        'http' => array('method' => $metodo, 'header' => $cabecalho, 'ignore_errors' => true, 'timeout' => 30),
         // Certificado interno do appserver (10.0.0.3) - mesma rede, sem validacao de cadeia.
-        'ssl'  => ['verify_peer' => false, 'verify_peer_name' => false],
-    ]);
+        'ssl'  => array('verify_peer' => false, 'verify_peer_name' => false),
+    ));
     $corpo = @file_get_contents(REST_BASE . $rota . '?' . http_build_query($params), false, $ctx);
     $status = 0;
     if (isset($http_response_header[0]) && preg_match('#\s(\d{3})\s?#', $http_response_header[0], $m)) {
@@ -67,21 +73,21 @@ function protheus($metodo, $rota, array $params)
     }
     // Corpo do Protheus pode vir em CP1252 (acento invalido em UTF-8 faz o json_decode falhar).
     $json = json_decode(txt($corpo), true);
-    return [$status, is_array($json) ? $json : []];
+    return array($status, is_array($json) ? $json : array());
 }
 
 // ------------------------------------------------------------------ fluxo
 
-$token = strtolower(trim((string) ($_SERVER['REQUEST_METHOD'] === 'POST' ? ($_POST['t'] ?? '') : ($_GET['t'] ?? ''))));
+$token = strtolower(trim((string) ($_SERVER['REQUEST_METHOD'] === 'POST' ? v($_POST, 't') : v($_GET, 't'))));
 $tela  = 'exp';
 $erro  = '';
-$os    = [];
-$form  = ['resposta' => '', 'obs' => ''];
+$os    = array();
+$form  = array('resposta' => '', 'obs' => '');
 
 if (preg_match('/^[0-9a-f]{64}$/', $token)) {
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        $form['resposta'] = (string) ($_POST['resposta'] ?? '');
-        $form['obs']      = trim((string) ($_POST['obs'] ?? ''));
+        $form['resposta'] = (string) v($_POST, 'resposta');
+        $form['obs']      = trim((string) v($_POST, 'obs'));
 
         if ($form['resposta'] !== 'APR' && $form['resposta'] !== 'REC') {
             $erro = 'Escolha se aprova ou não aprova a OS.';
@@ -90,9 +96,9 @@ if (preg_match('/^[0-9a-f]{64}$/', $token)) {
         } elseif (mb_strlen($form['obs']) > 240) {
             $erro = 'A observação pode ter até 240 caracteres.';
         } else {
-            [$st, $resp] = protheus('POST', '/rest/CNSAAPROVA', [
+            list($st, $resp) = protheus('POST', '/rest/CNSAAPROVA', array(
                 'token' => $token, 'decisao' => $form['resposta'], 'motivo' => $form['obs'],
-            ]);
+            ));
             if ($st === 200) {
                 $tela = 'ok';
             } elseif ($st === 409) {
@@ -100,14 +106,14 @@ if (preg_match('/^[0-9a-f]{64}$/', $token)) {
             } elseif ($st === 404) {
                 $tela = 'exp';
             } else {
-                $erro = txt($resp['erro'] ?? '') ?: 'Não foi possível registrar sua resposta. Tente novamente em instantes.';
+                $erro = txt(v($resp, 'erro')) ?: 'Não foi possível registrar sua resposta. Tente novamente em instantes.';
             }
         }
     }
 
     // Dados da OS (formulario de novo, em caso de erro, ou primeira abertura).
     if ($tela !== 'ok' && ($_SERVER['REQUEST_METHOD'] !== 'POST' || $erro !== '')) {
-        [$st, $os] = protheus('GET', '/rest/CNSAAPROVA', ['token' => $token]);
+        list($st, $os) = protheus('GET', '/rest/CNSAAPROVA', array('token' => $token));
         if ($st === 200) {
             $tela = 'form';
         } elseif ($st === 409) {
@@ -138,42 +144,42 @@ if (preg_match('/^[0-9a-f]{64}$/', $token)) {
 
 <?php if ($tela === 'form'): ?>
   <form class="corpo" method="post" action="index.php">
-    <input type="hidden" name="t" value="<?= h($token) ?>">
-    <h1>OS <?= h(txt($os['os'] ?? '')) ?></h1>
-    <p class="sub"><?= h(txt($os['cliente'] ?? '')) ?></p>
+    <input type="hidden" name="t" value="<?php echo h($token) ?>">
+    <h1>OS <?php echo h(txt(v($os, 'os'))) ?></h1>
+    <p class="sub"><?php echo h(txt(v($os, 'cliente'))) ?></p>
 
-    <?php if ($erro !== ''): ?><div class="erro"><?= h($erro) ?></div><?php endif; ?>
+    <?php if ($erro !== ''): ?><div class="erro"><?php echo h($erro) ?></div><?php endif; ?>
 
     <div class="grade">
-      <div><b>Data</b><?= h(txt($os['data'] ?? '')) ?></div>
-      <div><b>Horário</b><?= h(txt($os['horario'] ?? '')) ?></div>
-      <div><b>Total de horas</b><?= h(txt($os['horas'] ?? '')) ?></div>
-      <div><b>Analista</b><?= h(txt($os['analista'] ?? '')) ?></div>
-      <?php if (trim((string) ($os['projeto'] ?? '')) !== ''): ?><div><b>Projeto</b><?= h(txt($os['projeto'])) ?></div><?php endif; ?>
+      <div><b>Data</b><?php echo h(txt(v($os, 'data'))) ?></div>
+      <div><b>Horário</b><?php echo h(txt(v($os, 'horario'))) ?></div>
+      <div><b>Total de horas</b><?php echo h(txt(v($os, 'horas'))) ?></div>
+      <div><b>Analista</b><?php echo h(txt(v($os, 'analista'))) ?></div>
+      <?php if (trim((string) (v($os, 'projeto'))) !== ''): ?><div><b>Projeto</b><?php echo h(txt($os['projeto'])) ?></div><?php endif; ?>
       <?php if (!empty($os['chamados'])): ?>
-        <div><b>Chamados</b><?= implode('<br>', array_map(function ($c) { return h(txt($c)); }, (array) $os['chamados'])) ?></div>
+        <div><b>Chamados</b><?php echo implode('<br>', array_map(function ($c) { return h(txt($c)); }, (array) $os['chamados'])) ?></div>
       <?php endif; ?>
     </div>
 
-    <?php if (trim((string) ($os['descricao'] ?? '')) !== ''): ?>
+    <?php if (trim((string) (v($os, 'descricao'))) !== ''): ?>
     <div class="bloco">
       <span class="titulo">Serviço executado</span>
-      <div class="servico"><?= h(txt($os['descricao'])) ?></div>
+      <div class="servico"><?php echo h(txt($os['descricao'])) ?></div>
     </div>
     <?php endif; ?>
 
     <div class="bloco">
       <span class="titulo">Sua resposta *</span>
       <div class="opcoes">
-        <label class="opcao aprova"><input type="radio" name="resposta" value="APR" required <?= $form['resposta'] === 'APR' ? 'checked' : '' ?>> ✔ Aprovo esta OS</label>
-        <label class="opcao recusa"><input type="radio" name="resposta" value="REC" <?= $form['resposta'] === 'REC' ? 'checked' : '' ?>> ✖ Não aprovo</label>
+        <label class="opcao aprova"><input type="radio" name="resposta" value="APR" required <?php echo $form['resposta'] === 'APR' ? 'checked' : '' ?>> ✔ Aprovo esta OS</label>
+        <label class="opcao recusa"><input type="radio" name="resposta" value="REC" <?php echo $form['resposta'] === 'REC' ? 'checked' : '' ?>> ✖ Não aprovo</label>
       </div>
     </div>
 
     <div class="bloco">
       <label class="titulo" for="obs">Observação / mudanças <span class="obrig">(obrigatória se não aprovar)</span></label>
-      <textarea id="obs" name="obs" maxlength="240" placeholder="Ex.: as horas foram 3h e não 3,5h"><?= h($form['obs']) ?></textarea>
-      <div class="contador"><span id="cont"><?= mb_strlen($form['obs']) ?></span>/240</div>
+      <textarea id="obs" name="obs" maxlength="240" placeholder="Ex.: as horas foram 3h e não 3,5h"><?php echo h($form['obs']) ?></textarea>
+      <div class="contador"><span id="cont"><?php echo mb_strlen($form['obs']) ?></span>/240</div>
     </div>
 
     <button type="submit" class="botao">Enviar resposta</button>
@@ -183,7 +189,7 @@ if (preg_match('/^[0-9a-f]{64}$/', $token)) {
   <div class="estado">
     <div class="icone">✅</div>
     <h1>Obrigado!</h1>
-    <p class="sub">Sua resposta foi registrada em <?= h(date('d/m/Y \à\s H:i')) ?>.<br>
+    <p class="sub">Sua resposta foi registrada em <?php echo h(date('d/m/Y \à\s H:i')) ?>.<br>
     A Ápia já foi avisada.</p>
   </div>
 
@@ -191,7 +197,7 @@ if (preg_match('/^[0-9a-f]{64}$/', $token)) {
   <div class="estado">
     <div class="icone">ℹ️</div>
     <h1>Esta OS já foi respondida</h1>
-    <p class="sub">Para dúvidas, fale com a Ápia: <?= h(TELEFONE_APIA) ?>.</p>
+    <p class="sub">Para dúvidas, fale com a Ápia: <?php echo h(TELEFONE_APIA) ?>.</p>
   </div>
 
 <?php elseif ($tela === 'fora'): ?>
@@ -199,7 +205,7 @@ if (preg_match('/^[0-9a-f]{64}$/', $token)) {
     <div class="icone">🔧</div>
     <h1>Sistema indisponível no momento</h1>
     <p class="sub">Seu link continua valendo. Tente novamente mais tarde.<br>
-    Se precisar, fale com a Ápia: <?= h(TELEFONE_APIA) ?>.</p>
+    Se precisar, fale com a Ápia: <?php echo h(TELEFONE_APIA) ?>.</p>
   </div>
 
 <?php else: ?>
@@ -207,7 +213,7 @@ if (preg_match('/^[0-9a-f]{64}$/', $token)) {
     <div class="icone">⏱️</div>
     <h1>Link inválido ou expirado</h1>
     <p class="sub">O link de aprovação vale por tempo limitado após o envio da OS.<br>
-    Peça um novo envio à Ápia: <?= h(TELEFONE_APIA) ?>.</p>
+    Peça um novo envio à Ápia: <?php echo h(TELEFONE_APIA) ?>.</p>
   </div>
 <?php endif; ?>
 
