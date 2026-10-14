@@ -1022,11 +1022,15 @@ User Function CNSAPJOB()
     Local cHoje  := ""
     Local aRet   := {}
     Local nOk    := 0
+    // Pelo Schedule o ambiente ja vem aberto: so abre (e fecha) se rodar a mao.
+    Local lAbriu := Select("SX6") == 0
 
-    RpcSetType(3)
-    If !RpcSetEnv("01", "01", , , "SIGAFAT", , {"SZ1", "SZA"})
-        ConOut("CNSAPJOB: falha no RpcSetEnv - job abortado.")
-        Return
+    If lAbriu
+        RpcSetType(3)
+        If !RpcSetEnv("01", "01", , , "SIGAFAT", , {"SZ1", "SZA"})
+            ConOut("CNSAPJOB: falha no RpcSetEnv - job abortado.")
+            Return
+        EndIf
     EndIf
 
     cHoje  := DToS(Date())
@@ -1058,7 +1062,9 @@ User Function CNSAPJOB()
     (cAlias)->(DbCloseArea())
 
     ConOut("CNSAPJOB: " + cValToChar(nOk) + " OS aprovada(s) por prazo.")
-    RpcClearEnv()
+    If lAbriu
+        RpcClearEnv()
+    EndIf
 
 Return
 
