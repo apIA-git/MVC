@@ -40,6 +40,9 @@ User Function CNS002()
                 aLeg[nI][1] + "'", OS_CORAPR(aLeg[nI][2])[1], aLeg[nI][1])
         Next nI
         l_oBrowse:AddLegend(".T.", "WHITE", "Sem aprovacao (legado)")
+        // Status = faturada (verde) ou nao (vermelho) - a bolinha do portal.
+        l_oBrowse:AddStatusColumns({|| If(AllTrim(SZ1->Z1_FATURAR) == "S", "BR_VERDE", "BR_VERMELHO")}, ;
+            {|| BrwLegenda("Status", "Faturamento da OS", {{"BR_VERDE", "Faturada"}, {"BR_VERMELHO", "Nao faturada"}})})
 
         l_oBrowse:Activate()
 
@@ -73,9 +76,7 @@ Local aRotina  := {}
     // Aprovacao de OS (U_CNSAPR, CNSA004) - a regra (estado e permissao) e do U_CNSAPR.
     ADD OPTION aRotina TITLE "Enviar ao cliente" ACTION "apia.cnsa002.U_OS_APRTELA('ENV')" OPERATION 0 ACCESS 0
     ADD OPTION aRotina TITLE "Pre-aprovar"       ACTION "apia.cnsa002.U_OS_APRTELA('PRE')" OPERATION 0 ACCESS 0
-    ADD OPTION aRotina TITLE "Pre-recusar"       ACTION "apia.cnsa002.U_OS_APRTELA('PRR')" OPERATION 0 ACCESS 0
-    ADD OPTION aRotina TITLE "Aprovar OS"        ACTION "apia.cnsa002.U_OS_APRTELA('APR')" OPERATION 0 ACCESS 0
-    ADD OPTION aRotina TITLE "Recusar OS"        ACTION "apia.cnsa002.U_OS_APRTELA('REC')" OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Aprovar"           ACTION "apia.cnsa002.U_OS_APRTELA('APR')" OPERATION 0 ACCESS 0
 
 Return aRotina
 
@@ -2928,24 +2929,32 @@ Method InTTS(oModel, cModelId) Class CNS002APR
 Return
 
 /*/{Protheus.doc} OS_APRTELA
-Menu da tela classica - acoes de aprovacao da OS posicionada. So pergunta e
-traduz: estado, permissao (RESPMAN) e e-mails ficam no U_CNSAPR (CNSA004).
-  ENV  Enviar ao cliente (link com token)       PRE  Pre-aprovar   PRR  Pre-recusar (motivo)
-  APR  Aprovar OS manualmente (origem I)        REC  Recusar OS manualmente (origem I, motivo)
-@param  cTrans  Transacao do U_CNSAPR
+Menu da tela classica - aprovacao da OS posicionada, igual aos tres pontinhos do portal:
+  ENV  Enviar ao cliente  - so em N; mesma pergunta de depois de gravar a OS (OS_EMAIL "TELA")
+  PRE  Pre-aprovar        - administrador e OS em P; Aprovo = PRE, Nao aprovo = PRR (motivo)
+  APR  Aprovar            - administrador e OS em N; Aprovo = APR, Nao aprovo = REC (motivo)
+Pre-aprovar/Aprovar abrem o mesmo formulario do cliente (resumo + Aprovo/Nao aprovo + observacao).
+Opcao que nao vale avisa e nao abre (no portal fica cinza). Regra e gravacao: U_CNSAPR (CNSA004).
+@param  cTrans  ENV, PRE ou APR
 @author Henrique
 @since 09/10/2026
 @version P12
 /*/
 User Function OS_APRTELA(cTrans)
     Local cOs     := AllTrim(SZ1->Z1_OS)
+    Local cAp     := AllTrim(SZ1->Z1_APROVAD)
+    Local lAdmin  := AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_RSPMNT")) == "1"
     Local jDados  := JsonObject():New()
     Local aRet    := {}
-    Local cTexto  := ""
-    Local cOrigem := ""
+    Local aCh     := {}
+    Local cGrava  := ""
+    Local cFeito  := ""
+    Local nI      := 0
     Local oDlg    := Nil
-    Local oBtnOk  := Nil
+    Local oRad    := Nil
+    Private nDecAprov := 0
     Private cMotAprov := Space(240)
+    Private cResAprov := ""
     Private lMotConf  := .F.
 
     If SZ1->(Eof()) .Or. SZ1->(Bof()) .Or. Empty(cOs)
@@ -2953,44 +2962,67 @@ User Function OS_APRTELA(cTrans)
         Return
     EndIf
 
+    // Mesma regra das opcoes cinza do portal.
     Do Case
+    Case cTrans == "ENV" .And. cAp != "N"
+        MsgAlert("Enviar ao cliente so vale para OS a enviar / aguardando cliente.", "OS " + cOs)
+        Return
+    Case cTrans == "PRE" .And. (!lAdmin .Or. cAp != "P")
+        MsgAlert("Pre-aprovar: so o administrador, com a OS aguardando pre-aprovacao interna.", "OS " + cOs)
+        Return
+    Case cTrans == "APR" .And. (!lAdmin .Or. cAp != "N")
+        MsgAlert("Aprovar: so o administrador, com a OS a enviar / aguardando cliente.", "OS " + cOs)
+        Return
     Case cTrans == "ENV"
-        cTexto  := "Enviar a OS " + cOs + " ao cliente? Ele recebe por e-mail o link para aprovar ou recusar (valido por " + ;
-                   cValToChar(SuperGetMV("MV_CNSAVLD", .F., 2)) + " dias)."
-    Case cTrans == "PRE"
-        cTexto  := "Pre-aprovar a OS " + cOs + "?"
-        cOrigem := "M"
-    Case cTrans == "PRR"
-        cTexto  := "Pre-recusar a OS " + cOs + "?"
-        cOrigem := "M"
-    Case cTrans == "APR"
-        cTexto  := "Aprovar manualmente a OS " + cOs + "?"
-        cOrigem := "I"
-    Case cTrans == "REC"
-        cTexto  := "Recusar manualmente a OS " + cOs + "?"
-        cOrigem := "I"
+        OS_EMAIL("TELA", cOs)
+        Return
     EndCase
 
-    If cTrans == "PRR" .Or. cTrans == "REC"
-        // Motivo obrigatorio (ZA_DESCRI) - janela simples, ate 240 caracteres.
-        DEFINE MSDIALOG oDlg TITLE cTexto FROM 0,0 TO 220,460 PIXEL
-            @ 08,10 SAY "Motivo (obrigatorio):" SIZE 200,10 PIXEL OF oDlg
-            @ 20,10 GET cMotAprov MEMO SIZE 210,60 PIXEL OF oDlg
-            oBtnOk := TButton():New(88, 160, "Confirmar", oDlg, {|| lMotConf := .T., oDlg:End()}, 60,14,,,.F.,.T.,.F.,,.F.,,,.F.)
-        ACTIVATE MSDIALOG oDlg CENTERED
-        If !lMotConf
-            Return
-        EndIf
-        jDados["motivo"] := AllTrim(cMotAprov)
-    ElseIf !MsgYesNo(cTexto, "Aprovacao de OS")
+    // Resumo - os mesmos dados do formulario do cliente (portal: app-aprovacao-os).
+    cResAprov := "OS " + cOs + CRLF + ;
+        OS_NOMECLI(AllTrim(SZ1->Z1_CLI), AllTrim(SZ1->Z1_LOJA)) + " (Loja " + AllTrim(SZ1->Z1_LOJA) + ")" + CRLF + CRLF + ;
+        "Data: " + DToC(SZ1->Z1_DTOS) + CRLF + ;
+        "Horário: " + StrTran(OS_EMAIL("HORARIO"), " as ", " às ") + CRLF + ;
+        "Total de horas: " + OS_EMAIL("HORAS") + CRLF + ;
+        "Analista: " + OS_NOMETEC(AllTrim(SZ1->Z1_TEC)) + CRLF
+    If !Empty(SZ1->Z1_PROJET)
+        cResAprov += "Projeto: " + AllTrim(SZ1->Z1_PROJET) + " " + OS_NOMEPROJ(AllTrim(SZ1->Z1_PROJET)) + CRLF
+    EndIf
+    aCh := OS_EMAIL("CHAMADOS")
+    For nI := 1 To Len(aCh)
+        cResAprov += If(nI == 1, "Chamados: ", Space(11)) + aCh[nI] + CRLF
+    Next nI
+    cResAprov += CRLF + "Serviço executado:" + CRLF + StrTran(StrTran(OS_EMAIL("DESCRICAO", cOs), CRLF, Chr(10)), Chr(10), CRLF)
+
+    DEFINE MSDIALOG oDlg TITLE "Aprovação de Ordem de Serviço - OS " + cOs FROM 0,0 TO 500,560 PIXEL
+        @ 06,10 GET cResAprov MEMO SIZE 260,120 READONLY PIXEL OF oDlg
+        @ 132,10 SAY "Sua resposta *" SIZE 200,10 PIXEL OF oDlg
+        @ 142,10 RADIO oRad VAR nDecAprov ITEMS "Aprovo esta OS", "Não aprovo" SIZE 120,22 PIXEL OF oDlg
+        @ 170,10 SAY "Observação / mudanças (obrigatória se não aprovar):" SIZE 260,10 PIXEL OF oDlg
+        @ 180,10 GET cMotAprov MEMO SIZE 260,40 PIXEL OF oDlg
+        TButton():New(228, 150, "Enviar resposta", oDlg, ;
+            {|| If(nDecAprov == 0, MsgAlert("Escolha se aprova ou não aprova a OS."), ;
+                If(nDecAprov == 2 .And. Empty(cMotAprov), MsgAlert("Conte o motivo ou as mudanças necessárias."), ;
+                    (lMotConf := .T., oDlg:End())))}, 60,14,,,.F.,.T.,.F.,,.F.,,,.F.)
+        TButton():New(228, 215, "Cancelar", oDlg, {|| oDlg:End()}, 55,14,,,.F.,.T.,.F.,,.F.,,,.F.)
+    ACTIVATE MSDIALOG oDlg CENTERED
+    If !lMotConf
         Return
     EndIf
 
-    aRet := apia.cnsa004.U_CNSAPR(cTrans, cOs, cOrigem, jDados)
-    If aRet[1]
-        MsgInfo("OS " + cOs + ": feito." + If(Len(aRet) >= 5, CRLF + aRet[5], ""), "Aprovacao de OS")
-    Else
-        MsgAlert(aRet[2], "Aprovacao de OS")
+    // Aprovo / Nao aprovo -> PRE/PRR (pre-aprovacao) ou APR/REC (manual), igual ao portal.
+    cGrava := If(cTrans == "PRE", If(nDecAprov == 1, "PRE", "PRR"), If(nDecAprov == 1, "APR", "REC"))
+    cFeito := If(cGrava == "PRE", "pré-aprovada", If(cGrava == "PRR", "pré-recusada", If(cGrava == "APR", "aprovada", "recusada")))
+    jDados["motivo"] := AllTrim(cMotAprov)
+    aRet := apia.cnsa004.U_CNSAPR(cGrava, cOs, If(cTrans == "PRE", "M", "I"), jDados)
+    If !aRet[1]
+        MsgAlert(aRet[2], "OS " + cOs)
+        Return
+    EndIf
+    MsgInfo("OS " + cOs + " " + cFeito + ".", "OS " + cOs)
+    // Pre-aprovada e foi pra N (tarefa nao VB): pergunta se ja envia ao cliente.
+    If cGrava == "PRE" .And. aRet[3] == "N"
+        OS_EMAIL("TELA", cOs)
     EndIf
 
 Return
