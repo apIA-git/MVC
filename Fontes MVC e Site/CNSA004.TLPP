@@ -196,7 +196,7 @@ Return {{"!Empty(SZA->ZA_ENVDT)",                                               
 //   LEG  ({aprovad, apvtipo, apvdata, envdt, dtdigit})   {cLegenda, cCor} (aba Legenda)
 //   LEGS ()                                      todas as {cLegenda, cCor} (browse classico)
 //   REG  (cOs ou {proj, rev, tarefa})           {cAprovad, cApvTipo} pela tarefa (AF9_APVMAN S/N, AF9_UM)
-//   HIS  (cOs)                                  SZA completa da OS -> {aItens (JsonObject), aColunas {campo, titulo}}
+//   HIS  (cOs ou "")                            SZA completa (todas as OS ou so cOs) -> {aItens, aColunas {campo, titulo}}
 
 /*/{Protheus.doc} CNSAPR
 Aprovacao de OS - todas as transacoes (ver tabela acima).
@@ -527,11 +527,14 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
                  {"Aprovada (cliente)", "verde"}, {"Aprovada (prazo)", "azul"}, ;
                  {"Aprovada (manual)", "azul"}, {"Aprovada", "verde"}}
 
-    //--- Historico da OS: a SZA completa (todos os campos menos filial e hash do token),
-    //    mais o evento pela mesma legenda do browse do historico (HA_LEGS) -> {aItens, aColunas}
+    //--- Historico: a SZA inteira (todas as OS; com cOs, so ela) - todos os campos menos filial e hash
+    //    do token, mais o evento pela mesma legenda do browse do historico (HA_LEGS) -> {aItens, aColunas}
     Case cTrans == "HIS"
         aRet   := {{}, {}}
-        cOs    := AP_VAL("ZA_OS", AllTrim(cValToChar(xAlvo)))
+        cOs    := AllTrim(cValToChar(xAlvo))
+        // Oracle trata '' como NULL: flag "S" = todas as OS.
+        cNovo  := If(Empty(cOs), "S", "N")
+        cOs    := AP_VAL("ZA_OS", cOs)
         aLeg   := HA_LEGS()
         DbSelectArea("SZA")
         For nI := 1 To SZA->(FCount())
@@ -544,9 +547,9 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
             SELECT ZA.R_E_C_N_O_ REC
             FROM %Table:SZA% ZA
             WHERE ZA.ZA_FILIAL = %xFilial:SZA%
-              AND ZA.ZA_OS = %Exp:cOs%
+              AND (%Exp:cNovo% = 'S' OR ZA.ZA_OS = %Exp:cOs%)
               AND ZA.%NotDel%
-            ORDER BY ZA.ZA_SEQ
+            ORDER BY ZA.ZA_OS DESC, ZA.ZA_SEQ
         EndSql
         While !(cAlias)->(Eof())
             SZA->(DbGoto((cAlias)->REC))
@@ -1103,7 +1106,7 @@ User Function CNSAP_API() As Logical
 Return oRest:setStatusResponse(200, oJson:ToJson())
 
 /*/{Protheus.doc} CNSAP_HIS
-GET /CNSAPR?os= - SZA completa da OS para o portal (usuario logado): items + colunas {campo, titulo}.
+GET /CNSAPR[?os=] - SZA completa (todas as OS, ou so a informada) para o portal: items + colunas {campo, titulo}.
 /*/
 @Get(endpoint="/CNSAPR")
 User Function CNSAP_HIS() As Logical
@@ -1120,9 +1123,7 @@ User Function CNSAP_HIS() As Logical
         Return AP_ERRO(403, "Usuario sem acesso a este recurso.")
     EndIf
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
-    If Empty(cOs)
-        Return AP_ERRO(400, "Informe a OS.")
-    EndIf
+    // Sem os: a SZA inteira (todas as OS).
     aRet := U_CNSAPR("HIS", cOs)
     oJson["os"]      := cOs
     oJson["items"]   := aRet[1]
