@@ -1,10 +1,11 @@
 #Include "FWMVCDef.ch"
 #Include "Totvs.ch"
 #Include "TopConn.ch"
-#Include "RwMake.ch"
-#Include "Colors.ch"
 #include "tlpp-core.th"
 #include "tlpp-rest.th"
+
+// Marcador de bloco de interacao no Memo Z1_SERV.
+#Define OS_MARCA "=== INTERACAO "
 
 Namespace apia.cnsa002
 
@@ -49,10 +50,10 @@ User Function MenuDef()
 Local aRotina  := {}
 
     ADD OPTION aRotina TITLE "Pesquisar"    ACTION "AxPesqui"                        OPERATION 1 ACCESS 0
-    ADD OPTION aRotina TITLE "Visualizar"   ACTION "apia.cnsa002.U_OS_VISUALIZARTELA" OPERATION 2 ACCESS 0
-    ADD OPTION aRotina TITLE "Incluir"      ACTION "apia.cnsa002.U_OS_INCLUIRTELA"    OPERATION 3 ACCESS 0
-    ADD OPTION aRotina TITLE "Alterar"      ACTION "apia.cnsa002.U_OS_ALTERARTELA"    OPERATION 4 ACCESS 0
-    ADD OPTION aRotina TITLE "Excluir"      ACTION "apia.cnsa002.U_OS_EXCLUIRTELA"    OPERATION 5 ACCESS 0
+    ADD OPTION aRotina TITLE "Visualizar"   ACTION "apia.cnsa002.U_OS_TELA(1)"       OPERATION 2 ACCESS 0
+    ADD OPTION aRotina TITLE "Incluir"      ACTION "apia.cnsa002.U_OS_TELA(3)"       OPERATION 3 ACCESS 0
+    ADD OPTION aRotina TITLE "Alterar"      ACTION "apia.cnsa002.U_OS_TELA(4)"       OPERATION 4 ACCESS 0
+    ADD OPTION aRotina TITLE "Excluir"      ACTION "apia.cnsa002.U_OS_TELA(5)"       OPERATION 5 ACCESS 0
     ADD OPTION aRotina TITLE "Copiar"       ACTION "apia.cnsa002.U_OS_COPIARTELA"    OPERATION 0 ACCESS 0
     ADD OPTION aRotina TITLE "Legenda"      ACTION "apia.cnsa002.U_OS_LEGENDA"       OPERATION 0 ACCESS 0
     ADD OPTION aRotina TITLE "Historico Aprovacao" ACTION "apia.cnsa004.U_CNS004(SZ1->Z1_OS)" OPERATION 0 ACCESS 0
@@ -130,7 +131,7 @@ Static Function OS_MONTARMODEL(nOperAtivar)
     l_oModel := MPFormModel():New(;
         "FCNS002",;
         {|oModel| OS_PREVALIDA(oModel)},;
-        {|oModel| OS_VALIDACANCELA(oModel) .And. OS_VALIDACOBRAR(oModel)})
+        {|oModel| OS_VALIDACOBRAR(oModel)})
 
     l_oModel:AddFields(;
         "SZ1MASTER",;
@@ -187,46 +188,29 @@ Return l_bOk
 /*/{Protheus.doc} OS_PREVALIDA
 Inclusao: confere os obrigatorios (SetErrorMessage).
 @param  p_oModel   Objeto do Model (FormModel) sendo validado
-@return l_bOk      .T. se valido, .F. se algum campo obrigatorio faltar
+@return lOk        .T. se valido
 /*/
 Static Function OS_PREVALIDA(p_oModel)
-    Local l_bOk     := .T.
-    Local nOper     := p_oModel:GetOperation()
-    Local oModelSZ1 := Nil
+    Local oModelSZ1 := p_oModel:GetModel("SZ1MASTER")
+    Local aCampos   := {{"Z1_MODULO", "Informe o modulo."}, {"Z1_MOTIV", "Informe o motivo."}, ;
+                        {"Z1_TIPO", "Informe o codigo do servico."}, {"Z1_DTOS", "Informe a data da OS."}}
+    Local nI        := 0
 
-    If nOper == 3
-        oModelSZ1 := p_oModel:GetModel("SZ1MASTER")
-        If oModelSZ1 <> Nil
-
-            If Empty(AllTrim(oModelSZ1:GetValue("Z1_CLI"))) .Or. Empty(AllTrim(oModelSZ1:GetValue("Z1_LOJA")))
-                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_CLI", "SZ1", "Z1_CLI", "CNSA002", "Informe o cliente e o site do cliente.")
-                Return .F.
-            EndIf
-
-            If Empty(AllTrim(oModelSZ1:GetValue("Z1_MODULO")))
-                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_MODULO", "SZ1", "Z1_MODULO", "CNSA002", "Informe o modulo.")
-                Return .F.
-            EndIf
-
-            If Empty(AllTrim(oModelSZ1:GetValue("Z1_MOTIV")))
-                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_MOTIV", "SZ1", "Z1_MOTIV", "CNSA002", "Informe o motivo.")
-                Return .F.
-            EndIf
-
-            If Empty(AllTrim(oModelSZ1:GetValue("Z1_TIPO")))
-                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_TIPO", "SZ1", "Z1_TIPO", "CNSA002", "Informe o codigo do servico.")
-                Return .F.
-            EndIf
-
-            If Empty(oModelSZ1:GetValue("Z1_DTOS"))
-                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_DTOS", "SZ1", "Z1_DTOS", "CNSA002", "Informe a data da OS.")
-                Return .F.
-            EndIf
-
-        EndIf
+    If p_oModel:GetOperation() != 3
+        Return .T.
     EndIf
+    If Empty(oModelSZ1:GetValue("Z1_CLI")) .Or. Empty(oModelSZ1:GetValue("Z1_LOJA"))
+        p_oModel:SetErrorMessage("SZ1MASTER", "Z1_CLI", "SZ1", "Z1_CLI", "CNSA002", "Informe o cliente e o site do cliente.")
+        Return .F.
+    EndIf
+    For nI := 1 To Len(aCampos)
+        If Empty(oModelSZ1:GetValue(aCampos[nI][1]))
+            p_oModel:SetErrorMessage("SZ1MASTER", aCampos[nI][1], "SZ1", aCampos[nI][1], "CNSA002", aCampos[nI][2])
+            Return .F.
+        EndIf
+    Next nI
 
-Return l_bOk
+Return .T.
 
 /*/{Protheus.doc} OS_VALIDACOBRAR
 Agendamento "Nao Cobrar" (Z6_COBRAR) so aceita Cod Servico de hora nao cobravel (BM_TIPGRU = 2).
@@ -345,28 +329,23 @@ Static Function OS_AGENDANAOCOBRA_MIN(cHora)
 
 Return Val(Left(cDig, 2)) * 60 + Val(SubStr(cDig, 3, 2))
 
-/*/{Protheus.doc} OS_VALIDACANCELA
-Cancelamento sempre permitido.
-@param  p_oModel   Objeto do Model (FormModel) sendo cancelado
-@return lOk        Sempre .T.
-/*/
-Static Function OS_VALIDACANCELA(p_oModel)
-Return .T.
-
 /*/{Protheus.doc} OS_MODELLEVE
-Model leve (so SZ1, sem o grid SZ2) para o REST e a aprovacao.
-@return oModel   Objeto MPFormModel leve (so SZ1MASTER) montado
+Model leve (so SZ1, sem o grid SZ2) do REST e da aprovacao - monta E ativa aqui (ver OS_MONTARMODEL).
+@param  nOper    MODEL_OPERATION_INSERT, UPDATE ou DELETE
+@return oModel   Model ativo
 /*/
-Static Function OS_MODELLEVE()
+Static Function OS_MODELLEVE(nOper)
     Local oModel  := Nil
     Local oStrSZ1 := FWFormStruct(1, "SZ1")
 
     OS_STRUCTHEADLESS(oStrSZ1)
 
-    oModel := MPFormModel():New("FCNS002REST", NIL, {|o| OS_VALIDACOBRAR(o)}, NIL, NIL)
+    oModel := MPFormModel():New("FCNS002REST", NIL, {|o| OS_PREVALIDA(o) .And. OS_VALIDACOBRAR(o)}, NIL, NIL)
     oModel:AddFields("SZ1MASTER", NIL, oStrSZ1, {|_f,_a,_c,_v| OS_VALIDACAMPO(_f,_a,_c,_v)}, NIL)
     oModel:SetPrimaryKey({"Z1_FILIAL", "Z1_OS"})
     oModel:InstallEvent("CNS002APR", /*cOwner*/, CNS002APR():New())
+    oModel:SetOperation(nOper)
+    oModel:Activate()
 
 Return oModel
 
@@ -398,23 +377,6 @@ Static Function OS_STRUCTHEADLESS(oStrSZ1)
     Next nI
 
 Return
-
-// Model leve de inclusao, montado E ativado aqui (ver OS_MONTARMODEL).
-Static Function OS_MODELINSERT()
-    Local oModel  := Nil
-    Local oStrSZ1 := FWFormStruct(1, "SZ1")
-
-    OS_STRUCTHEADLESS(oStrSZ1)
-
-    oModel := MPFormModel():New("FCNS002REST", NIL, {|o| OS_PREVALIDA(o) .And. OS_VALIDACOBRAR(o)}, NIL, NIL)
-    oModel:AddFields("SZ1MASTER", NIL, oStrSZ1, {|_f,_a,_c,_v| OS_VALIDACAMPO(_f,_a,_c,_v)}, NIL)
-    oModel:SetPrimaryKey({"Z1_FILIAL", "Z1_OS"})
-    oModel:InstallEvent("CNS002APR", /*cOwner*/, CNS002APR():New())
-
-    oModel:SetOperation(MODEL_OPERATION_INSERT)
-    oModel:Activate()
-
-Return oModel
 
 /*/{Protheus.doc} OS_NUCLEOCOPIAR
 Copia a OS (tela e REST): todos os campos menos chave, digitacao, aprovacao e faturamento.
@@ -454,7 +416,7 @@ Static Function OS_NUCLEOCOPIAR(cOsOrigem)
 
         cOsNova := OS_PROXIMONUM()
 
-        oModel    := OS_MODELINSERT()
+        oModel    := OS_MODELLEVE(MODEL_OPERATION_INSERT)
         oModelSZ1 := oModel:GetModel("SZ1MASTER")
 
         For nI := 1 To Len(aFields)
@@ -502,65 +464,29 @@ Static Function OS_NUCLEOCOPIAR(cOsOrigem)
 
 Return {.T., "", cOsNova}
 
-/*/{Protheus.doc} OS_VISUALIZARTELA
-Menu Visualizar.
+/*/{Protheus.doc} OS_TELA
+Menu Visualizar/Incluir/Alterar/Excluir: monta e ativa o model aqui e abre a View.
+@param  nOper  MODEL_OPERATION_VIEW (1), INSERT (3), UPDATE (4) ou DELETE (5)
 /*/
-User Function OS_VISUALIZARTELA()
-    Local oModel := OS_MONTARMODEL(MODEL_OPERATION_VIEW)
-
-    // Model desta tela como ativo (o ViewDef usa o ativo).
-    FWModelActive(oModel)
-    FWExecView("Ordem de Servico", "apia.cnsa002.u_cns002", MODEL_OPERATION_VIEW, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel)
-Return
-
-/*/{Protheus.doc} OS_INCLUIRTELA
-Menu Incluir.
-/*/
-User Function OS_INCLUIRTELA()
-    Local oModel := Nil
-    Local cOs    := ""
-
-    // M->Z1_* no frame que fica vivo com a tela aberta (lupas/F3).
-    RegToMemory("SZ1", .T., .F.)
-    oModel := OS_MONTARMODEL(MODEL_OPERATION_INSERT)
-    cOs    := oModel:GetModel("SZ1MASTER"):GetValue("Z1_OS")
-
-    // FWExecView devolve 0 quando grava.
-    // Model desta tela como ativo (o ViewDef usa o ativo).
-    FWModelActive(oModel)
-    If FWExecView("Ordem de Servico", "apia.cnsa002.u_cns002", MODEL_OPERATION_INSERT, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel) == 0
-        OS_EMAIL("TELA", cOs)
-    EndIf
-Return
-
-/*/{Protheus.doc} OS_ALTERARTELA
-Menu Alterar.
-/*/
-User Function OS_ALTERARTELA()
+User Function OS_TELA(nOper)
+    Local lGrava := nOper == MODEL_OPERATION_INSERT .Or. nOper == MODEL_OPERATION_UPDATE
     Local oModel := Nil
     Local cOs    := SZ1->Z1_OS
 
     // M->Z1_* no frame que fica vivo com a tela aberta (lupas/F3).
-    RegToMemory("SZ1", .F., .F.)
-    oModel := OS_MONTARMODEL(MODEL_OPERATION_UPDATE)
+    If lGrava
+        RegToMemory("SZ1", nOper == MODEL_OPERATION_INSERT, .F.)
+    EndIf
+    oModel := OS_MONTARMODEL(nOper)
+    If nOper == MODEL_OPERATION_INSERT
+        cOs := oModel:GetModel("SZ1MASTER"):GetValue("Z1_OS")
+    EndIf
 
-    // FWExecView devolve 0 quando grava.
-    // Model desta tela como ativo (o ViewDef usa o ativo).
+    // Model desta tela como ativo (o ViewDef usa o ativo). FWExecView devolve 0 quando grava.
     FWModelActive(oModel)
-    If FWExecView("Ordem de Servico", "apia.cnsa002.u_cns002", MODEL_OPERATION_UPDATE, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel) == 0
+    If FWExecView("Ordem de Servico", "apia.cnsa002.u_cns002", nOper, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel) == 0 .And. lGrava
         OS_EMAIL("TELA", cOs)
     EndIf
-Return
-
-/*/{Protheus.doc} OS_EXCLUIRTELA
-Menu Excluir.
-/*/
-User Function OS_EXCLUIRTELA()
-    Local oModel := OS_MONTARMODEL(MODEL_OPERATION_DELETE)
-
-    // Model desta tela como ativo (o ViewDef usa o ativo).
-    FWModelActive(oModel)
-    FWExecView("Ordem de Servico", "apia.cnsa002.u_cns002", MODEL_OPERATION_DELETE, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel)
 Return
 
 /*/{Protheus.doc} OS_COPIARTELA
@@ -639,12 +565,14 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
     Local cErro      := ""
     Local oErroExcpt := Nil
     Local cOs        := ""
+    Local cVal       := ""
     Local cDtDigit   := AllTrim(OS_LERJSONTXT(jQuery, "dtDigitacao"))
+    Local cCli       := AllTrim(OS_LERJSONTXT(jQuery, "codCliente"))
+    Local cLoja      := AllTrim(OS_LERJSONTXT(jQuery, "lojaCliente"))
     Local aHrIni     := OS_LERHORA(jQuery, "horaInicial", "horaInicialDec")
     Local aHrFim     := OS_LERHORA(jQuery, "horaFinal", "horaFinalDec")
     Local aParCh     := OS_ZA3("PARAM", jQuery)
-    Local cMsgCh     := OS_ZA3("VALIDAR", "", aParCh[2], AllTrim(OS_LERJSONTXT(jQuery, "codCliente")), ;
-                            If(Empty(AllTrim(OS_LERJSONTXT(jQuery, "lojaCliente"))), "01", AllTrim(OS_LERJSONTXT(jQuery, "lojaCliente"))))
+    Local cMsgCh     := OS_ZA3("VALIDAR", "", aParCh[2], cCli, If(Empty(cLoja), "01", cLoja))
 
     If !Empty(cMsgCh)
         Return {.F., cMsgCh, ""}
@@ -652,7 +580,7 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
 
     Begin Sequence
 
-        oModel    := OS_MODELINSERT()
+        oModel    := OS_MODELLEVE(MODEL_OPERATION_INSERT)
         oModelSZ1 := oModel:GetModel("SZ1MASTER")
 
         cOs := OS_PROXIMONUM()
@@ -661,8 +589,8 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
         // LoadValue: o X3_VALID do Z1_OS quebra fora da tela.
         oModelSZ1:LoadValue("Z1_OS", cOs)
         oModelSZ1:SetValue("Z1_DTDIGIT", If(Empty(cDtDigit), Date(), STOD(StrTran(cDtDigit,"-",""))))
-        oModelSZ1:SetValue("Z1_CLI",     AllTrim(OS_LERJSONTXT(jQuery,"codCliente")))
-        oModelSZ1:SetValue("Z1_LOJA",    AllTrim(OS_LERJSONTXT(jQuery,"lojaCliente")))
+        oModelSZ1:SetValue("Z1_CLI",     cCli)
+        oModelSZ1:SetValue("Z1_LOJA",    cLoja)
         oModelSZ1:SetValue("Z1_USR",     AllTrim(OS_LERJSONTXT(jQuery,"usuario")))
         oModelSZ1:SetValue("Z1_MODULO",  AllTrim(OS_LERJSONTXT(jQuery,"modulo")))
         oModelSZ1:SetValue("Z1_MOTIV",   AllTrim(OS_LERJSONTXT(jQuery,"motivo")))
@@ -675,73 +603,28 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
         oModelSZ1:LoadValue("Z1_HRFIM",  OS_HORACAMPO(aHrFim[2], "Z1_HRFIM"))
         oModelSZ1:SetValue("Z1_TOTAL",   If(OS_LERJSONNUM(jQuery,"horasTiDec") <> 0, OS_LERJSONNUM(jQuery,"horasTiDec"), Round(aHrFim[1] - aHrIni[1], 2)))
         // Analista so se veio (vazio pode cair no VALID do dicionario).
-        If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"codAnalista")))
-            oModelSZ1:SetValue("Z1_TEC", AllTrim(OS_LERJSONTXT(jQuery,"codAnalista")))
-        EndIf
+        OS_SETOPC(oModelSZ1, jQuery, {{"codAnalista", "Z1_TEC"}})
         oModelSZ1:SetValue("Z1_APROVAD", "N")
         oModelSZ1:SetValue("Z1_FATURAR", "N")
 
+        cVal := AllTrim(OS_LERJSONTXT(jQuery,"osInterna"))
+        oModelSZ1:SetValue("Z1_INTERNO", If(Empty(cVal), "N", cVal))
         // Opcionais: so se vierem preenchidos.
-        If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"osInterna")))
-            oModelSZ1:SetValue("Z1_INTERNO", AllTrim(OS_LERJSONTXT(jQuery,"osInterna")))
-        Else
-            oModelSZ1:SetValue("Z1_INTERNO", "N")
-        EndIf
-        If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"local")))
-            oModelSZ1:SetValue("Z1_LOCAL", AllTrim(OS_LERJSONTXT(jQuery,"local")))
-        EndIf
-        If OS_LERJSONNUM(jQuery,"horasTranDec") <> 0
-            oModelSZ1:SetValue("Z1_TRANS", OS_LERJSONNUM(jQuery,"horasTranDec"))
-        EndIf
-        If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"prevPmt")))
-            oModelSZ1:SetValue("Z1_PREVIST", AllTrim(OS_LERJSONTXT(jQuery,"prevPmt")))
-        EndIf
-        If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"numProposta")))
-            oModelSZ1:SetValue("Z1_NUMPRO", AllTrim(OS_LERJSONTXT(jQuery,"numProposta")))
-        EndIf
-        If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"pedVenda")))
-            oModelSZ1:SetValue("Z1_PV", AllTrim(OS_LERJSONTXT(jQuery,"pedVenda")))
-        EndIf
-        If OS_LERJSONNUM(jQuery,"hrAlmoco") <> 0
-            oModelSZ1:SetValue("Z1_ALMOCO", OS_LERJSONNUM(jQuery,"hrAlmoco"))
-        EndIf
-        If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"projeto")))
-            oModelSZ1:SetValue("Z1_PROJET", AllTrim(OS_LERJSONTXT(jQuery,"projeto")))
-        EndIf
-        If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"revisao")))
-            oModelSZ1:SetValue("Z1_REVISA", AllTrim(OS_LERJSONTXT(jQuery,"revisao")))
-        EndIf
-        If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"tarefa")))
-            oModelSZ1:SetValue("Z1_TAREFA", AllTrim(OS_LERJSONTXT(jQuery,"tarefa")))
-        EndIf
-        If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"chamadoHpsd")))
-            oModelSZ1:SetValue("Z1_CHPSD", AllTrim(OS_LERJSONTXT(jQuery,"chamadoHpsd")))
-        EndIf
+        OS_SETOPC(oModelSZ1, jQuery, {{"local", "Z1_LOCAL"}, {"horasTranDec", "Z1_TRANS", .T.}, {"prevPmt", "Z1_PREVIST"}, ;
+            {"numProposta", "Z1_NUMPRO"}, {"pedVenda", "Z1_PV"}, {"hrAlmoco", "Z1_ALMOCO", .T.}, {"projeto", "Z1_PROJET"}, ;
+            {"revisao", "Z1_REVISA"}, {"tarefa", "Z1_TAREFA"}, {"chamadoHpsd", "Z1_CHPSD"}})
         // Z1_IDCH = chamado principal (1o da lista); a lista vai pra ZA3.
         If Len(aParCh[2]) > 0
             oModelSZ1:LoadValue("Z1_IDCH", aParCh[2][1])
         EndIf
-        If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"osDesenv")))
-            oModelSZ1:SetValue("Z1_OSDESE", AllTrim(OS_LERJSONTXT(jQuery,"osDesenv")))
-        Else
-            oModelSZ1:SetValue("Z1_OSDESE", "N")
-        EndIf
-        If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"osEnviada")))
-            oModelSZ1:SetValue("Z1_OSENVCL", AllTrim(OS_LERJSONTXT(jQuery,"osEnviada")))
-        Else
-            oModelSZ1:SetValue("Z1_OSENVCL", "N")
-        EndIf
-        If !Empty(AllTrim(OS_LERJSONTXT(jQuery,"linhaPv")))
-            oModelSZ1:SetValue("Z1_LIN", AllTrim(OS_LERJSONTXT(jQuery,"linhaPv")))
-        EndIf
-        If OS_LERJSONNUM(jQuery,"valorHora") <> 0
-            oModelSZ1:SetValue("Z1_VLRHR", OS_LERJSONNUM(jQuery,"valorHora"))
-        EndIf
+        cVal := AllTrim(OS_LERJSONTXT(jQuery,"osDesenv"))
+        oModelSZ1:SetValue("Z1_OSDESE", If(Empty(cVal), "N", cVal))
+        cVal := AllTrim(OS_LERJSONTXT(jQuery,"osEnviada"))
+        oModelSZ1:SetValue("Z1_OSENVCL", If(Empty(cVal), "N", cVal))
+        OS_SETOPC(oModelSZ1, jQuery, {{"linhaPv", "Z1_LIN"}, {"valorHora", "Z1_VLRHR", .T.}})
 
         If oModel:VldData()
             lOk := oModel:CommitData()
-        Else
-            lOk := .F.
         EndIf
 
         If !lOk
@@ -779,7 +662,7 @@ User Function OS_APIINCLUIR() As Logical
 
     // Usuario de servico (pagina do cliente) so acessa /CNSAAPROVA.
     If U_CNSSERVICO()
-        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+        Return OS_ERRO(403, "Usuario sem acesso a este recurso.")
     EndIf
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
@@ -787,7 +670,7 @@ User Function OS_APIINCLUIR() As Logical
     aResultado := OS_NUCLEOINCLUIR(jQuery)
 
     If !aResultado[1]
-        Return oRest:setStatusResponse(400, '{"erro":"' + OS_ESCAPARJSON(aResultado[2]) + '"}')
+        Return OS_ERRO(400, aResultado[2])
     EndIf
 
 Return oRest:setStatusResponse(200, OS_RESPOSTAOK(aResultado[3], "OS incluida com sucesso."))
@@ -833,9 +716,7 @@ Static Function OS_NUCLEOALTERAR(jQuery)
 
     Begin Sequence
 
-        oModel    := OS_MODELLEVE()
-        oModel:SetOperation(MODEL_OPERATION_UPDATE)
-        oModel:Activate()
+        oModel    := OS_MODELLEVE(MODEL_OPERATION_UPDATE)
         oModelSZ1 := oModel:GetModel("SZ1MASTER")
 
         cVal := AllTrim(OS_LERJSONTXT(jQuery,"codCliente"))
@@ -844,17 +725,11 @@ Static Function OS_NUCLEOALTERAR(jQuery)
             cVal := AllTrim(OS_LERJSONTXT(jQuery,"lojaCliente"))
             oModelSZ1:SetValue("Z1_LOJA", If(Empty(cVal), "01", cVal))
         EndIf
-        cVal := AllTrim(OS_LERJSONTXT(jQuery,"usuario"))
-        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_USR", cVal) ; EndIf
-        cVal := AllTrim(OS_LERJSONTXT(jQuery,"modulo"))
-        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_MODULO", cVal) ; EndIf
-        cVal := AllTrim(OS_LERJSONTXT(jQuery,"motivo"))
-        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_MOTIV", cVal) ; EndIf
+        OS_SETOPC(oModelSZ1, jQuery, {{"usuario", "Z1_USR"}, {"modulo", "Z1_MODULO"}, {"motivo", "Z1_MOTIV"}})
         cVal := AllTrim(OS_LERJSONTXT(jQuery,"descricao"))
         // Troca so a descricao: os blocos de interacao do Memo ficam.
         If !Empty(cVal) ; oModelSZ1:SetValue("Z1_SERV", cVal + OS_BLOCOSINTERACAO(oModelSZ1:GetValue("Z1_SERV"))) ; EndIf
-        cVal := AllTrim(OS_LERJSONTXT(jQuery,"codServico"))
-        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_TIPO", cVal) ; EndIf
+        OS_SETOPC(oModelSZ1, jQuery, {{"codServico", "Z1_TIPO"}})
         cVal := AllTrim(OS_LERJSONTXT(jQuery,"dataOs"))
         If !Empty(cVal) ; oModelSZ1:SetValue("Z1_DTOS", STOD(StrTran(cVal,"-",""))) ; EndIf
         If !Empty(aHrIni[2])
@@ -868,41 +743,15 @@ Static Function OS_NUCLEOALTERAR(jQuery)
         If OS_LERJSONNUM(jQuery,"horasTiDec") == 0 .And. !Empty(aHrIni[2]) .And. !Empty(aHrFim[2])
             oModelSZ1:SetValue("Z1_TOTAL", Round(aHrFim[1] - aHrIni[1], 2))
         EndIf
-        If OS_LERJSONNUM(jQuery,"horasTranDec") <> 0
-            oModelSZ1:SetValue("Z1_TRANS", OS_LERJSONNUM(jQuery,"horasTranDec"))
-        EndIf
-        If OS_LERJSONNUM(jQuery,"horasTiDec") <> 0
-            oModelSZ1:SetValue("Z1_TOTAL", OS_LERJSONNUM(jQuery,"horasTiDec"))
-        EndIf
-        cVal := AllTrim(OS_LERJSONTXT(jQuery,"codAnalista"))
-        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_TEC", cVal) ; EndIf
-        cVal := AllTrim(OS_LERJSONTXT(jQuery,"osInterna"))
-        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_INTERNO", cVal) ; EndIf
-        cVal := AllTrim(OS_LERJSONTXT(jQuery,"local"))
-        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_LOCAL", cVal) ; EndIf
-        cVal := AllTrim(OS_LERJSONTXT(jQuery,"prevPmt"))
-        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_PREVIST", cVal) ; EndIf
-        cVal := AllTrim(OS_LERJSONTXT(jQuery,"numProposta"))
-        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_NUMPRO", cVal) ; EndIf
-        cVal := AllTrim(OS_LERJSONTXT(jQuery,"pedVenda"))
-        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_PV", cVal) ; EndIf
-        If OS_LERJSONNUM(jQuery,"hrAlmoco") <> 0
-            oModelSZ1:SetValue("Z1_ALMOCO", OS_LERJSONNUM(jQuery,"hrAlmoco"))
-        EndIf
-        cVal := AllTrim(OS_LERJSONTXT(jQuery,"projeto"))
-        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_PROJET", cVal) ; EndIf
-        cVal := AllTrim(OS_LERJSONTXT(jQuery,"revisao"))
-        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_REVISA", cVal) ; EndIf
-        cVal := AllTrim(OS_LERJSONTXT(jQuery,"tarefa"))
-        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_TAREFA", cVal) ; EndIf
-        cVal := AllTrim(OS_LERJSONTXT(jQuery,"chamadoHpsd"))
-        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_CHPSD", cVal) ; EndIf
+        OS_SETOPC(oModelSZ1, jQuery, {{"horasTranDec", "Z1_TRANS", .T.}, {"horasTiDec", "Z1_TOTAL", .T.}, ;
+            {"codAnalista", "Z1_TEC"}, {"osInterna", "Z1_INTERNO"}, {"local", "Z1_LOCAL"}, {"prevPmt", "Z1_PREVIST"}, ;
+            {"numProposta", "Z1_NUMPRO"}, {"pedVenda", "Z1_PV"}, {"hrAlmoco", "Z1_ALMOCO", .T.}, {"projeto", "Z1_PROJET"}, ;
+            {"revisao", "Z1_REVISA"}, {"tarefa", "Z1_TAREFA"}, {"chamadoHpsd", "Z1_CHPSD"}})
         // Z1_IDCH = chamado principal (1o da lista); a lista vai pra ZA3.
         If aParCh[1]
             oModelSZ1:LoadValue("Z1_IDCH", If(Len(aParCh[2]) > 0, aParCh[2][1], ""))
         EndIf
-        cVal := AllTrim(OS_LERJSONTXT(jQuery,"osDesenv"))
-        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_OSDESE", cVal) ; EndIf
+        OS_SETOPC(oModelSZ1, jQuery, {{"osDesenv", "Z1_OSDESE"}})
         // Z1_OSENVCL e obrigatorio e as OS antigas estao vazias.
         cVal := AllTrim(OS_LERJSONTXT(jQuery,"osEnviada"))
         If !Empty(cVal)
@@ -910,16 +759,10 @@ Static Function OS_NUCLEOALTERAR(jQuery)
         ElseIf Empty(oModelSZ1:GetValue("Z1_OSENVCL"))
             oModelSZ1:SetValue("Z1_OSENVCL", "N")
         EndIf
-        cVal := AllTrim(OS_LERJSONTXT(jQuery,"linhaPv"))
-        If !Empty(cVal) ; oModelSZ1:SetValue("Z1_LIN", cVal) ; EndIf
-        If OS_LERJSONNUM(jQuery,"valorHora") <> 0
-            oModelSZ1:SetValue("Z1_VLRHR", OS_LERJSONNUM(jQuery,"valorHora"))
-        EndIf
+        OS_SETOPC(oModelSZ1, jQuery, {{"linhaPv", "Z1_LIN"}, {"valorHora", "Z1_VLRHR", .T.}})
 
         If oModel:VldData()
             lOk := oModel:CommitData()
-        Else
-            lOk := .F.
         EndIf
 
         If !lOk
@@ -957,7 +800,7 @@ User Function OS_APIALTERAR() As Logical
 
     // Usuario de servico (pagina do cliente) so acessa /CNSAAPROVA.
     If U_CNSSERVICO()
-        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+        Return OS_ERRO(403, "Usuario sem acesso a este recurso.")
     EndIf
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
@@ -965,13 +808,29 @@ User Function OS_APIALTERAR() As Logical
     aResultado := OS_NUCLEOALTERAR(jQuery)
 
     If !aResultado[1]
-        If aResultado[2] == "OS nao encontrada."
-            Return oRest:setStatusResponse(404, '{"erro":"' + OS_ESCAPARJSON(aResultado[2]) + '"}')
-        EndIf
-        Return oRest:setStatusResponse(400, '{"erro":"' + OS_ESCAPARJSON(aResultado[2]) + '"}')
+        Return OS_ERRO(If(aResultado[2] == "OS nao encontrada.", 404, 400), aResultado[2])
     EndIf
 
 Return oRest:setStatusResponse(200, OS_RESPOSTAOK(aResultado[3], "OS alterada com sucesso."))
+
+/*/{Protheus.doc} OS_SETOPC
+Grava, na ordem, os campos que vieram na query: texto preenchido ou numero <> 0.
+@param  oModelSZ1  Submodel SZ1MASTER
+@param  jQuery     Parametros da requisicao
+@param  aMapa      {{parametro, campo[, .T. = numerico]}}
+/*/
+Static Function OS_SETOPC(oModelSZ1, jQuery, aMapa)
+    Local xVal := Nil
+    Local nI   := 0
+
+    For nI := 1 To Len(aMapa)
+        xVal := If(Len(aMapa[nI]) > 2, OS_LERJSONNUM(jQuery, aMapa[nI][1]), AllTrim(OS_LERJSONTXT(jQuery, aMapa[nI][1])))
+        If !Empty(xVal)
+            oModelSZ1:SetValue(aMapa[nI][2], xVal)
+        EndIf
+    Next nI
+
+Return
 
 /*/{Protheus.doc} OS_LERHORA
 Hora do parametro ("08:30" ou "0830") -> {decimal, "HH:MM"}; sem ela, o decimal antigo.
@@ -1191,23 +1050,12 @@ Data (Date ou AAAAMMDD) -> "AAAA-MM-DD" ("" se vazia).
 @return cData    Data no formato "AAAA-MM-DD", ou "" se invalida/vazia
 /*/
 Static Function OS_DATAISO(dData)
-    Local cData := ""
+    Local cData := If(ValType(dData) == "D", AllTrim(DToS(dData)), If(ValType(dData) == "C", AllTrim(dData), ""))
 
-    If ValType(dData) == "D"
-        If Empty(dData)
-            Return ""
-        EndIf
-        cData := DToS(dData)
-    ElseIf ValType(dData) == "C"
-        cData := AllTrim(dData)
-    Else
+    If Len(cData) != 8
         Return ""
     EndIf
-
-    If Len(cData) == 8
-        Return SubStr(cData, 1, 4) + "-" + SubStr(cData, 5, 2) + "-" + SubStr(cData, 7, 2)
-    EndIf
-Return ""
+Return Left(cData, 4) + "-" + SubStr(cData, 5, 2) + "-" + Right(cData, 2)
 
 /*/{Protheus.doc} OS_ESCAPARJSON
 Escapa texto para string JSON.
@@ -1312,6 +1160,12 @@ Static Function OS_LERJSONTXT(jDados, cCampo)
     EndIf
 Return OS_DECODESAFE(xVal)
 
+/*/{Protheus.doc} OS_ERRO
+Resposta de erro dos endpoints: {"erro": cMsg}.
+/*/
+Static Function OS_ERRO(nStatus, cMsg)
+Return oRest:setStatusResponse(nStatus, '{"erro":"' + OS_ESCAPARJSON(cMsg) + '"}')
+
 /*/{Protheus.doc} OS_RESPOSTAOK
 JSON de sucesso: sucesso, os, mensagem, aprovad e interna.
 @param  cOs     Numero da OS
@@ -1342,7 +1196,6 @@ User Function OS_APILISTAR() As Logical
     Local oLinha     := Nil
     Local nPagina    := 1
     Local nTamanho   := 10
-    Local nStartIdx  := 1
     Local nTotal     := 0
     Local nMinRow    := 0
     Local nMaxRow    := 0
@@ -1367,7 +1220,7 @@ User Function OS_APILISTAR() As Logical
 
     // Usuario de servico (pagina do cliente) so acessa /CNSAAPROVA.
     If U_CNSSERVICO()
-        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+        Return OS_ERRO(403, "Usuario sem acesso a este recurso.")
     EndIf
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
@@ -1378,9 +1231,8 @@ User Function OS_APILISTAR() As Logical
         nPagina   := If(nPagina < 1, 1, nPagina)
         nTamanho  := OS_LERJSONNUM(jQuery, "tamanho")
         nTamanho  := If(nTamanho < 1 .Or. nTamanho > 100, 10, nTamanho)
-        nStartIdx := (nPagina - 1) * nTamanho + 1
-        nMinRow   := nStartIdx - 1
-        nMaxRow   := nStartIdx + nTamanho - 1
+        nMinRow   := (nPagina - 1) * nTamanho
+        nMaxRow   := nMinRow + nTamanho
 
         // Busca livre (numero, cliente ou tecnico) e Busca avancada ficam no SQL: a lista e paginada.
         cTextoUp := Upper(AllTrim(OS_LERJSONTXT(jQuery, "texto")))
@@ -1514,11 +1366,11 @@ User Function OS_APILISTAR() As Logical
 
     Recover Using oErro
         If oErro != Nil
-            Return oRest:setStatusResponse(500, '{"erro":"' + OS_ESCAPARJSON(oErro:Description) + '"}')
+            Return OS_ERRO(500, oErro:Description)
         EndIf
     End Sequence
 
-Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
+Return OS_ERRO(500, "Erro desconhecido.")
 
 /*/{Protheus.doc} OS_APIEXCLUIR
 POST /CNSAOSEXCLUIR - exclui a OS e os chamados ligados (ZA3).
@@ -1535,7 +1387,7 @@ User Function OS_APIEXCLUIR() As Logical
 
     // Usuario de servico (pagina do cliente) so acessa /CNSAAPROVA.
     If U_CNSSERVICO()
-        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+        Return OS_ERRO(403, "Usuario sem acesso a este recurso.")
     EndIf
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
@@ -1543,18 +1395,16 @@ User Function OS_APIEXCLUIR() As Logical
     Begin Sequence
 
         If Empty(cOs)
-            Return oRest:setStatusResponse(400, '{"erro":"Informe o numero da OS."}')
+            Return OS_ERRO(400, "Informe o numero da OS.")
         EndIf
 
         DbSelectArea("SZ1")
         SZ1->(DbSetOrder(1))
         If !SZ1->(DbSeek(cFilAnt + cOs))
-            Return oRest:setStatusResponse(404, '{"erro":"OS nao encontrada."}')
+            Return OS_ERRO(404, "OS nao encontrada.")
         EndIf
 
-        oModel := OS_MODELLEVE()
-        oModel:SetOperation(MODEL_OPERATION_DELETE)
-        oModel:Activate()
+        oModel := OS_MODELLEVE(MODEL_OPERATION_DELETE)
 
         If oModel:VldData()
             lOk := oModel:CommitData()
@@ -1571,16 +1421,16 @@ User Function OS_APIEXCLUIR() As Logical
         EndIf
 
         If !lOk
-            Return oRest:setStatusResponse(400, '{"erro":"' + OS_ESCAPARJSON(cErro) + '"}')
+            Return OS_ERRO(400, cErro)
         EndIf
 
         Return oRest:setStatusResponse(200, OS_RESPOSTAOK(cOs, "OS excluida com sucesso."))
 
     Recover Using oErro
-        Return oRest:setStatusResponse(500, '{"erro":"' + OS_ESCAPARJSON(oErro:Description) + '"}')
+        Return OS_ERRO(500, oErro:Description)
     End Sequence
 
-Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
+Return OS_ERRO(500, "Erro desconhecido.")
 
 /*/{Protheus.doc} OS_APICOPIAR
 POST /CNSAOSCOPIAR - copia a OS.
@@ -1596,7 +1446,7 @@ User Function OS_APICOPIAR() As Logical
 
     // Usuario de servico (pagina do cliente) so acessa /CNSAAPROVA.
     If U_CNSSERVICO()
-        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+        Return OS_ERRO(403, "Usuario sem acesso a este recurso.")
     EndIf
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
@@ -1606,10 +1456,7 @@ User Function OS_APICOPIAR() As Logical
         aResultado := OS_NUCLEOCOPIAR(cOsOrigem)
 
         If !aResultado[1]
-            If aResultado[2] == "OS nao encontrada."
-                Return oRest:setStatusResponse(404, '{"erro":"' + OS_ESCAPARJSON(aResultado[2]) + '"}')
-            EndIf
-            Return oRest:setStatusResponse(400, '{"erro":"' + OS_ESCAPARJSON(aResultado[2]) + '"}')
+            Return OS_ERRO(If(aResultado[2] == "OS nao encontrada.", 404, 400), aResultado[2])
         EndIf
 
         oJson['sucesso']    := .T.
@@ -1620,21 +1467,14 @@ User Function OS_APICOPIAR() As Logical
         Return oRest:setStatusResponse(200, oJson:ToJson())
 
     Recover Using oErro
-        Return oRest:setStatusResponse(500, '{"erro":"' + OS_ESCAPARJSON(oErro:Description) + '"}')
+        Return OS_ERRO(500, oErro:Description)
     End Sequence
 
-Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
+Return OS_ERRO(500, "Erro desconhecido.")
 
 // Interacao de OS sem chamado: bloco no fim do Memo Z1_SERV (antes do 1o bloco = descricao):
 //   === INTERACAO 24/09/2026 10:30 | 000123 | NOME DO CONSULTOR ===
 //   texto da interacao
-
-/*/{Protheus.doc} OS_MARCAINTERACAO
-Marcador de bloco de interacao no Memo.
-@return cMarca   Texto do marcador
-/*/
-Static Function OS_MARCAINTERACAO()
-Return "=== INTERACAO "
 
 /*/{Protheus.doc} OS_LIMPABORDAS
 Tira espaco, tab e quebra de linha das bordas.
@@ -1697,7 +1537,7 @@ Separa o Memo Z1_SERV em descricao e blocos de interacao.
 @return aRet    {cDescricao, aBlocos} - cada bloco {cData (DD/MM/AAAA), cHora, cConsultor, cNome, cTexto}
 /*/
 Static Function OS_SEPARAINTERACOES(cMemo)
-    Local cMarca    := OS_MARCAINTERACAO()
+    Local cMarca    := OS_MARCA
     Local nPos      := At(cMarca, cMemo)
     Local cDesc     := ""
     Local cResto    := ""
@@ -1748,7 +1588,7 @@ So os blocos de interacao do Memo (para trocar a descricao sem perder o historic
 @return cBlocos Parte de interacoes (ou "" se nao houver)
 /*/
 Static Function OS_BLOCOSINTERACAO(cMemo)
-    Local nPos := At(OS_MARCAINTERACAO(), cMemo)
+    Local nPos := At(OS_MARCA, cMemo)
     If nPos == 0
         Return ""
     EndIf
@@ -1842,12 +1682,11 @@ User Function OS_APILISTAINTERACOES() As Logical
     Local oErro   := Nil
     Local cAlias  := ""
     Local cData   := ""
-    Local cConsul := ""
     Local aCh     := {}
 
     // Usuario de servico (pagina do cliente) so acessa /CNSAAPROVA.
     If U_CNSSERVICO()
-        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+        Return OS_ERRO(403, "Usuario sem acesso a este recurso.")
     EndIf
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
@@ -1855,13 +1694,13 @@ User Function OS_APILISTAINTERACOES() As Logical
     Begin Sequence
 
         If Empty(cOs)
-            Return oRest:setStatusResponse(400, '{"erro":"Informe o numero da OS."}')
+            Return OS_ERRO(400, "Informe o numero da OS.")
         EndIf
 
         DbSelectArea("SZ1")
         SZ1->(DbSetOrder(1))
         If !SZ1->(DbSeek(cFilAnt + cOs))
-            Return oRest:setStatusResponse(404, '{"erro":"OS nao encontrada."}')
+            Return OS_ERRO(404, "OS nao encontrada.")
         EndIf
 
         aSep := OS_SEPARAINTERACOES(SZ1->Z1_SERV)
@@ -1869,10 +1708,7 @@ User Function OS_APILISTAINTERACOES() As Logical
         // OS sem chamado: a descricao vai como item unico.
         If Empty(AllTrim(SZ1->Z1_IDCH))
             If !Empty(aSep[1])
-                cData  := DToS(SZ1->Z1_DTOS)
-                If Len(cData) == 8
-                    cData := SubStr(cData, 1, 4) + "-" + SubStr(cData, 5, 2) + "-" + SubStr(cData, 7, 2)
-                EndIf
+                cData  := OS_DATAISO(SZ1->Z1_DTOS)
                 oLinha := JsonObject():New()
                 oLinha['seq']       := "OS-DESC"
                 oLinha['consultor'] := OS_NOMETEC(AllTrim(SZ1->Z1_TEC))
@@ -1912,19 +1748,11 @@ User Function OS_APILISTAINTERACOES() As Logical
         EndSql
 
         While !(cAlias)->(Eof())
-            If ValType((cAlias)->ZA2_DATA) == "D"
-                cData := DToS((cAlias)->ZA2_DATA)
-            Else
-                cData := AllTrim((cAlias)->ZA2_DATA)
-            EndIf
-            If Len(cData) == 8
-                cData := SubStr(cData, 1, 4) + "-" + SubStr(cData, 5, 2) + "-" + SubStr(cData, 7, 2)
-            EndIf
-            cConsul := AllTrim((cAlias)->ZA2_CONSUL)
+            cData := OS_DATAISO((cAlias)->ZA2_DATA)
 
             oLinha := JsonObject():New()
             oLinha['seq']       := AllTrim((cAlias)->ZA2_IDCH) + "-" + AllTrim((cAlias)->ZA2_IDGRID)
-            oLinha['consultor'] := If(Empty(cConsul), "", AllTrim(Posicione("AA1", 1, xFilial("AA1") + cConsul, "AA1_NOMTEC")))
+            oLinha['consultor'] := OS_NOMETEC(AllTrim((cAlias)->ZA2_CONSUL))
             oLinha['data']      := cData
             oLinha['hora']      := AllTrim((cAlias)->ZA2_HORA)
             oLinha['texto']     := OS_DECODESAFE(AllTrim((cAlias)->ZA2_DESCRI))
@@ -1946,12 +1774,14 @@ User Function OS_APILISTAINTERACOES() As Logical
         oJson['items'] := aItens
 
         aCh := OS_ZA3("LER", cOs, SZ1->Z1_IDCH)
+        ZA1->(DbSetOrder(1))
         For nI := 1 To Len(aCh)
+            ZA1->(DbSeek(xFilial("ZA1") + aCh[nI]))
             oLinha := JsonObject():New()
             oLinha['idCh']    := aCh[nI]
-            oLinha['assunto'] := OS_DECODESAFE(AllTrim(Posicione("ZA1", 1, xFilial("ZA1") + aCh[nI], "ZA1_ASSUNT")))
-            oLinha['status']  := AllTrim(Posicione("ZA1", 1, xFilial("ZA1") + aCh[nI], "ZA1_STATUS"))
-            oLinha['data']    := OS_DATAISO(Posicione("ZA1", 1, xFilial("ZA1") + aCh[nI], "ZA1_DATA"))   // abertura - ordem cronologica
+            oLinha['assunto'] := OS_DECODESAFE(AllTrim(ZA1->ZA1_ASSUNT))
+            oLinha['status']  := AllTrim(ZA1->ZA1_STATUS)
+            oLinha['data']    := OS_DATAISO(ZA1->ZA1_DATA)   // abertura - ordem cronologica
             aCh[nI] := oLinha
         Next nI
         oJson['chamados'] := aCh
@@ -1959,10 +1789,10 @@ User Function OS_APILISTAINTERACOES() As Logical
         Return oRest:setStatusResponse(200, oJson:ToJson())
 
     Recover Using oErro
-        Return oRest:setStatusResponse(500, '{"erro":"' + OS_ESCAPARJSON(oErro:Description) + '"}')
+        Return OS_ERRO(500, oErro:Description)
     End Sequence
 
-Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
+Return OS_ERRO(500, "Erro desconhecido.")
 
 /*/{Protheus.doc} OS_APINOVAINTERACAO
 POST /CNSAOSINTERACOESINCLUIR - OS sem chamado: o texto substitui a descricao (Z1_SERV).
@@ -1978,7 +1808,7 @@ User Function OS_APINOVAINTERACAO() As Logical
 
     // Usuario de servico (pagina do cliente) so acessa /CNSAAPROVA.
     If U_CNSSERVICO()
-        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+        Return OS_ERRO(403, "Usuario sem acesso a este recurso.")
     EndIf
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
@@ -1986,20 +1816,20 @@ User Function OS_APINOVAINTERACAO() As Logical
     Begin Sequence
 
         If Empty(cOs)
-            Return oRest:setStatusResponse(400, '{"erro":"Informe o numero da OS."}')
+            Return OS_ERRO(400, "Informe o numero da OS.")
         EndIf
         If Empty(cTexto)
-            Return oRest:setStatusResponse(400, '{"erro":"Escreva o texto da interacao."}')
+            Return OS_ERRO(400, "Escreva o texto da interacao.")
         EndIf
 
         DbSelectArea("SZ1")
         SZ1->(DbSetOrder(1))
         If !SZ1->(DbSeek(cFilAnt + cOs))
-            Return oRest:setStatusResponse(404, '{"erro":"OS nao encontrada."}')
+            Return OS_ERRO(404, "OS nao encontrada.")
         EndIf
 
         If !Empty(AllTrim(SZ1->Z1_IDCH))
-            Return oRest:setStatusResponse(400, '{"erro":"OS vinculada ao chamado ' + AllTrim(SZ1->Z1_IDCH) + ' - a interacao deve ser gravada no chamado."}')
+            Return OS_ERRO(400, "OS vinculada ao chamado " + AllTrim(SZ1->Z1_IDCH) + " - a interacao deve ser gravada no chamado.")
         EndIf
 
         RecLock("SZ1", .F.)
@@ -2014,10 +1844,10 @@ User Function OS_APINOVAINTERACAO() As Logical
         Return oRest:setStatusResponse(200, oJson:ToJson())
 
     Recover Using oErro
-        Return oRest:setStatusResponse(500, '{"erro":"' + OS_ESCAPARJSON(oErro:Description) + '"}')
+        Return OS_ERRO(500, oErro:Description)
     End Sequence
 
-Return oRest:setStatusResponse(500, '{"erro":"Erro desconhecido."}')
+Return OS_ERRO(500, "Erro desconhecido.")
 
 /*/{Protheus.doc} OS_ZA3
 Chamados da OS (ZA3; Z1_IDCH = principal):
@@ -2224,8 +2054,13 @@ Static Function OS_EMAIL(cAcao, x1)
     Case cAcao == "DESTINO"
         xRet := {}
         aCh  := OS_ZA3("LER", AllTrim(SZ1->Z1_OS), AllTrim(SZ1->Z1_IDCH))
-        For nI := 1 To Len(aCh)
-            aResp := StrTokArr2(StrTran(Posicione("ZA1", 1, xFilial("ZA1") + aCh[nI], "ZA1_EMAIL"), ",", ";"), ";", .F.)
+        For nI := 1 To Len(aCh) + 1
+            If nI > Len(aCh) .And. Len(xRet) > 0
+                Exit
+            EndIf
+            cTexto := If(nI > Len(aCh), Posicione("SA1", 1, xFilial("SA1") + SZ1->Z1_CLI + SZ1->Z1_LOJA, "A1_EMAIL"), ;
+                Posicione("ZA1", 1, xFilial("ZA1") + aCh[nI], "ZA1_EMAIL"))
+            aResp := StrTokArr2(StrTran(cTexto, ",", ";"), ";", .F.)
             For nJ := 1 To Len(aResp)
                 cEmail := Lower(AllTrim(aResp[nJ]))
                 If "@" $ cEmail .And. AScan(xRet, cEmail) == 0
@@ -2233,15 +2068,6 @@ Static Function OS_EMAIL(cAcao, x1)
                 EndIf
             Next nJ
         Next nI
-        If Len(xRet) == 0
-            aResp := StrTokArr2(StrTran(Posicione("SA1", 1, xFilial("SA1") + SZ1->Z1_CLI + SZ1->Z1_LOJA, "A1_EMAIL"), ",", ";"), ";", .F.)
-            For nJ := 1 To Len(aResp)
-                cEmail := Lower(AllTrim(aResp[nJ]))
-                If "@" $ cEmail .And. AScan(xRet, cEmail) == 0
-                    AAdd(xRet, cEmail)
-                EndIf
-            Next nJ
-        EndIf
 
     EndCase
 
@@ -2266,9 +2092,7 @@ User Function OS_APRPUB(cAcao, x1, x2)
 
     Do Case
     Case cAcao == "GRAVAR"
-        oModel := OS_MODELLEVE()
-        oModel:SetOperation(MODEL_OPERATION_UPDATE)
-        oModel:Activate()
+        oModel := OS_MODELLEVE(MODEL_OPERATION_UPDATE)
         oSZ1 := oModel:GetModel("SZ1MASTER")
         // SetValue (LoadValue nao marca o model como alterado e o CommitData nao grava).
         For nI := 1 To Len(x2)
