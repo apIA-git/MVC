@@ -36,7 +36,7 @@ User Function CNS002()
 
         // Legenda da aprovacao - a mesma da coluna Aprovacao do portal (U_CNSAPR "LEG").
         For nI := 1 To Len(aLeg)
-            l_oBrowse:AddLegend("apia.cnsa004.U_CNSAPR('LEG',{SZ1->Z1_APROVAD,SZ1->Z1_APVTIPO,SZ1->Z1_APVDATA,SZ1->Z1_ENVDT})[1]=='" + ;
+            l_oBrowse:AddLegend("apia.cnsa004.U_CNSAPR('LEG',{SZ1->Z1_APROVAD,SZ1->Z1_APVTIPO,SZ1->Z1_APVDATA,SZ1->Z1_ENVDT,SZ1->Z1_DTDIGIT})[1]=='" + ;
                 aLeg[nI][1] + "'", OS_CORAPR(aLeg[nI][2])[1], aLeg[nI][1])
         Next nI
         l_oBrowse:AddLegend(".T.", "WHITE", "Sem aprovacao (legado)")
@@ -1886,7 +1886,7 @@ User Function OS_APILISTAR() As Logical
             oLinha['aprovad']        := AllTrim((cAlias)->Z1_APROVAD)
             oLinha['apvtipo']        := AllTrim((cAlias)->Z1_APVTIPO)
             oLinha['aprovacao']      := apia.cnsa004.U_CNSAPR("LEG", {(cAlias)->Z1_APROVAD, (cAlias)->Z1_APVTIPO, ;
-                                            (cAlias)->Z1_APVDATA, (cAlias)->Z1_ENVDT})[1]
+                                            (cAlias)->Z1_APVDATA, (cAlias)->Z1_ENVDT, (cAlias)->Z1_DTDIGIT})[1]
             AAdd(aRetorno, oLinha)
 
             (cAlias)->(DbSkip())
