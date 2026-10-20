@@ -170,7 +170,7 @@ protected void Page_Load(object sender, EventArgs e)
 
     <div class="grade">
       <div><b>Data</b><%= H(Campo("data")) %></div>
-      <div><b>Horário</b><%= H(Campo("horario")) %></div>
+      <div><b>Horário</b><%= H(Campo("horario").Replace(" as ", " às ")) %></div>
       <div><b>Total de horas</b><%= H(Campo("horas")) %></div>
       <div><b>Analista</b><%= H(Campo("analista")) %></div>
       <% if (Campo("projeto") != "") { %><div><b>Projeto</b><%= H(Campo("projeto")) %></div><% } %>
@@ -216,7 +216,7 @@ protected void Page_Load(object sender, EventArgs e)
   <div class="estado">
     <div class="icone">ℹ️</div>
     <h1>Esta OS já foi respondida</h1>
-    <p class="sub">Para dúvidas, fale com a Ápia: <%= H(Cfg("TELEFONE_APIA")) %>.</p>
+    <p class="sub">Para dúvidas, fale com a Ápia: <%= H(Cfg("TELEFONE_APIA")) %> ou <a href="mailto:<%= H(Cfg("EMAIL_APIA")) %>"><%= H(Cfg("EMAIL_APIA")) %></a>.</p>
   </div>
 
 <% } else if (Tela == "fora") { %>
@@ -224,7 +224,7 @@ protected void Page_Load(object sender, EventArgs e)
     <div class="icone">🔧</div>
     <h1>Sistema indisponível no momento</h1>
     <p class="sub">Seu link continua valendo. Tente novamente mais tarde.<br>
-    Se precisar, fale com a Ápia: <%= H(Cfg("TELEFONE_APIA")) %>.</p>
+    Se precisar, fale com a Ápia: <%= H(Cfg("TELEFONE_APIA")) %> ou <a href="mailto:<%= H(Cfg("EMAIL_APIA")) %>"><%= H(Cfg("EMAIL_APIA")) %></a>.</p>
   </div>
 
 <% } else { %>
@@ -232,7 +232,7 @@ protected void Page_Load(object sender, EventArgs e)
     <div class="icone">⏱️</div>
     <h1>Link inválido ou expirado</h1>
     <p class="sub">O link de aprovação vale por tempo limitado após o envio da OS.<br>
-    Peça um novo envio à Ápia: <%= H(Cfg("TELEFONE_APIA")) %>.</p>
+    Peça um novo envio à Ápia: <%= H(Cfg("TELEFONE_APIA")) %> ou <a href="mailto:<%= H(Cfg("EMAIL_APIA")) %>"><%= H(Cfg("EMAIL_APIA")) %></a>.</p>
   </div>
 <% } %>
 
