@@ -2736,8 +2736,8 @@ Static Function OS_EMAIL(cAcao, x1)
             AAdd(xRet, {"Projeto", AllTrim(SZ1->Z1_PROJET) + " - " + U_CNSOUTL("TEXTO", OS_NOMEPROJ(AllTrim(SZ1->Z1_PROJET)))})
         EndIf
         If !Empty(SZ1->Z1_TAREFA)
-            AAdd(xRet, {"Tarefa", AllTrim(SZ1->Z1_TAREFA) + " - " + U_CNSOUTL("TEXTO", OS_NOMETAREFA(AllTrim(SZ1->Z1_PROJET), ;
-                AllTrim(SZ1->Z1_TAREFA), AllTrim(SZ1->Z1_REVISA)))})
+            cTexto := OS_NOMETAREFA(AllTrim(SZ1->Z1_PROJET), AllTrim(SZ1->Z1_TAREFA), AllTrim(SZ1->Z1_REVISA))
+            AAdd(xRet, {"Tarefa", AllTrim(SZ1->Z1_TAREFA) + If(Empty(cTexto), "", " - " + U_CNSOUTL("TEXTO", cTexto))})
         EndIf
         aCh := OS_ZA3("LER", AllTrim(SZ1->Z1_OS), AllTrim(SZ1->Z1_IDCH))
         If Len(aCh) > 0
