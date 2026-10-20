@@ -14,6 +14,8 @@ Historico de aprovacao de OS (SZA), so consulta - uma linha por evento. Com cOs,
 User Function CNS004(cOs)
 
     Local l_oBrowse := Nil
+    Local aLeg      := HA_LEGS()
+    Local nI        := 0
     // Mesmo namespace: precisa do prefixo "u_".
     Private aRotina := u_MenuDef()
 
@@ -29,15 +31,9 @@ User Function CNS004(cOs)
             l_oBrowse:SetFilterDefault("SZA->ZA_OS == '" + PadR(AllTrim(cOs), TamSX3("ZA_OS")[1]) + "'")
         EndIf
 
-        // Primeira que casar (ordem importa): envio tem ZA_ENVDT; os demais, ZA_DTREC.
-        l_oBrowse:AddLegend("!Empty(SZA->ZA_ENVDT)",                              "YELLOW", "Envio ao cliente")
-        l_oBrowse:AddLegend("SZA->ZA_APROVAD=='S' .And. SZA->ZA_APVTIPO=='W'",    "GREEN",  "Aprovada pelo cliente")
-        l_oBrowse:AddLegend("SZA->ZA_APROVAD=='S'",                                "BLUE",   "Aprovada (manual / prazo)")
-        l_oBrowse:AddLegend("SZA->ZA_APROVAD=='R' .And. SZA->ZA_APVTIPO=='M'",    "GRAY",   "Pre-recusada (interna)")
-        l_oBrowse:AddLegend("SZA->ZA_APROVAD=='R'",                                "RED",    "Recusada (cliente / manual)")
-        l_oBrowse:AddLegend("SZA->ZA_APROVAD=='P'",                                "VIOLET", "Reaberta (aguarda pre-aprovacao)")
-        l_oBrowse:AddLegend("SZA->ZA_APVTIPO=='M'",                                "ORANGE", "Pre-aprovada")
-        l_oBrowse:AddLegend(".T.",                                                 "WHITE",  "Reaberta / reavaliada")
+        For nI := 1 To Len(aLeg)
+            l_oBrowse:AddLegend(aLeg[nI][1], aLeg[nI][2], aLeg[nI][4])
+        Next nI
 
         l_oBrowse:Activate()
 
@@ -155,23 +151,35 @@ User Function HA_VISUALIZAR()
 Return
 
 /*/{Protheus.doc} HA_LEGENDA
-Legenda do evento (ZA_APROVAD + ZA_APVTIPO + data).
+Menu Legenda do historico.
 /*/
 User Function HA_LEGENDA()
+    Local aLeg := HA_LEGS()
+    Local aCor := {}
+    Local nI   := 0
 
-    BrwLegenda("Legenda", "Evento", ;
-        { ;
-            { "BR_AMARELO",  "Envio ao cliente"            }, ;
-            { "BR_VERDE",    "Aprovada pelo cliente"       }, ;
-            { "BR_AZUL",     "Aprovada (manual / prazo)"   }, ;
-            { "BR_CINZA",    "Pre-recusada (interna)"      }, ;
-            { "BR_VERMELHO", "Recusada (cliente / manual)" }, ;
-            { "BR_VIOLETA",  "Reaberta (aguarda pre-aprovacao)" }, ;
-            { "BR_LARANJA",  "Pre-aprovada"                }, ;
-            { "BR_BRANCO",   "Reaberta / reavaliada"       }  ;
-        })
+    For nI := 1 To Len(aLeg)
+        AAdd(aCor, {aLeg[nI][3], aLeg[nI][4]})
+    Next nI
+    BrwLegenda("Legenda", "Evento", aCor)
 
 Return
+
+/*/{Protheus.doc} HA_LEGS
+Legenda do evento da SZA (primeira que casar) - mesmos textos e cores da coluna Aprovacao do portal.
+@return aRet  {{condicao, cor do browse, imagem, texto}}
+/*/
+Static Function HA_LEGS()
+Return {{"!Empty(SZA->ZA_ENVDT)",                                                     "YELLOW", "BR_AMARELO", "Aguardando cliente"}, ;
+        {"SZA->ZA_APROVAD=='S' .And. SZA->ZA_APVTIPO=='W'",                           "GREEN",  "BR_VERDE",   "Aprovada (cliente)"}, ;
+        {"SZA->ZA_APROVAD=='S' .And. SZA->ZA_APVTIPO=='D'",                           "BLUE",   "BR_AZUL",    "Aprovada (prazo)"}, ;
+        {"SZA->ZA_APROVAD=='S' .Or. (SZA->ZA_APROVAD=='A' .And. SZA->ZA_APVTIPO=='M')", "BLUE",   "BR_AZUL",    "Aprovada (manual)"}, ;
+        {"SZA->ZA_APROVAD=='R' .And. SZA->ZA_APVTIPO=='W'",                           "PINK",   "BR_PINK",    "Recusada (cliente)"}, ;
+        {"SZA->ZA_APROVAD=='R'",                                                      "PINK",   "BR_PINK",    "Recusada (manual)"}, ;
+        {"SZA->ZA_APROVAD=='P'",                                                      "YELLOW", "BR_AMARELO", "Aguardando pre-aprovacao interna"}, ;
+        {"SZA->ZA_APROVAD=='N' .And. SZA->ZA_APVTIPO=='M'",                           "BLUE",   "BR_AZUL",    "Pre-aprovada, a enviar"}, ;
+        {"SZA->ZA_APROVAD=='A'",                                                      "GRAY",   "BR_CINZA",   "Nao requer aprovacao"}, ;
+        {".T.",                                                                       "BLUE",   "BR_AZUL",    "A enviar ao cliente"}}
 
 // U_CNSAPR - unico ponto de regras da aprovacao (planilha aprovacao-os-transacoes.xlsx).
 // SZ1 guarda o estado; SZA e o livro de eventos (uma linha por evento). SZA (model FCNS004)
@@ -225,6 +233,9 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
     Local cAlias   := ""
     Local aEnv     := {}
     Local cMsgEnv  := ""
+    Local cErro    := ""
+    Local aCampos  := {}
+    Local dValid   := CToD("")
 
     Default cOrigem := ""
     Default jDados  := JsonObject():New()
@@ -281,15 +292,20 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
                 EndIf
             ElseIf nOper == MODEL_OPERATION_UPDATE
                 // Edicao comum: aprovacao como esta no banco (outro pode ter mudado com a tela aberta).
-                For nI := 1 To Len(AP_CAMPOSAPR())
-                    oSZ1:LoadValue(AP_CAMPOSAPR()[nI], SZ1->(FieldGet(FieldPos(AP_CAMPOSAPR()[nI]))))
+                aCampos := AP_ZERAR()
+                AAdd(aCampos, "Z1_APROVAD")
+                AAdd(aCampos, "Z1_APVTIPO")
+                AAdd(aCampos, "Z1_OSENVCL")
+                For nI := 1 To Len(aCampos)
+                    oSZ1:LoadValue(aCampos[nI], SZ1->(FieldGet(FieldPos(aCampos[nI]))))
                 Next nI
             EndIf
             If !Empty(aReg)
                 oSZ1:LoadValue("Z1_APROVAD", aReg[1])
                 oSZ1:LoadValue("Z1_APVTIPO", AP_VAL("Z1_APVTIPO", aReg[2]))
-                For nI := 1 To Len(AP_ZERAR())
-                    oSZ1:LoadValue(AP_ZERAR()[nI], AP_VAL(AP_ZERAR()[nI], ""))
+                aCampos := AP_ZERAR()
+                For nI := 1 To Len(aCampos)
+                    oSZ1:LoadValue(aCampos[nI], AP_VAL(aCampos[nI], ""))
                 Next nI
                 oSZ1:LoadValue("Z1_OSENVCL", "N")
                 aRet[3] := aReg[1]
@@ -320,12 +336,9 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
         If cTrans == "PRR" .And. Empty(cMotivo)
             Return {.F., "Informe o motivo da pre-recusa.", "", ""}
         EndIf
-        If !AP_TRAVAR(cOs)
-            Return {.F., "OS em uso por outra aprovacao. Tente novamente.", "", ""}
-        EndIf
-        If !AP_SZ1(cOs) .Or. AllTrim(SZ1->Z1_APROVAD) != "P"
-            AP_DESTRAVAR(cOs)
-            Return {.F., "A OS nao esta aguardando pre-aprovacao.", "", ""}
+        cErro := AP_PEGAR(cOs, "P", "A OS nao esta aguardando pre-aprovacao.")
+        If !Empty(cErro)
+            Return {.F., cErro, "", ""}
         EndIf
         aUsu := AP_USUARIO()
         If cTrans == "PRE"
@@ -360,13 +373,10 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
         If cTrans == "REC" .And. Empty(cMotivo)
             Return {.F., "Informe o motivo da recusa.", "", ""}
         EndIf
-        If !AP_TRAVAR(cOs)
-            Return {.F., "OS em uso por outra aprovacao. Tente novamente.", "", ""}
-        EndIf
         // Dentro da trava: o segundo ve a OS ja decidida.
-        If !AP_SZ1(cOs) .Or. AllTrim(SZ1->Z1_APROVAD) != "N"
-            AP_DESTRAVAR(cOs)
-            Return {.F., "Esta OS ja foi decidida.", "", ""}
+        cErro := AP_PEGAR(cOs, "N", "Esta OS ja foi decidida.")
+        If !Empty(cErro)
+            Return {.F., cErro, "", ""}
         EndIf
         aUsu     := AP_USUARIO()
         cCliente := AllTrim(Posicione("SA1", 1, xFilial("SA1") + SZ1->Z1_CLI + SZ1->Z1_LOJA, "A1_NOME"))
@@ -402,12 +412,9 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
         If Empty(AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC")))
             Return {.F., "Somente analista cadastrado (tecnico) pode enviar a OS ao cliente.", "", ""}
         EndIf
-        If !AP_TRAVAR(cOs)
-            Return {.F., "OS em uso por outra aprovacao. Tente novamente.", "", ""}
-        EndIf
-        If !AP_SZ1(cOs) .Or. AllTrim(SZ1->Z1_APROVAD) != "N"
-            AP_DESTRAVAR(cOs)
-            Return {.F., "So OS aguardando aprovacao do cliente pode ser enviada.", "", ""}
+        cErro := AP_PEGAR(cOs, "N", "So OS aguardando aprovacao do cliente pode ser enviada.")
+        If !Empty(cErro)
+            Return {.F., cErro, "", ""}
         EndIf
         cOs   := SZ1->Z1_OS
         cNovo := AllTrim(SZ1->Z1_APVTIPO)
@@ -416,15 +423,13 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
             AP_DESTRAVAR(cOs)
             Return {.F., "Cliente sem e-mail no chamado da OS nem no cadastro.", "", ""}
         EndIf
-        For nI := 1 To Len(aPara)
-            cEmail += If(nI > 1, ";", "") + aPara[nI]
-        Next nI
         // Token: 64 hexa (2 UUID v4) so no link; na SZA so o SHA-256.
         cToken := Lower(StrTran(FWUUIDV4(), "-", "") + StrTran(FWUUIDV4(), "-", ""))
         cHash  := AP_HASH(cToken)
         aUsu   := AP_USUARIO()
         // E-mail primeiro: se nenhum sair, nada e gravado. Grava so quem recebeu.
-        aEnv := AP_ENVIAR(cOs, aPara, cToken, dHoje + SuperGetMV("MV_CNSAVLD", .F., 2))
+        dValid := dHoje + SuperGetMV("MV_CNSAVLD", .F., 2)
+        aEnv   := AP_ENVIAR(cOs, aPara, cToken, dValid)
         If Empty(aEnv[1])
             AP_DESTRAVAR(cOs)
             Return {.F., "Nenhum e-mail foi enviado ao cliente (" + AP_JUNTA(aEnv[2], ", ") + "). Confira o e-mail " + ;
@@ -437,7 +442,7 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
                    {"Z1_APVDOR", ""}, {"Z1_APVDATA", ""}, {"Z1_APVHORA", ""}, {"Z1_APVIP", ""}}
         aSZA   := {{"ZA_APROVAD", "N"}, {"ZA_APVTIPO", cNovo}, {"ZA_HASH", cHash}, ;
                    {"ZA_ENVDT", dHoje}, {"ZA_ENVHR", cAgora}, {"ZA_PRAZO", dHoje + SuperGetMV("MV_CNSAPRZ", .F., 2)}, ;
-                   {"ZA_VALID", dHoje + SuperGetMV("MV_CNSAVLD", .F., 2)}, {"ZA_EMAIL", cEmail}, {"ZA_POR", aUsu[1]}}
+                   {"ZA_VALID", dValid}, {"ZA_EMAIL", cEmail}, {"ZA_POR", aUsu[1]}}
         aRet := AP_GRAVAR(cOs, aSZ1, aSZA)
         AP_DESTRAVAR(cOs)
         If aRet[1]
@@ -546,7 +551,7 @@ Static Function AP_GRAVAR(cOs, aSZ1, aSZA)
         Begin Sequence
             aRet := AP_GRAVASZA(cOs, aSZA)
             If aRet[1]
-                aRet := apia.cnsa002.U_OS_APRPUB("GRAVAR", cOs, AP_VALORES(aSZ1, "SZ1"))
+                aRet := apia.cnsa002.U_OS_APRPUB("GRAVAR", cOs, AP_VALORES(aSZ1))
             EndIf
         Recover Using oErro
             aRet := {.F., "Erro ao gravar a aprovacao: " + If(oErro != Nil, oErro:Description, "")}
@@ -569,7 +574,7 @@ Static Function AP_GRAVASZA(cOs, aSZA)
     Local oAtivo := FWModelActive()
     Local oModel := HA_MONTARMODEL(MODEL_OPERATION_INSERT, .T.)
     Local oSZA   := oModel:GetModel("SZAMASTER")
-    Local aVal   := AP_VALORES(aSZA, "SZA")
+    Local aVal   := AP_VALORES(aSZA)
     Local aRet   := {.T., ""}
     Local xErro  := Nil
     Local nI     := 0
@@ -597,7 +602,7 @@ Ajusta cada {campo, valor} ao tipo/tamanho do dicionario (data, caractere).
 @param  aCampos  {{campo, valor}}
 @return aRet     {{campo, valor ajustado}}
 /*/
-Static Function AP_VALORES(aCampos, cTab)
+Static Function AP_VALORES(aCampos)
     Local aRet := {}
     Local nI   := 0
     For nI := 1 To Len(aCampos)
@@ -634,17 +639,6 @@ Campos da aprovacao zerados na inclusao, na reavaliacao e na reabertura.
 /*/
 Static Function AP_ZERAR()
 Return {"Z1_APVDOR", "Z1_APVMAIL", "Z1_APVIP", "Z1_APVDATA", "Z1_APVHORA", "Z1_ENVDT", "Z1_ENVHR", "Z1_APVOBS"}
-
-/*/{Protheus.doc} AP_CAMPOSAPR
-Todos os campos da aprovacao na SZ1 (estado + os zerados).
-/*/
-Static Function AP_CAMPOSAPR()
-    Local aRet := {"Z1_APROVAD", "Z1_APVTIPO", "Z1_OSENVCL"}
-    Local nI   := 0
-    For nI := 1 To Len(AP_ZERAR())
-        AAdd(aRet, AP_ZERAR()[nI])
-    Next nI
-Return aRet
 
 /*/{Protheus.doc} AP_UTF8
 Acento UTF-8 que chega quebrado em 2 caracteres CP1252 (igual ao CH_DECODESAFE do CNSA001).
@@ -729,18 +723,28 @@ Static Function AP_PROXSEQ(cOs)
 
 Return StrZero(nSeq + 1, TamSX3("ZA_SEQ")[1])
 
-/*/{Protheus.doc} AP_TRAVAR
-Trava por OS (LockByName) - tenta por ate ~5 segundos.
+/*/{Protheus.doc} AP_PEGAR
+Trava a OS (LockByName, ate ~5 s) e posiciona a SZ1 com Z1_APROVAD = cEstado; senao destrava.
+@return cErro  "" se pegou; senao a mensagem
 /*/
-Static Function AP_TRAVAR(cOs)
+Static Function AP_PEGAR(cOs, cEstado, cMsg)
     Local nI := 0
+
     For nI := 1 To 25
         If LockByName("CNSAPR_" + AllTrim(cOs), .T., .F.)
-            Return .T.
+            Exit
         EndIf
         Sleep(200)
     Next nI
-Return .F.
+    If nI > 25
+        Return "OS em uso por outra aprovacao. Tente novamente."
+    EndIf
+    If !AP_SZ1(cOs) .Or. AllTrim(SZ1->Z1_APROVAD) != cEstado
+        AP_DESTRAVAR(cOs)
+        Return cMsg
+    EndIf
+
+Return ""
 
 Static Function AP_DESTRAVAR(cOs)
     UnLockByName("CNSAPR_" + AllTrim(cOs), .T., .F.)
@@ -756,6 +760,15 @@ Static Function AP_TXT(jDados, cChave)
     EndIf
     xVal := jDados[cChave]
 Return If(xVal == Nil, "", AllTrim(cValToChar(xVal)))
+
+/*/{Protheus.doc} AP_ERRO
+Resposta de erro dos endpoints: {"erro": cMsg}.
+/*/
+Static Function AP_ERRO(nStatus, cMsg)
+    Local oJson := JsonObject():New()
+
+    oJson["erro"] := cMsg
+Return oRest:setStatusResponse(nStatus, oJson:ToJson())
 
 /*/{Protheus.doc} AP_HASH
 SHA-256 em hexa minusculo (igual ao hash('sha256') do PHP).
@@ -840,12 +853,16 @@ Static Function AP_ENVIAR(cOs, aPara, cToken, dValid)
     Local cPara := ""
     Local aLin  := apia.cnsa002.U_OS_APRPUB("RESUMO", cOs)
     Local cDesc := U_CNSOUTL("TEXTO", apia.cnsa002.U_OS_APRPUB("DESCRICAO", cOs))
-    Local cUrl  := AP_SEMBARRA(AllTrim(SuperGetMV("MV_CNSAURL", .F., "https://www.apia.com.br/Aprovador-OS")))
-    // MV_CNSAURL .../aprovacao -> .../aprovacao/<token>; outra pagina -> ?t=<token>.
-    Local cLink := cUrl + If("/aprovacao" $ Lower(cUrl), "/", "/?t=") + cToken
+    Local cUrl  := AllTrim(SuperGetMV("MV_CNSAURL", .F., "https://www.apia.com.br/Aprovador-OS"))
+    Local cLink := ""
     Local cObs  := ""
     Local nI    := 0
 
+    // Sem a barra final; MV_CNSAURL .../aprovacao -> .../aprovacao/<token>, outra pagina -> ?t=<token>.
+    While Right(cUrl, 1) == "/"
+        cUrl := Left(cUrl, Len(cUrl) - 1)
+    EndDo
+    cLink := cUrl + If("/aprovacao" $ Lower(cUrl), "/", "/?t=") + cToken
     cObs := '<div style="text-align:center;margin:8px 0 16px">' + ;
         '<a href="' + cLink + '" style="display:inline-block;background-color:#1a7fc1;color:#ffffff;' + ;
         'font-size:15px;font-weight:bold;padding:12px 28px;border-radius:6px;text-decoration:none">' + ;
@@ -867,15 +884,6 @@ Static Function AP_ENVIAR(cOs, aPara, cToken, dValid)
     Next nI
 
 Return {aOk, aErro}
-
-/*/{Protheus.doc} AP_SEMBARRA
-URL sem a barra final (MV_CNSAURL com ou sem "/" no fim da o mesmo link).
-/*/
-Static Function AP_SEMBARRA(cUrl)
-    While Right(cUrl, 1) == "/"
-        cUrl := Left(cUrl, Len(cUrl) - 1)
-    EndDo
-Return cUrl
 
 /*/{Protheus.doc} AP_EMAILOK
 Formato minimo de e-mail: algo@dominio.ext, sem espaco.
@@ -1004,19 +1012,18 @@ User Function CNSAP_API() As Logical
 
     // Usuario de servico (pagina do cliente) so acessa /CNSAAPROVA.
     If U_CNSSERVICO()
-        Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
+        Return AP_ERRO(403, "Usuario sem acesso a este recurso.")
     EndIf
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
     If !(cTrans $ "PRE|PRR|APR|REC|ENV") .Or. Len(cTrans) != 3 .Or. Empty(cOs)
-        Return oRest:setStatusResponse(400, '{"erro":"Informe os e trans (PRE, PRR, APR, REC ou ENV)."}')
+        Return AP_ERRO(400, "Informe os e trans (PRE, PRR, APR, REC ou ENV).")
     EndIf
     jDados["motivo"] := AP_TXT(jQuery, "motivo")
 
     aRet := U_CNSAPR(cTrans, cOs, If(cTrans $ "PRE|PRR", "M", If(cTrans == "ENV", "", "I")), jDados)
     If !aRet[1]
-        oJson["erro"] := aRet[2]
-        Return oRest:setStatusResponse(400, oJson:ToJson())
+        Return AP_ERRO(400, aRet[2])
     EndIf
     oJson["sucesso"] := .T.
     oJson["os"]      := cOs
@@ -1040,7 +1047,7 @@ User Function CNSAAP_GET() As Logical
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
     If !aRet[1]
-        Return oRest:setStatusResponse(If(aRet[2] == "DECIDIDA", 409, 404), '{"erro":"' + aRet[2] + '"}')
+        Return AP_ERRO(If(aRet[2] == "DECIDIDA", 409, 404), aRet[2])
     EndIf
 
 Return oRest:setStatusResponse(200, aRet[3]:ToJson())
@@ -1064,10 +1071,10 @@ User Function CNSAAP_POST() As Logical
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
     If !aCns[1]
-        Return oRest:setStatusResponse(If(aCns[2] == "DECIDIDA", 409, 404), '{"erro":"' + aCns[2] + '"}')
+        Return AP_ERRO(If(aCns[2] == "DECIDIDA", 409, 404), aCns[2])
     EndIf
     If cDecisao != "APR" .And. cDecisao != "REC"
-        Return oRest:setStatusResponse(400, '{"erro":"Decisao invalida."}')
+        Return AP_ERRO(400, "Decisao invalida.")
     EndIf
 
     jDados["motivo"] := AP_TXT(jQuery, "motivo")
@@ -1088,8 +1095,7 @@ User Function CNSAAP_POST() As Logical
 
     aRet := U_CNSAPR(cDecisao, aCns[3]["os"], "W", jDados)
     If !aRet[1]
-        oJson["erro"] := aRet[2]
-        Return oRest:setStatusResponse(If("decidida" $ aRet[2], 409, 400), oJson:ToJson())
+        Return AP_ERRO(If("decidida" $ aRet[2], 409, 400), aRet[2])
     EndIf
     oJson["sucesso"] := .T.
     oJson["os"]      := aCns[3]["os"]
