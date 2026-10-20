@@ -473,9 +473,10 @@ User Function OS_TELA(nOper)
     Local oModel := Nil
     Local cOs    := SZ1->Z1_OS
 
-    // M->Z1_* no frame que fica vivo com a tela aberta (lupas/F3).
+    // M->Z1_* no frame que fica vivo com a tela aberta (lupas/F3). Pelo dicionario (.T.): inclui os campos
+    // virtuais (nome do cliente etc.) - sem eles o fechamento da lupa fazia LoadValue com Nil.
     If lGrava
-        RegToMemory("SZ1", nOper == MODEL_OPERATION_INSERT, .F.)
+        RegToMemory("SZ1", nOper == MODEL_OPERATION_INSERT, .T.)
     EndIf
     oModel := OS_MONTARMODEL(nOper)
     If nOper == MODEL_OPERATION_INSERT
