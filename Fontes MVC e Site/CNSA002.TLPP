@@ -2054,13 +2054,8 @@ Static Function OS_EMAIL(cAcao, x1)
     Case cAcao == "DESTINO"
         xRet := {}
         aCh  := OS_ZA3("LER", AllTrim(SZ1->Z1_OS), AllTrim(SZ1->Z1_IDCH))
-        For nI := 1 To Len(aCh) + 1
-            If nI > Len(aCh) .And. Len(xRet) > 0
-                Exit
-            EndIf
-            cTexto := If(nI > Len(aCh), Posicione("SA1", 1, xFilial("SA1") + SZ1->Z1_CLI + SZ1->Z1_LOJA, "A1_EMAIL"), ;
-                Posicione("ZA1", 1, xFilial("ZA1") + aCh[nI], "ZA1_EMAIL"))
-            aResp := StrTokArr2(StrTran(cTexto, ",", ";"), ";", .F.)
+        For nI := 1 To Len(aCh)
+            aResp := StrTokArr2(StrTran(Posicione("ZA1", 1, xFilial("ZA1") + aCh[nI], "ZA1_EMAIL"), ",", ";"), ";", .F.)
             For nJ := 1 To Len(aResp)
                 cEmail := Lower(AllTrim(aResp[nJ]))
                 If "@" $ cEmail .And. AScan(xRet, cEmail) == 0
@@ -2068,6 +2063,15 @@ Static Function OS_EMAIL(cAcao, x1)
                 EndIf
             Next nJ
         Next nI
+        If Len(xRet) == 0
+            aResp := StrTokArr2(StrTran(Posicione("SA1", 1, xFilial("SA1") + SZ1->Z1_CLI + SZ1->Z1_LOJA, "A1_EMAIL"), ",", ";"), ";", .F.)
+            For nJ := 1 To Len(aResp)
+                cEmail := Lower(AllTrim(aResp[nJ]))
+                If "@" $ cEmail .And. AScan(xRet, cEmail) == 0
+                    AAdd(xRet, cEmail)
+                EndIf
+            Next nJ
+        EndIf
 
     EndCase
 
