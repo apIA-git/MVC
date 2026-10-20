@@ -1277,3 +1277,81 @@ Login do usuario: MV_CNSASRV (sem o parametro: "Aprovador de OS").
 //-------------------------------------------------------------------
 User Function CNSSERVICO()
 Return Upper(AllTrim(UsrRetName(__cUserId))) == Upper(AllTrim(SuperGetMV("MV_CNSASRV", .F., "Aprovador de OS")))
+
+//-------------------------------------------------------------------
+/*/{Protheus.doc} CNSNOMES
+Preenche os campos de NOME (cliente/tecnico) gravados na tabela a partir do
+codigo - para quando um campo de nome deixa de ser virtual e vira real: os
+registros que ja existiam ficam com o nome vazio. Pode rodar de novo: so grava
+o que estiver diferente. Campo que ainda nao existe na tabela e pulado.
+Uso (Formulas/menu): U_CNSNOMES("ZA1") chamados | U_CNSNOMES("SZ1") OS.
+Tabela nova: acrescentar um Case com {campo do nome, campo do codigo,
+campo da loja ("" se nao tiver), "C" cliente (SA1) ou "T" tecnico (AA1)}.
+@param  cTabela   Alias da tabela (ZA1, SZ1)
+@return nGravados Registros alterados
+@author Henrique
+@since 20/10/2026
+@version P12
+/*/
+//-------------------------------------------------------------------
+User Function CNSNOMES(cTabela)
+    Local aMapa     := {}
+    Local aUsar     := {}
+    Local cCod      := ""
+    Local cLoja     := ""
+    Local cNome     := ""
+    Local nGravados := 0
+    Local nI        := 0
+
+    cTabela := Upper(AllTrim(cValToChar(cTabela)))
+    Do Case
+    Case cTabela == "ZA1"
+        aMapa := {{"ZA1_NOME", "ZA1_CLIENT", "ZA1_LOJA", "C"}, {"ZA1_NOMTEC", "ZA1_CONSUL", "", "T"}}
+    Case cTabela == "SZ1"
+        aMapa := {{"Z1_NMTEC", "Z1_TEC", "", "T"}}
+    Otherwise
+        MsgAlert("Tabela sem mapa de nomes: " + cTabela, "CNSNOMES")
+        Return 0
+    EndCase
+
+    DbSelectArea(cTabela)
+    // So os campos que ja sao reais na tabela (virtual nao tem coluna).
+    For nI := 1 To Len(aMapa)
+        If (cTabela)->(FieldPos(aMapa[nI][1])) > 0
+            AAdd(aUsar, aMapa[nI])
+        Else
+            ConOut("CNSNOMES: " + aMapa[nI][1] + " nao existe na tabela " + cTabela + " (ainda virtual?) - pulado.")
+        EndIf
+    Next nI
+    If Empty(aUsar)
+        MsgAlert("Nenhum campo de nome real em " + cTabela + ".", "CNSNOMES")
+        Return 0
+    EndIf
+
+    (cTabela)->(DbGoTop())
+    While !(cTabela)->(Eof())
+        For nI := 1 To Len(aUsar)
+            cCod  := AllTrim((cTabela)->(FieldGet(FieldPos(aUsar[nI][2]))))
+            cLoja := If(Empty(aUsar[nI][3]), "", AllTrim((cTabela)->(FieldGet(FieldPos(aUsar[nI][3])))))
+            // Codigo vazio: Posicione cairia no 1o registro (soft-seek).
+            If Empty(cCod)
+                cNome := ""
+            ElseIf aUsar[nI][4] == "C"
+                cNome := AllTrim(Posicione("SA1", 1, xFilial("SA1") + PadR(cCod, TamSX3("A1_COD")[1]) + PadR(cLoja, TamSX3("A1_LOJA")[1]), "A1_NREDUZ"))
+            Else
+                cNome := AllTrim(Posicione("AA1", 1, xFilial("AA1") + PadR(cCod, TamSX3("AA1_CODTEC")[1]), "AA1_NOMTEC"))
+            EndIf
+            cNome := Left(cNome, TamSX3(aUsar[nI][1])[1])
+            If AllTrim((cTabela)->(FieldGet(FieldPos(aUsar[nI][1])))) != cNome
+                RecLock(cTabela, .F.)
+                (cTabela)->(FieldPut(FieldPos(aUsar[nI][1]), cNome))
+                (cTabela)->(MsUnlock())
+                nGravados++
+            EndIf
+        Next nI
+        (cTabela)->(DbSkip())
+    EndDo
+
+    MsgInfo(cValToChar(nGravados) + " nome(s) preenchido(s) em " + cTabela + ".", "CNSNOMES")
+
+Return nGravados
