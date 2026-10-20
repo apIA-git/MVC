@@ -136,6 +136,7 @@ Static Function HA_MONTARMODEL(nOperAtivar, lSemTela)
     Local aCampos  := {}
     Local aVirtual := {}
     Local nI       := 0
+    Local cVazio   := ""
 
     Default nOperAtivar := 0
     Default lSemTela    := .F.
@@ -149,7 +150,12 @@ Static Function HA_MONTARMODEL(nOperAtivar, lSemTela)
                 oStr:SetProperty(aCampos[nI][MODEL_FIELD_IDFIELD], MODEL_FIELD_VALID,   {|| .T.})
                 oStr:SetProperty(aCampos[nI][MODEL_FIELD_IDFIELD], MODEL_FIELD_WHEN,    {|| .T.})
                 oStr:SetProperty(aCampos[nI][MODEL_FIELD_IDFIELD], MODEL_FIELD_OBRIGAT, .F.)
-                oStr:SetProperty(aCampos[nI][MODEL_FIELD_IDFIELD], MODEL_FIELD_INIT,    {|| Nil})
+                // Inicializador vazio DO TIPO do campo (Nil o MVC recusa: "Erro no
+                // inicializador padrao"). Bloco por macro: um bloco proprio por campo.
+                cVazio := If(aCampos[nI][MODEL_FIELD_TIPO] == "D", 'CToD("")', ;
+                          If(aCampos[nI][MODEL_FIELD_TIPO] == "N", "0", ;
+                          If(aCampos[nI][MODEL_FIELD_TIPO] == "L", ".F.", '""')))
+                oStr:SetProperty(aCampos[nI][MODEL_FIELD_IDFIELD], MODEL_FIELD_INIT, &("{|| " + cVazio + "}"))
             EndIf
         Next nI
         For nI := 1 To Len(aVirtual)
