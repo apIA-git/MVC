@@ -2667,12 +2667,12 @@ Static Function OS_EMAIL(cAcao, x1)
     Do Case
 
     //--- Tela classica: SEMPRE ao confirmar a OS -> "Deseja enviar ao cliente?" ----
-    // (U_CNSAPR ENV). So a OS interna nao pergunta; estado que nao permite envio
-    // e explicado pela mensagem do U_CNSAPR.
+    // (U_CNSAPR ENV). Toda OS pergunta (Z1_INTERNO nao bloqueia); estado que nao
+    // permite envio e explicado pela mensagem do U_CNSAPR.
     Case cAcao == "TELA"
         cOs := PadR(AllTrim(cValToChar(x1)), TamSX3("Z1_OS")[1])
         SZ1->(DbSetOrder(1))
-        If !Empty(cOs) .And. SZ1->(DbSeek(cFilAnt + cOs)) .And. AllTrim(SZ1->Z1_INTERNO) != "S"
+        If !Empty(cOs) .And. SZ1->(DbSeek(cFilAnt + cOs))
             If MsgYesNo("Deseja enviar ao cliente? Ele recebe por e-mail o link para aprovar ou recusar a OS " + ;
                     AllTrim(cOs) + " (valido por " + cValToChar(SuperGetMV("MV_CNSAVLD", .F., 2)) + " dias).", "OS " + AllTrim(cOs))
                 aResp := apia.cnsa004.U_CNSAPR("ENV", cOs)

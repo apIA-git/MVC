@@ -477,10 +477,8 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
             AP_DESTRAVAR(cOs)
             Return {.F., "So OS aguardando aprovacao do cliente pode ser enviada.", "", ""}
         EndIf
-        If AllTrim(SZ1->Z1_INTERNO) == "S"
-            AP_DESTRAVAR(cOs)
-            Return {.F., "OS interna nao vai para o cliente.", "", ""}
-        EndIf
+        // Toda OS vai pro cliente, com "Cliente Participa?" (Z1_INTERNO) Sim ou Nao -
+        // decisao do usuario em 20/10 (o bloqueio de OS interna nao era da spec).
         cOs   := SZ1->Z1_OS
         cNovo := AllTrim(SZ1->Z1_APVTIPO)
         aPara := apia.cnsa002.U_OS_APRPUB("DESTINO", cOs)
