@@ -120,6 +120,7 @@ Static Function OS_MONTARMODEL(nOperAtivar)
     Local l_oStrSZ1 := FWFormStruct(1, "SZ1")
     Local l_oStrSZ2 := FWFormStruct(1, "SZ2")
     Local aRelSZ2   := {}
+    Local cTec      := ""
 
     Default nOperAtivar := 0
 
@@ -157,6 +158,12 @@ Static Function OS_MONTARMODEL(nOperAtivar)
         // Numero AA + sequencia do ano no lugar do inicializador (LoadValue: Z1_OS nao e editavel).
         If nOperAtivar == 3
             l_oModel:GetModel("SZ1MASTER"):LoadValue("Z1_OS", OS_PROXIMONUM())
+            // Analista = tecnico do usuario logado (pode trocar na tela).
+            cTec := AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC"))
+            If !Empty(cTec)
+                l_oModel:GetModel("SZ1MASTER"):LoadValue("Z1_TEC", cTec)
+                l_oModel:GetModel("SZ1MASTER"):LoadValue("Z1_NMTEC", OS_NOMETEC(cTec))
+            EndIf
         EndIf
     EndIf
 
@@ -188,7 +195,7 @@ Static Function OS_VALIDACAMPO(p_oField, p_sAcao, p_sCampo, p_vValor)
 Return l_bOk
 
 /*/{Protheus.doc} OS_PREVALIDA
-Inclusao: confere os obrigatorios (SetErrorMessage).
+Inclusao: confere os obrigatorios. Alterar: OS sem chamado nao ganha chamado (SetErrorMessage).
 @param  p_oModel   Objeto do Model (FormModel) sendo validado
 @return lOk        .T. se valido
 /*/
@@ -198,6 +205,11 @@ Static Function OS_PREVALIDA(p_oModel)
                         {"Z1_TIPO", "Informe o codigo do servico."}, {"Z1_DTOS", "Informe a data da OS."}}
     Local nI        := 0
 
+    // Alterar: OS sem chamado nao passa a ter chamado (SZ1 ainda tem o valor gravado).
+    If p_oModel:GetOperation() == 4 .And. Empty(SZ1->Z1_IDCH) .And. !Empty(oModelSZ1:GetValue("Z1_IDCH"))
+        p_oModel:SetErrorMessage("SZ1MASTER", "Z1_IDCH", "SZ1", "Z1_IDCH", "CNSA002", "OS sem chamado nao pode passar a ter chamado.")
+        Return .F.
+    EndIf
     If p_oModel:GetOperation() != 3
         Return .T.
     EndIf
