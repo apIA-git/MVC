@@ -1081,7 +1081,8 @@ Static Function AP_AVISAR(cTrans, cOs, cQuem, cMotivo)
                 " O.S. n. " + AllTrim(cOs), ;
                 apia.cnsa001.U_CH_HTMLPUB("", "OS " + AllTrim(cOs) + " " + cAcao, "", ;
                     "A ordem de servi&ccedil;o foi " + cAcao + ".", aLin, ;
-                    If(cTrans == "REC", "Motivo da recusa", ""), If(cTrans == "REC", U_CNSOUTL("TEXTO", cMotivo), ""), ""))
+                    If(Empty(cMotivo), "", If(cTrans == "REC", "Motivo da recusa", "Observa&ccedil;&atilde;o do cliente")), ;
+                    If(Empty(cMotivo), "", U_CNSOUTL("TEXTO", cMotivo)), ""))
         EndIf
     Next nI
 
