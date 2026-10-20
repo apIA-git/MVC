@@ -1492,7 +1492,7 @@ Calcula o status derivado da OS, com a mesma regra das 5 legendas
 @param  cAprovad   Valor de Z1_APROVAD ("S"/"A"/outro)
 @param  cFaturar   Valor de Z1_FATURAR ("S"/outro)
 @param  cTec       Codigo do tecnico (Z1_TEC) responsavel
-@return cStatus    "aprovada_faturada", "faturada_sem_aprovacao", "aprovada", "aguardando_aprovacao" ou "negada"
+@return cStatus    "aprovada_faturada", "faturada_sem_aprovacao", "aprovada", "recusada", "aguardando_aprovacao" ou "negada"
 @author Henrique
 @since 02/09/2026
 @version P12
@@ -1507,6 +1507,8 @@ Static Function OS_STATUSCALC(cAprovad, cFaturar, cTec)
         Return "faturada_sem_aprovacao"
     ElseIf lAprovada
         Return "aprovada"
+    ElseIf cAprovad == "R"   // recusada (cliente, manual ou pre-recusa) - nao esta aguardando
+        Return "recusada"
     ElseIf !Empty(cTec)
         Return "aguardando_aprovacao"
     EndIf
