@@ -572,13 +572,13 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
     // Mesmos textos do AP_LEGENDA: o browse compara o texto do LEG da linha.
     Case cTrans == "LEGS"
         aRet := {{"Aprovada (sistema antigo)", "verde"}, {"Enviada (sistema antigo)", "amarelo"}, ;
-                 {"Nao requer aprovacao", "cinza"}, {"Pre-aprovada (sem aprovacao do cliente)", "azul"}, ;
-                 {"Aguardando pre-aprovacao interna", "amarelo"}, {"Pre-recusada (interna)", "cinzaEscuro"}, ;
-                 {"Recusada (manual / cliente)", "rosa"}, {"Recusada (legado)", "rosa"}, ;
+                 {"Nao requer aprovacao", "cinza"}, ;
+                 {"Aguardando pre-aprovacao interna", "amarelo"}, {"Recusada (cliente)", "rosa"}, ;
+                 {"Recusada (manual)", "rosa"}, {"Recusada (legado)", "rosa"}, ;
                  {"Pre-aprovada, a enviar", "azul"}, {"A enviar ao cliente", "azul"}, ;
                  {"Aguardando cliente", "amarelo"}, {"Prazo vencido", "rosa"}, ;
-                 {"Aprovada pelo cliente", "verde"}, {"Aprovada por prazo", "azul"}, ;
-                 {"Aprovada manualmente", "azul"}, {"Aprovada", "verde"}}
+                 {"Aprovada (cliente)", "verde"}, {"Aprovada (prazo)", "azul"}, ;
+                 {"Aprovada (manual)", "azul"}, {"Aprovada", "verde"}}
 
     //--- Estado que a regra daria (pura, nao grava) ----------------------------
     Case cTrans == "REG"
@@ -935,13 +935,14 @@ Static Function AP_LEGENDA(aDados)
     Case cAp == "A" .And. Empty(cTp)
         Return {"Nao requer aprovacao", "cinza"}
     Case cAp == "A" .And. cTp == "M"
-        Return {"Pre-aprovada (sem aprovacao do cliente)", "azul"}
+        Return {"Aprovada (manual)", "azul"}
     Case cAp == "P"
         Return {"Aguardando pre-aprovacao interna", "amarelo"}
-    Case cAp == "R" .And. cTp == "M" .And. lApv
-        Return {"Pre-recusada (interna)", "cinzaEscuro"}
-    Case cAp == "R" .And. (cTp == "I" .Or. cTp == "W") .And. lApv
-        Return {"Recusada (manual / cliente)", "rosa"}
+    // Pre-recusa (M) e recusa manual (I) = manual; pelo link (W) = cliente (pedido do usuario, 20/10).
+    Case cAp == "R" .And. cTp == "W" .And. lApv
+        Return {"Recusada (cliente)", "rosa"}
+    Case cAp == "R" .And. (cTp == "M" .Or. cTp == "I") .And. lApv
+        Return {"Recusada (manual)", "rosa"}
     Case cAp == "N" .And. lApv
         Return {"Recusada (legado)", "rosa"}
     Case cAp == "N" .And. cTp == "M" .And. Empty(dEnv)
@@ -953,11 +954,11 @@ Static Function AP_LEGENDA(aDados)
     Case cAp == "N"
         Return {"Prazo vencido", "rosa"}
     Case cAp == "S" .And. cTp == "W"
-        Return {"Aprovada pelo cliente", "verde"}
+        Return {"Aprovada (cliente)", "verde"}
     Case cAp == "S" .And. cTp == "D"
-        Return {"Aprovada por prazo", "azul"}
+        Return {"Aprovada (prazo)", "azul"}
     Case cAp == "S" .And. cTp == "I"
-        Return {"Aprovada manualmente", "azul"}
+        Return {"Aprovada (manual)", "azul"}
     Case cAp == "S"
         Return {"Aprovada", "verde"}
     EndCase
