@@ -36,7 +36,7 @@ User Function CNS002()
 
         // Legenda da aprovacao - a mesma da coluna Aprovacao do portal (U_CNSAPR "LEG").
         For nI := 1 To Len(aLeg)
-            l_oBrowse:AddLegend("apia.cnsa004.U_CNSAPR('LEG',{SZ1->Z1_APROVAD,SZ1->Z1_APVTIPO,SZ1->Z1_APVDATA,SZ1->Z1_ENVDT})[1]=='" + ;
+            l_oBrowse:AddLegend("apia.cnsa004.U_CNSAPR('LEG',{SZ1->Z1_APROVAD,SZ1->Z1_APVTIPO,SZ1->Z1_APVDATA,SZ1->Z1_ENVDT,SZ1->Z1_DTDIGIT})[1]=='" + ;
                 aLeg[nI][1] + "'", OS_CORAPR(aLeg[nI][2])[1], aLeg[nI][1])
         Next nI
         l_oBrowse:AddLegend(".T.", "WHITE", "Sem aprovacao (legado)")
@@ -1886,7 +1886,7 @@ User Function OS_APILISTAR() As Logical
             oLinha['aprovad']        := AllTrim((cAlias)->Z1_APROVAD)
             oLinha['apvtipo']        := AllTrim((cAlias)->Z1_APVTIPO)
             oLinha['aprovacao']      := apia.cnsa004.U_CNSAPR("LEG", {(cAlias)->Z1_APROVAD, (cAlias)->Z1_APVTIPO, ;
-                                            (cAlias)->Z1_APVDATA, (cAlias)->Z1_ENVDT})[1]
+                                            (cAlias)->Z1_APVDATA, (cAlias)->Z1_ENVDT, (cAlias)->Z1_DTDIGIT})[1]
             AAdd(aRetorno, oLinha)
 
             (cAlias)->(DbSkip())
@@ -2666,12 +2666,13 @@ Static Function OS_EMAIL(cAcao, x1)
 
     Do Case
 
-    //--- Tela classica: OS em N -> "Deseja enviar ao cliente?" (U_CNSAPR ENV) --
+    //--- Tela classica: SEMPRE ao confirmar a OS -> "Deseja enviar ao cliente?" ----
+    // (U_CNSAPR ENV). So a OS interna nao pergunta; estado que nao permite envio
+    // e explicado pela mensagem do U_CNSAPR.
     Case cAcao == "TELA"
         cOs := PadR(AllTrim(cValToChar(x1)), TamSX3("Z1_OS")[1])
         SZ1->(DbSetOrder(1))
-        If !Empty(cOs) .And. SZ1->(DbSeek(cFilAnt + cOs)) .And. AllTrim(SZ1->Z1_APROVAD) == "N" .And. ;
-                AllTrim(SZ1->Z1_INTERNO) != "S"
+        If !Empty(cOs) .And. SZ1->(DbSeek(cFilAnt + cOs)) .And. AllTrim(SZ1->Z1_INTERNO) != "S"
             If MsgYesNo("Deseja enviar ao cliente? Ele recebe por e-mail o link para aprovar ou recusar a OS " + ;
                     AllTrim(cOs) + " (valido por " + cValToChar(SuperGetMV("MV_CNSAVLD", .F., 2)) + " dias).", "OS " + AllTrim(cOs))
                 aResp := apia.cnsa004.U_CNSAPR("ENV", cOs)
