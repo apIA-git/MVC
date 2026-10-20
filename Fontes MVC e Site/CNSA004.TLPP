@@ -5,24 +5,16 @@
 
 Namespace apia.cnsa004
 
-//-------------------------------------------------------------------
+// CNSA004 - Aprovacao de OS: historico (SZA), regras (U_CNSAPR), e-mails, schedule e endpoints. Henrique, 10/2026.
+
 /*/{Protheus.doc} CNS004
-Historico de aprovacao de OS (tabela SZA) - so consulta. Uma linha por
-evento (envio, pre-aprovacao, aprovacao, recusa, reabertura); o tipo e
-deduzido de ZA_APROVAD + ZA_APVTIPO + data preenchida (aba "Identificacao
-SZA" da planilha aprovacao-os-transacoes.xlsx). Quem grava e o U_CNSAPR.
-Chamada sem parametro mostra tudo; com o numero da OS (menu da OS, CNSA002)
-abre filtrada nela.
+Historico de aprovacao de OS (SZA), so consulta - uma linha por evento. Com cOs, filtrado na OS.
 @param  cOs   Numero da OS (opcional)
-@author Henrique
-@since 08/10/2026
-@version P12
 /*/
-//-------------------------------------------------------------------
 User Function CNS004(cOs)
 
     Local l_oBrowse := Nil
-    // User Function do mesmo namespace precisa do prefixo "u_" (ver CNSA002).
+    // Mesmo namespace: precisa do prefixo "u_".
     Private aRotina := u_MenuDef()
 
     Default cOs := ""
@@ -53,15 +45,10 @@ User Function CNS004(cOs)
 
 Return
 
-//-------------------------------------------------------------------
 /*/{Protheus.doc} MenuDef
 Menu so de consulta - o historico nao e editado a mao.
 @return aRotina   Array de opcoes de menu (ADD OPTION)
-@author Henrique
-@since 08/10/2026
-@version P12
 /*/
-//-------------------------------------------------------------------
 User Function MenuDef()
 
 Local aRotina := {}
@@ -72,35 +59,24 @@ Local aRotina := {}
 
 Return aRotina
 
-//-------------------------------------------------------------------
 /*/{Protheus.doc} ModelDef
 Modelo de dados do historico (so SZA).
 @return oModel   Objeto MPFormModel
-@author Henrique
-@since 08/10/2026
-@version P12
 /*/
-//-------------------------------------------------------------------
 User Function ModelDef()
 Return HA_MONTARMODEL()
 
-//-------------------------------------------------------------------
 /*/{Protheus.doc} ViewDef
 View do historico (so SZA).
 @return oView   Objeto FWFormView
-@author Henrique
-@since 08/10/2026
-@version P12
 /*/
-//-------------------------------------------------------------------
 User Function ViewDef()
 
     Local oView  := Nil
-    // Model ativo (montado em HA_VISUALIZAR) - FWLoadModel nao acha o modelo
-    // dentro do Namespace (mesmo padrao do CNSA001/CNSA002).
+    // FWLoadModel nao acha o model dentro do Namespace: usa o ativo.
     Local oModel := FWModelActive()
 
-    // Model ativo de OUTRA rotina (chamado, OS) nao serve: monta o do historico.
+    // Model ativo de outra rotina nao serve: monta o do historico.
     If oModel == Nil .Or. oModel:GetId() != "FCNS004"
         oModel := HA_MONTARMODEL()
     EndIf
@@ -115,20 +91,13 @@ User Function ViewDef()
 
 Return oView
 
-//-------------------------------------------------------------------
 /*/{Protheus.doc} HA_MONTARMODEL
-Monta (e ativa, se pedido) o modelo da SZA - ativado na mesma funcao de quem
-abre a tela, senao INITVALUE quebra com "owner private environment not found"
-(ver OS_MONTARMODEL no CNSA002).
+Model da SZA. Com nOperAtivar tambem ativa, na mesma funcao (ver OS_MONTARMODEL no CNSA002).
 @param  nOperAtivar   Operacao a ativar (0 = so monta)
 @param  lSemTela      .T. = gravacao por REST/job (U_CNSAPR): tira campos virtuais e
                       troca X3_VALID/X3_WHEN por .T. (mesmo tratamento do OS_STRUCTHEADLESS)
 @return oModel        Objeto MPFormModel
-@author Henrique
-@since 08/10/2026
-@version P12
 /*/
-//-------------------------------------------------------------------
 Static Function HA_MONTARMODEL(nOperAtivar, lSemTela)
 
     Local oModel   := MPFormModel():New("FCNS004")
@@ -150,8 +119,7 @@ Static Function HA_MONTARMODEL(nOperAtivar, lSemTela)
                 oStr:SetProperty(aCampos[nI][MODEL_FIELD_IDFIELD], MODEL_FIELD_VALID,   {|| .T.})
                 oStr:SetProperty(aCampos[nI][MODEL_FIELD_IDFIELD], MODEL_FIELD_WHEN,    {|| .T.})
                 oStr:SetProperty(aCampos[nI][MODEL_FIELD_IDFIELD], MODEL_FIELD_OBRIGAT, .F.)
-                // Inicializador vazio DO TIPO do campo (Nil o MVC recusa: "Erro no
-                // inicializador padrao"). Bloco por macro: um bloco proprio por campo.
+                // Inicializador vazio do tipo do campo (Nil da "Erro no inicializador padrao").
                 cVazio := If(aCampos[nI][MODEL_FIELD_TIPO] == "D", 'CToD("")', ;
                           If(aCampos[nI][MODEL_FIELD_TIPO] == "N", "0", ;
                           If(aCampos[nI][MODEL_FIELD_TIPO] == "L", ".F.", '""')))
@@ -175,31 +143,20 @@ Static Function HA_MONTARMODEL(nOperAtivar, lSemTela)
 
 Return oModel
 
-//-------------------------------------------------------------------
 /*/{Protheus.doc} HA_VISUALIZAR
 Opcao "Visualizar": abre a resposta posicionada so para leitura.
-@author Henrique
-@since 08/10/2026
-@version P12
 /*/
-//-------------------------------------------------------------------
 User Function HA_VISUALIZAR()
     Local oModel := HA_MONTARMODEL(MODEL_OPERATION_VIEW)
 
-    // Model desta tela como ativo: o ViewDef usa o ativo, e o de uma tela anterior
-    // (ex.: Visualizar) fazia o Incluir abrir com a OS anterior, travada.
+    // Model desta tela como ativo (o ViewDef usa o ativo).
     FWModelActive(oModel)
     FWExecView("Historico de Aprovacao de OS", "apia.cnsa004.u_cns004", MODEL_OPERATION_VIEW, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel)
 Return
 
-//-------------------------------------------------------------------
 /*/{Protheus.doc} HA_LEGENDA
 Legenda do evento (ZA_APROVAD + ZA_APVTIPO + data).
-@author Henrique
-@since 08/10/2026
-@version P12
 /*/
-//-------------------------------------------------------------------
 User Function HA_LEGENDA()
 
     BrwLegenda("Legenda", "Evento", ;
@@ -216,24 +173,9 @@ User Function HA_LEGENDA()
 
 Return
 
-////////////////////////////////////////////////////////////////////////////////
-//                                                                            //
-//              APROVACAO DE OS - U_CNSAPR (unico ponto de regras)            //
-//                                                                            //
-////////////////////////////////////////////////////////////////////////////////
-// Spec: docs/superpowers/specs (spec-cnsapr-backend.md) + planilha
-// aprovacao-os-transacoes.xlsx (abas Transacoes, Identificacao SZA, Legenda).
-// SZ1 manda no estado; SZA e o livro de eventos (uma linha por evento).
-// Gravacao: SZA pelo model FCNS004 (sem tela) e SZ1 pelo model leve da OS
-// (apia.cnsa002.U_OS_APRPUB "GRAVAR"), as duas na MESMA transacao.
-//
-// Decisoes do usuario (09/10/2026) que diferem da planilha:
-//  - Z1_APVDOR (20/10/2026, tabela de transacoes): quem decidiu - W = cliente,
-//    I = usuario, D = "Aprovacao automatica"; PRR = usuario; PRE nao altera.
-//  - Estado da OS calculado no BeforeTTS (fase ANT); ModelPosVld (VLD) so
-//    confere permissao; InTTS (GRV) grava a reabertura na SZA.
-//  - AF9_APVMAN: S=Sim / N=Nao (a planilha usa 1; decidido S/N em 14/10/2026).
-//
+// U_CNSAPR - unico ponto de regras da aprovacao (planilha aprovacao-os-transacoes.xlsx).
+// SZ1 guarda o estado; SZA e o livro de eventos (uma linha por evento). SZA (model FCNS004)
+// e SZ1 (model leve da OS, U_OS_APRPUB "GRAVAR") gravam na MESMA transacao.
 // Transacoes (cTrans):
 //   OS   (oModel, "", {fase})        evento do model da OS: VLD / ANT / GRV
 //   PRE  (cOs, "M")                  P -> A (AF9_UM = VB) ou N   - so RESPMAN
@@ -245,8 +187,7 @@ Return
 //   CNS  (cToken)                    link valido? devolve {lOk, cErro, jOs}
 //   LEG  ({aprovad, apvtipo, apvdata, envdt, dtdigit})   {cLegenda, cCor} (aba Legenda)
 //   LEGS ()                                      todas as {cLegenda, cCor} (browse classico)
-//   REG  (cOs ou {proj, rev, tarefa})           {cAprovad, cApvTipo} pela tarefa (AF9)
-////////////////////////////////////////////////////////////////////////////////
+//   REG  (cOs ou {proj, rev, tarefa})           {cAprovad, cApvTipo} pela tarefa (AF9_APVMAN S/N, AF9_UM)
 
 /*/{Protheus.doc} CNSAPR
 Aprovacao de OS - todas as transacoes (ver tabela acima).
@@ -255,9 +196,6 @@ Aprovacao de OS - todas as transacoes (ver tabela acima).
 @param  cOrigem  Z1_APVTIPO resultante (W link, I manual, D prazo, M pre-aprovacao)
 @param  jDados   JsonObject: motivo, ip, fase (OS), reabriu (OS/GRV)
 @return aRet     {lOk, cErro, cAprovad, cApvTipo} - CNS: {lOk, cErro, jOs} - LEG/REG: ver tabela
-@author Henrique
-@since 09/10/2026
-@version P12
 /*/
 User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
     Local aRet     := {.F., "", "", ""}
@@ -296,10 +234,9 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
 
     Do Case
 
-    //--- Evento do model da OS (CNS002APR, CNSA002) ----------------------------
+    //--- Evento do model da OS (CNS002APR, CNSA002)
     Case cTrans == "OS"
         aRet   := {.T., "", "", "", .F.}
-        // Gravacao feita pelo proprio U_CNSAPR: evento nao interfere.
         If Type("__lA02Interno") == "L" .And. __lA02Interno
             Return aRet
         EndIf
@@ -330,24 +267,20 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
                           AllTrim(oSZ1:GetValue("Z1_TAREFA")) != AllTrim(SZ1->Z1_TAREFA)
             EndIf
             If cAntes == "S" .Or. cAntes == "R"
-                // Reabre: S/R -> N. Se a tarefa mudou junto, vale a regra da tarefa nova
-                // (pode cair em P). A linha da SZA sai no InTTS (fase GRV).
+                // Reabre: S/R -> N (tarefa trocada: regra da tarefa nova). A SZA sai na fase GRV.
                 aReg := If(lMudou, U_CNSAPR("REG", {oSZ1:GetValue("Z1_PROJET"), oSZ1:GetValue("Z1_REVISA"), ;
                     oSZ1:GetValue("Z1_TAREFA")}), {"N", ""})
                 aRet[5] := .T.
             ElseIf nOper == MODEL_OPERATION_INSERT .Or. lMudou .Or. ;
                     (nOper == MODEL_OPERATION_UPDATE .And. Empty(cAntes))
-                // Inclusao, troca de tarefa, ou OS antiga sem estado (anterior a aprovacao):
-                // aplica a regra da tarefa - sem isso a OS legada nunca chegava a "A enviar".
+                // Inclusao, troca de tarefa ou OS antiga sem estado: regra da tarefa.
                 aReg := U_CNSAPR("REG", {oSZ1:GetValue("Z1_PROJET"), oSZ1:GetValue("Z1_REVISA"), oSZ1:GetValue("Z1_TAREFA")})
-                // Reavaliou uma OS ja enviada: grava evento na SZA pra matar o link antigo
-                // (o token so vale se o envio for a ULTIMA linha da OS).
+                // OS ja enviada: evento na SZA mata o link (token so vale na ultima linha).
                 If lMudou .And. !Empty(SZ1->Z1_ENVDT)
                     aRet[5] := .T.
                 EndIf
             ElseIf nOper == MODEL_OPERATION_UPDATE
-                // Edicao comum: os campos da aprovacao valem como estao NO BANCO - outra
-                // pessoa pode ter enviado/pre-aprovado com esta tela aberta.
+                // Edicao comum: aprovacao como esta no banco (outro pode ter mudado com a tela aberta).
                 For nI := 1 To Len(AP_CAMPOSAPR())
                     oSZ1:LoadValue(AP_CAMPOSAPR()[nI], SZ1->(FieldGet(FieldPos(AP_CAMPOSAPR()[nI]))))
                 Next nI
@@ -364,14 +297,12 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
             EndIf
 
         Case cFase == "GRV"
-            // Reabertura (S/R -> novo estado) ou reavaliacao de OS ja enviada: uma linha
-            // com o estado novo (invalida o link pendente).
+            // Reabertura ou reavaliacao de OS enviada: linha com o estado novo (mata o link).
             If AP_TXT(jDados, "reabriu") == "S"
                 aUsu := AP_USUARIO()
                 aRet := AP_GRAVASZA(cOs, {{"ZA_APROVAD", oSZ1:GetValue("Z1_APROVAD")}, ;
                     {"ZA_APVTIPO", oSZ1:GetValue("Z1_APVTIPO")}, {"ZA_POR", aUsu[1]}, ;
                     {"ZA_EMAIL", aUsu[2]}, {"ZA_DTREC", dHoje}, {"ZA_HRREC", cAgora}})
-                // Sem a linha, o link antigo continuaria valendo: desfaz a gravacao da OS.
                 If !aRet[1]
                     ConOut("CNSAPR: historico da OS " + AllTrim(cOs) + " nao gravado - gravacao desfeita: " + aRet[2])
                     DisarmTransaction()
@@ -380,7 +311,7 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
             EndIf
         EndCase
 
-    //--- Pre-aprova / pre-recusa (interno, so RESPMAN, so a partir de P) -------
+    //--- Pre-aprova / pre-recusa (so RESPMAN, so em P)
     Case cTrans == "PRE" .Or. cTrans == "PRR"
         cOs := xAlvo
         If !AP_RESPMAN()
@@ -417,7 +348,7 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
             aRet := {.T., "", cNovo, "M"}
         EndIf
 
-    //--- Aprova / recusa (cliente pelo link, manual ou prazo) ------------------
+    //--- Aprova / recusa (link W, manual I ou prazo D)
     Case cTrans == "APR" .Or. cTrans == "REC"
         cOs := xAlvo
         If !(cOrigem $ "W|I|D") .Or. Empty(cOrigem) .Or. (cTrans == "REC" .And. cOrigem == "D")
@@ -432,7 +363,7 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
         If !AP_TRAVAR(cOs)
             Return {.F., "OS em uso por outra aprovacao. Tente novamente.", "", ""}
         EndIf
-        // Dentro da trava: primeiro vence, o segundo ve a OS ja decidida.
+        // Dentro da trava: o segundo ve a OS ja decidida.
         If !AP_SZ1(cOs) .Or. AllTrim(SZ1->Z1_APROVAD) != "N"
             AP_DESTRAVAR(cOs)
             Return {.F., "Esta OS ja foi decidida.", "", ""}
@@ -440,9 +371,9 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
         aUsu     := AP_USUARIO()
         cCliente := AllTrim(Posicione("SA1", 1, xFilial("SA1") + SZ1->Z1_CLI + SZ1->Z1_LOJA, "A1_NOME"))
         Do Case
-        Case cOrigem == "W"   // cliente pelo link
+        Case cOrigem == "W"
             aUsu := {cCliente, AllTrim(SZ1->Z1_APVMAIL)}
-        Case cOrigem == "D"   // prazo vencido (schedule)
+        Case cOrigem == "D"
             aUsu := {"Aprovacao automatica", ""}
         EndCase
         cNovo := If(cTrans == "APR", "S", "R")
@@ -451,7 +382,7 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
                   {"Z1_APVDOR", aUsu[1]}}
         aSZA  := {{"ZA_APROVAD", cNovo}, {"ZA_APVTIPO", cOrigem}, {"ZA_POR", aUsu[1]}, {"ZA_EMAIL", aUsu[2]}, ;
                   {"ZA_IP", If(cOrigem == "W", AP_TXT(jDados, "ip"), "")}, {"ZA_DTREC", dHoje}, {"ZA_HRREC", cAgora}}
-        // Motivo da recusa (obrigatorio) ou observacao da aprovacao (opcional - decisao do usuario).
+        // Motivo da recusa (obrigatorio) ou observacao da aprovacao (opcional).
         If !Empty(cMotivo)
             AAdd(aSZ1, {"Z1_APVOBS", cMotivo})
             AAdd(aSZA, {"ZA_DESCRI", cMotivo})
@@ -460,17 +391,14 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
         aRet := AP_GRAVAR(cOs, aSZ1, aSZA)
         AP_DESTRAVAR(cOs)
         If aRet[1]
-            // Falha de e-mail nao desfaz (so ConOut).
             AP_AVISAR(cTrans, cOs, aUsu[1], cMotivo)
             aRet := {.T., "", cNovo, cOrigem}
         EndIf
 
-    //--- Envia ao cliente (link com token) - qualquer analista, so em N -------
-    // Decisao do usuario (09/10): quem envia e o analista, administrador ou nao.
+    //--- Envia ao cliente (link com token) - so em N
     Case cTrans == "ENV"
         cOs := xAlvo
-        // Qualquer analista envia, mas precisa ser tecnico cadastrado (AA1) - nao vale
-        // o usuario de servico da pagina do cliente.
+        // Qualquer analista (tecnico AA1) envia; o usuario de servico nao.
         If Empty(AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC")))
             Return {.F., "Somente analista cadastrado (tecnico) pode enviar a OS ao cliente.", "", ""}
         EndIf
@@ -481,8 +409,6 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
             AP_DESTRAVAR(cOs)
             Return {.F., "So OS aguardando aprovacao do cliente pode ser enviada.", "", ""}
         EndIf
-        // Toda OS vai pro cliente, com "Cliente Participa?" (Z1_INTERNO) Sim ou Nao -
-        // decisao do usuario em 20/10 (o bloqueio de OS interna nao era da spec).
         cOs   := SZ1->Z1_OS
         cNovo := AllTrim(SZ1->Z1_APVTIPO)
         aPara := apia.cnsa002.U_OS_APRPUB("DESTINO", cOs)
@@ -493,12 +419,11 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
         For nI := 1 To Len(aPara)
             cEmail += If(nI > 1, ";", "") + aPara[nI]
         Next nI
-        // Token: 64 hexa aleatorios (2 UUID v4) so no link; na SZA so o SHA-256.
+        // Token: 64 hexa (2 UUID v4) so no link; na SZA so o SHA-256.
         cToken := Lower(StrTran(FWUUIDV4(), "-", "") + StrTran(FWUUIDV4(), "-", ""))
         cHash  := AP_HASH(cToken)
         aUsu   := AP_USUARIO()
-        // E-mail primeiro: se nenhum sair, nada e gravado (a OS nao fica "aguardando" um
-        // link que o cliente nao recebeu, nem e aprovada por prazo). Grava so quem recebeu.
+        // E-mail primeiro: se nenhum sair, nada e gravado. Grava so quem recebeu.
         aEnv := AP_ENVIAR(cOs, aPara, cToken, dHoje + SuperGetMV("MV_CNSAVLD", .F., 2))
         If Empty(aEnv[1])
             AP_DESTRAVAR(cOs)
@@ -521,7 +446,7 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
             aRet[2] := cMsgEnv + " Mas a OS nao foi gravada (o link nao vai funcionar - envie de novo): " + aRet[2]
         EndIf
 
-    //--- Consulta do link (pagina do cliente) ----------------------------------
+    //--- Consulta do link (pagina do cliente)
     Case cTrans == "CNS"
         aRet   := {.F., "INVALIDO", Nil}
         cToken := Lower(AllTrim(cValToChar(xAlvo)))
@@ -547,7 +472,7 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
         If Empty(cOs) .Or. !AP_SZ1(cOs)
             Return aRet
         EndIf
-        // Confere a SZ1 antes (vale tambem pra OS decidida pelo PHP legado).
+        // Pela SZ1 (vale tambem pra OS decidida pelo sistema antigo).
         If AllTrim(SZ1->Z1_APROVAD) $ "S|R|A" .And. !Empty(SZ1->Z1_APROVAD)
             Return {.F., "DECIDIDA", Nil}
         EndIf
@@ -564,12 +489,11 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
         jOs["descricao"] := apia.cnsa002.U_OS_APRPUB("DESCRICAO", SZ1->Z1_OS)
         aRet := {.T., "", jOs}
 
-    //--- Legenda (aba Legenda - primeira que casar) ----------------------------
+    //--- Legenda (aba Legenda - primeira que casar)
     Case cTrans == "LEG"
         aRet  := AP_LEGENDA(xAlvo)
 
-    //--- Todas as legendas, na ordem (browse e tela Legenda do CNSA002) --------
-    // Mesmos textos do AP_LEGENDA: o browse compara o texto do LEG da linha.
+    //--- Todas as legendas, na ordem - mesmos textos do AP_LEGENDA (o browse compara o texto)
     Case cTrans == "LEGS"
         aRet := {{"Aprovada (sistema antigo)", "verde"}, {"Enviada (sistema antigo)", "amarelo"}, ;
                  {"Nao requer aprovacao", "cinza"}, ;
@@ -580,7 +504,7 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
                  {"Aprovada (cliente)", "verde"}, {"Aprovada (prazo)", "azul"}, ;
                  {"Aprovada (manual)", "azul"}, {"Aprovada", "verde"}}
 
-    //--- Estado que a regra daria (pura, nao grava) ----------------------------
+    //--- Estado que a regra daria (nao grava)
     Case cTrans == "REG"
         If ValType(xAlvo) == "C"
             If !AP_SZ1(xAlvo)
@@ -590,7 +514,7 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
         EndIf
         aTaf := AP_TAREFA(xAlvo[1], xAlvo[2], xAlvo[3])
         Do Case
-        Case aTaf[1] == "S"   // AF9_APVMAN S=Sim: precisa pre-aprovacao interna
+        Case aTaf[1] == "S"   // AF9_APVMAN = S: pre-aprovacao interna
             aRet := {"P", "M"}
         Case aTaf[2] == "VB"
             aRet := {"A", ""}
@@ -604,20 +528,12 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
 
 Return aRet
 
-////////////////////////////////////////////////////////////////////////////////
-// Apoio do U_CNSAPR
-////////////////////////////////////////////////////////////////////////////////
-
 /*/{Protheus.doc} AP_GRAVAR
-Grava SZA (evento) e SZ1 (estado) na MESMA transacao - falhou uma, desfaz as
-duas. A SZ1 vai pelo model leve da OS com __lA02Interno (o evento da OS ignora).
+Grava SZA (evento) e SZ1 (estado) na MESMA transacao - falhou uma, desfaz as duas.
 @param  cOs    OS
 @param  aSZ1   {{campo, valor}} da SZ1
 @param  aSZA   {{campo, valor}} da linha nova da SZA
 @return aRet   {lOk, cErro}
-@author Henrique
-@since 09/10/2026
-@version P12
 /*/
 Static Function AP_GRAVAR(cOs, aSZ1, aSZA)
     Local aRet   := {.F., ""}
@@ -625,7 +541,7 @@ Static Function AP_GRAVAR(cOs, aSZ1, aSZA)
     Local oErro  := Nil
     Private __lA02Interno := .T.
 
-    // Erro de execucao vira retorno (a transacao e desfeita e quem chamou destrava a OS).
+    // Erro de execucao vira retorno (transacao desfeita; quem chamou destrava a OS).
     Begin Transaction
         Begin Sequence
             aRet := AP_GRAVASZA(cOs, aSZA)
@@ -648,9 +564,6 @@ Inclui uma linha na SZA pelo model FCNS004 (sem tela), com ZA_SEQ proximo da OS.
 @param  cOs    OS
 @param  aSZA   {{campo, valor}}
 @return aRet   {lOk, cErro}
-@author Henrique
-@since 09/10/2026
-@version P12
 /*/
 Static Function AP_GRAVASZA(cOs, aSZA)
     Local oAtivo := FWModelActive()
@@ -683,9 +596,6 @@ Return aRet
 Ajusta cada {campo, valor} ao tipo/tamanho do dicionario (data, caractere).
 @param  aCampos  {{campo, valor}}
 @return aRet     {{campo, valor ajustado}}
-@author Henrique
-@since 09/10/2026
-@version P12
 /*/
 Static Function AP_VALORES(aCampos, cTab)
     Local aRet := {}
@@ -697,9 +607,6 @@ Return aRet
 
 /*/{Protheus.doc} AP_VAL
 Valor no tipo e tamanho do campo: data vazia/texto, caractere cortado no tamanho.
-@author Henrique
-@since 09/10/2026
-@version P12
 /*/
 Static Function AP_VAL(cCampo, xVal)
     Local cTipo := GetSX3Cache(cCampo, "X3_TIPO")
@@ -724,18 +631,12 @@ Return xVal
 
 /*/{Protheus.doc} AP_ZERAR
 Campos da aprovacao zerados na inclusao, na reavaliacao e na reabertura.
-@author Henrique
-@since 09/10/2026
-@version P12
 /*/
 Static Function AP_ZERAR()
 Return {"Z1_APVDOR", "Z1_APVMAIL", "Z1_APVIP", "Z1_APVDATA", "Z1_APVHORA", "Z1_ENVDT", "Z1_ENVHR", "Z1_APVOBS"}
 
 /*/{Protheus.doc} AP_CAMPOSAPR
 Todos os campos da aprovacao na SZ1 (estado + os zerados).
-@author Henrique
-@since 09/10/2026
-@version P12
 /*/
 Static Function AP_CAMPOSAPR()
     Local aRet := {"Z1_APROVAD", "Z1_APVTIPO", "Z1_OSENVCL"}
@@ -746,12 +647,7 @@ Static Function AP_CAMPOSAPR()
 Return aRet
 
 /*/{Protheus.doc} AP_UTF8
-Texto que chega pela query string em UTF-8 (portal/PHP) aparece como 2
-caracteres CP1252 (ex.: "ã") - remonta o par de bytes (0xC2/0xC3 +
-continuacao), igual ao CH_DECODESAFE do CNSA001. Texto ja em CP1252 nao muda.
-@author Henrique
-@since 09/10/2026
-@version P12
+Acento UTF-8 que chega quebrado em 2 caracteres CP1252 (igual ao CH_DECODESAFE do CNSA001).
 /*/
 Static Function AP_UTF8(cTexto)
     Local cRet := ""
@@ -778,9 +674,6 @@ Return cRet
 
 /*/{Protheus.doc} AP_SZ1
 Posiciona a SZ1 na OS.
-@author Henrique
-@since 09/10/2026
-@version P12
 /*/
 Static Function AP_SZ1(cOs)
     SZ1->(DbSetOrder(1))
@@ -788,9 +681,6 @@ Return !Empty(cOs) .And. SZ1->(DbSeek(cFilAnt + PadR(AllTrim(cOs), TamSX3("Z1_OS
 
 /*/{Protheus.doc} AP_RESPMAN
 Administrador (AA1_RSPMNT = 1) - mesma regra do CH_TEMACESSOGRUPO (CNSA001).
-@author Henrique
-@since 09/10/2026
-@version P12
 /*/
 Static Function AP_RESPMAN()
 Return AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_RSPMNT")) == "1"
@@ -798,9 +688,6 @@ Return AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_RSPMNT")) ==
 /*/{Protheus.doc} AP_USUARIO
 Nome e e-mail do usuario logado (AA1; sem tecnico, o nome do usuario).
 @return aRet  {cNome, cEmail}
-@author Henrique
-@since 09/10/2026
-@version P12
 /*/
 Static Function AP_USUARIO()
     Local cNome := AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_NOMTEC"))
@@ -810,9 +697,6 @@ Return {If(Empty(cNome), AllTrim(UsrRetName(__cUserId)), cNome), cMail}
 /*/{Protheus.doc} AP_TAREFA
 AF9_APVMAN e AF9_UM da tarefa da OS.
 @return aRet  {cApvMan, cUM}
-@author Henrique
-@since 09/10/2026
-@version P12
 /*/
 Static Function AP_TAREFA(cProj, cRev, cTaf)
     Local cChave := xFilial("AF9") + PadR(AllTrim(cProj), TamSX3("AF9_PROJET")[1]) + ;
@@ -825,9 +709,6 @@ Return {Upper(AllTrim(AF9->AF9_APVMAN)), Upper(AllTrim(AF9->AF9_UM))}
 
 /*/{Protheus.doc} AP_PROXSEQ
 Proxima ZA_SEQ da OS (001, 002...).
-@author Henrique
-@since 09/10/2026
-@version P12
 /*/
 Static Function AP_PROXSEQ(cOs)
     Local cAlias := GetNextAlias()
@@ -850,9 +731,6 @@ Return StrZero(nSeq + 1, TamSX3("ZA_SEQ")[1])
 
 /*/{Protheus.doc} AP_TRAVAR
 Trava por OS (LockByName) - tenta por ate ~5 segundos.
-@author Henrique
-@since 09/10/2026
-@version P12
 /*/
 Static Function AP_TRAVAR(cOs)
     Local nI := 0
@@ -870,9 +748,6 @@ Return
 
 /*/{Protheus.doc} AP_TXT
 Texto de um JsonObject (vazio se nao veio).
-@author Henrique
-@since 09/10/2026
-@version P12
 /*/
 Static Function AP_TXT(jDados, cChave)
     Local xVal := Nil
@@ -884,9 +759,6 @@ Return If(xVal == Nil, "", AllTrim(cValToChar(xVal)))
 
 /*/{Protheus.doc} AP_HASH
 SHA-256 em hexa minusculo (igual ao hash('sha256') do PHP).
-@author Henrique
-@since 09/10/2026
-@version P12
 /*/
 Static Function AP_HASH(cTexto)
     Local cRet  := SHA256(cTexto)
@@ -906,17 +778,10 @@ Static Function AP_HASH(cTexto)
 Return Lower(cRet)
 
 /*/{Protheus.doc} AP_LEGENDA
-Legenda da OS (aba Legenda, primeira linha que casar). Prazo = data de envio +
-MV_CNSAPRZ (decisao: a lista nao consulta a SZA por linha).
-OS digitada antes da aprovacao nova (Z1_DTDIGIT < MV_CNSAINI, padrao 20261014) segue
-o significado ANTIGO: "A" era aprovada, e N com data de envio foi pelo sistema antigo
-(o job nao age nela - nao tem envio na SZA). Sem isso a legenda dizia "Nao requer
-aprovacao" e "Prazo vencido (aguarda o schedule)" pra OS antiga, pra sempre.
+Legenda da OS (aba Legenda, primeira que casar). Prazo = envio + MV_CNSAPRZ. OS digitada antes
+de MV_CNSAINI segue o significado antigo ("A" aprovada, N com envio = enviada pelo sistema antigo).
 @param  aDados  {cAprovad, cApvTipo, xApvData, xEnvDt, xDtDigit}
 @return aRet    {cLegenda, cCor}
-@author Henrique
-@since 09/10/2026
-@version P12
 /*/
 Static Function AP_LEGENDA(aDados)
     Local cAp   := AllTrim(cValToChar(aDados[1]))
@@ -966,12 +831,8 @@ Static Function AP_LEGENDA(aDados)
 Return {"", ""}
 
 /*/{Protheus.doc} AP_ENVIAR
-E-mail do envio (ENV): resumo da OS + botao com o link de aprovacao. Endereco sem
-formato de e-mail nem vai pro Graph (ele recusaria a mensagem inteira).
+E-mail do envio: resumo da OS + botao com o link. Endereco invalido nem vai pro Graph.
 @return aRet  {aEnviados, aFalhas} - falha vem com o motivo: "x (e-mail invalido)"
-@author Henrique
-@since 09/10/2026
-@version P12
 /*/
 Static Function AP_ENVIAR(cOs, aPara, cToken, dValid)
     Local aOk   := {}
@@ -980,8 +841,7 @@ Static Function AP_ENVIAR(cOs, aPara, cToken, dValid)
     Local aLin  := apia.cnsa002.U_OS_APRPUB("RESUMO", cOs)
     Local cDesc := U_CNSOUTL("TEXTO", apia.cnsa002.U_OS_APRPUB("DESCRICAO", cOs))
     Local cUrl  := AP_SEMBARRA(AllTrim(SuperGetMV("MV_CNSAURL", .F., "https://www.apia.com.br/Aprovador-OS")))
-    // Rota do portal Angular (.../apia_cs/aprovacao/<token>) ou pagina ASP.NET
-    // (.../aprovador-os/?t=<token>) - decide pelo MV_CNSAURL, pra troca ser so o parametro.
+    // MV_CNSAURL .../aprovacao -> .../aprovacao/<token>; outra pagina -> ?t=<token>.
     Local cLink := cUrl + If("/aprovacao" $ Lower(cUrl), "/", "/?t=") + cToken
     Local cObs  := ""
     Local nI    := 0
@@ -1010,9 +870,6 @@ Return {aOk, aErro}
 
 /*/{Protheus.doc} AP_SEMBARRA
 URL sem a barra final (MV_CNSAURL com ou sem "/" no fim da o mesmo link).
-@author Henrique
-@since 20/10/2026
-@version P12
 /*/
 Static Function AP_SEMBARRA(cUrl)
     While Right(cUrl, 1) == "/"
@@ -1022,9 +879,6 @@ Return cUrl
 
 /*/{Protheus.doc} AP_EMAILOK
 Formato minimo de e-mail: algo@dominio.ext, sem espaco.
-@author Henrique
-@since 14/10/2026
-@version P12
 /*/
 Static Function AP_EMAILOK(cEmail)
     Local nArr := At("@", cEmail)
@@ -1032,9 +886,6 @@ Return nArr > 1 .And. !(" " $ cEmail) .And. "." $ SubStr(cEmail, nArr + 2) .And.
 
 /*/{Protheus.doc} AP_JUNTA
 Junta um array de texto com o separador.
-@author Henrique
-@since 14/10/2026
-@version P12
 /*/
 Static Function AP_JUNTA(aLista, cSep)
     Local cRet := ""
@@ -1045,11 +896,7 @@ Static Function AP_JUNTA(aLista, cSep)
 Return cRet
 
 /*/{Protheus.doc} AP_AVISAR
-E-mails da decisao: APR e REC -> cliente + tecnico + MV_CNSACCO (a recusa tambem
-avisa o cliente, com o motivo - decisao do usuario em 20/10). Falha de e-mail nao desfaz nada.
-@author Henrique
-@since 09/10/2026
-@version P12
+E-mail da decisao (APR/REC) ao cliente, tecnico e MV_CNSACCO. Falha de e-mail nao desfaz nada.
 /*/
 Static Function AP_AVISAR(cTrans, cOs, cQuem, cMotivo)
     Local aPara    := {}
@@ -1087,25 +934,16 @@ Static Function AP_AVISAR(cTrans, cOs, cQuem, cMotivo)
 
 Return
 
-////////////////////////////////////////////////////////////////////////////////
-// Schedule e endpoints (finos: so traduzem pro U_CNSAPR)
-////////////////////////////////////////////////////////////////////////////////
-
 /*/{Protheus.doc} CNSAPJOB
-Schedule: OS cuja ultima linha da SZA e um envio com prazo VENCIDO (ZA_PRAZO < hoje,
-igual a aba Legenda: "hoje <= prazo" ainda e "Aguardando cliente") e a SZ1 ainda
-em N -> U_CNSAPR("APR", cOs, "D"). A spec escreve <=; trocado pra o cliente nao
-perder o ultimo dia do link. Cadastrar no Schedule como apia.cnsa004.U_CNSAPJOB.
-@author Henrique
-@since 09/10/2026
-@version P12
+Schedule (apia.cnsa004.U_CNSAPJOB): OS em N cuja ultima linha da SZA e envio com prazo vencido
+(ZA_PRAZO < hoje) -> U_CNSAPR("APR", cOs, "D").
 /*/
 User Function CNSAPJOB()
     Local cAlias := ""
     Local cHoje  := ""
     Local aRet   := {}
     Local nOk    := 0
-    // Pelo Schedule o ambiente ja vem aberto: so abre (e fecha) se rodar a mao.
+    // Pelo Schedule o ambiente ja vem aberto: so abre (e fecha) rodando a mao.
     Local lAbriu := Select("SX6") == 0
 
     If lAbriu
@@ -1154,9 +992,6 @@ Return
 /*/{Protheus.doc} CNSAP_API
 POST /CNSAPR?os=&trans=PRE|PRR|APR|REC|ENV&motivo= (usuario logado, Basic).
 Origem: PRE/PRR = M; APR/REC = I (manual).
-@author Henrique
-@since 09/10/2026
-@version P12
 /*/
 @Post(endpoint="/CNSAPR")
 User Function CNSAP_API() As Logical
@@ -1167,7 +1002,7 @@ User Function CNSAP_API() As Logical
     Local aRet   := {}
     Local oJson  := JsonObject():New()
 
-    // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
+    // Usuario de servico (pagina do cliente) so acessa /CNSAAPROVA.
     If U_CNSSERVICO()
         Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
     EndIf
@@ -1187,7 +1022,7 @@ User Function CNSAP_API() As Logical
     oJson["os"]      := cOs
     oJson["aprovad"] := aRet[3]
     oJson["apvtipo"] := aRet[4]
-    // ENV: "E-mail enviado para: ... Falhou para: ..." (o portal mostra).
+    // ENV: "E-mail enviado para: ... Falhou para: ..."
     If Len(aRet) >= 5
         oJson["mensagem"] := aRet[5]
     EndIf
@@ -1197,9 +1032,6 @@ Return oRest:setStatusResponse(200, oJson:ToJson())
 /*/{Protheus.doc} CNSAAP_GET
 GET /CNSAAPROVA?token= - pagina do cliente (Aprovador-OS) consulta o link.
 404 = invalido/expirado/usado (resposta generica); 409 = OS ja decidida.
-@author Henrique
-@since 09/10/2026
-@version P12
 /*/
 @Get(endpoint="/CNSAAPROVA")
 User Function CNSAAP_GET() As Logical
@@ -1215,13 +1047,7 @@ Return oRest:setStatusResponse(200, aRet[3]:ToJson())
 
 /*/{Protheus.doc} CNSAAP_POST
 POST /CNSAAPROVA?token=&decisao=APR|REC&motivo= - resposta do cliente (origem W).
-IP do cliente: headers de proxy (X-Forwarded-For / X-Real-IP), se houver um na frente;
-senao o da propria conexao, oRest:getClientIP() (REST 2.0 - doc TOTVS "Obter IP via Rest";
-o NAT preserva o IP de origem). Nao aceita o parametro ip na query: quem chama e o
-navegador do cliente (portal Angular), que poderia mandar qualquer valor.
-@author Henrique
-@since 09/10/2026
-@version P12
+IP: X-Forwarded-For / X-Real-IP, senao oRest:getClientIP(); nunca da query (o navegador mandaria qualquer valor).
 /*/
 @Post(endpoint="/CNSAAPROVA")
 User Function CNSAAP_POST() As Logical
