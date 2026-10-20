@@ -128,10 +128,12 @@ Static Function OS_MONTARMODEL(nOperAtivar)
     l_oStrSZ1:SetProperty("Z1_SERV", MODEL_FIELD_OBRIGAT, .F.)
     l_oStrSZ1:SetProperty("Z1_TEC", MODEL_FIELD_OBRIGAT, .F.)
 
+    // OS_PREVALIDA na pos-validacao (ao confirmar), nao no bPre: o bPre roda a cada SetValue, antes do valor
+    // entrar, e a lupa do cliente recusava o proprio campo ("Informe o cliente e o site do cliente").
     l_oModel := MPFormModel():New(;
         "FCNS002",;
-        {|oModel| OS_PREVALIDA(oModel)},;
-        {|oModel| OS_VALIDACOBRAR(oModel)})
+        NIL,;
+        {|oModel| OS_PREVALIDA(oModel) .And. OS_VALIDACOBRAR(oModel)})
 
     l_oModel:AddFields(;
         "SZ1MASTER",;
