@@ -1983,7 +1983,8 @@ E-mail e tela de envio da OS (o envio e do U_CNSAPR "ENV"):
   DESCRICAO (cOs)  descricao em texto puro
   CHAMADOS  ()     {"#id - assunto"}
   DESTINO   ()     e-mails do cliente: chamados da OS, senao A1_EMAIL
-@param  cAcao   TELA, RESUMO, DESCRICAO, CHAMADOS ou DESTINO
+  INTERACOES()     interacoes desta OS {data DD/MM/AAAA, hora, consultor, texto}, mais antiga primeiro
+@param  cAcao   TELA, RESUMO, DESCRICAO, CHAMADOS, DESTINO ou INTERACOES
 @param  x1      Parametro da acao (ver tabela acima)
 @return xRet    Conforme a acao
 /*/
@@ -1994,6 +1995,8 @@ Static Function OS_EMAIL(cAcao, x1)
     Local cTexto  := ""
     Local aCh     := {}
     Local aResp   := {}
+    Local cAlias  := ""
+    Local xData   := Nil
     Local nI      := 0
     Local nJ      := 0
 
@@ -2088,6 +2091,34 @@ Static Function OS_EMAIL(cAcao, x1)
             Next nJ
         EndIf
 
+    Case cAcao == "INTERACOES"
+        xRet := {}
+        cOs  := AllTrim(SZ1->Z1_OS)
+        // Blocos do Memo (de quando a OS nao tinha chamado); sem chamado o Memo e so a descricao.
+        If !Empty(AllTrim(SZ1->Z1_IDCH))
+            aCh := OS_SEPARAINTERACOES(SZ1->Z1_SERV)[2]
+            For nI := 1 To Len(aCh)
+                AAdd(xRet, {aCh[nI][1], aCh[nI][2], aCh[nI][4], aCh[nI][5]})
+            Next nI
+        EndIf
+        // ZA2 desta OS. ZA2_DESCRI (Memo) tem que ser a ultima coluna.
+        cAlias := GetNextAlias()
+        BeginSql Alias cAlias
+            SELECT ZA2_DATA, ZA2_HORA, ZA2_CONSUL, ZA2_DESCRI
+            FROM %Table:ZA2% ZA2
+            WHERE ZA2_FILIAL = %xFilial:ZA2%
+              AND ZA2_OS     = %Exp:cOs%
+              AND %NotDel%
+            ORDER BY ZA2_DATA, ZA2_HORA
+        EndSql
+        While !(cAlias)->(Eof())
+            xData := (cAlias)->ZA2_DATA
+            AAdd(xRet, {DToC(If(ValType(xData) == "D", xData, SToD(AllTrim(xData)))), AllTrim((cAlias)->ZA2_HORA), ;
+                OS_NOMETEC(AllTrim((cAlias)->ZA2_CONSUL)), OS_DECODESAFE(AllTrim((cAlias)->ZA2_DESCRI))})
+            (cAlias)->(DbSkip())
+        EndDo
+        (cAlias)->(DbCloseArea())
+
     EndCase
 
 Return xRet
@@ -2095,7 +2126,7 @@ Return xRet
 /*/{Protheus.doc} OS_APRPUB
 Expoe ao CNSA004 (U_CNSAPR) o que e Static aqui:
   GRAVAR (cOs, {{campo, valor}})  grava a SZ1 pelo model leve -> {lOk, cErro}
-  RESUMO, DESTINO, DESCRICAO, CHAMADOS, HORARIO, HORAS (cOs)  ver OS_EMAIL
+  RESUMO, DESTINO, DESCRICAO, CHAMADOS, HORARIO, HORAS, INTERACOES (cOs)  ver OS_EMAIL
 /*/
 User Function OS_APRPUB(cAcao, x1, x2)
     Local xRet   := Nil
