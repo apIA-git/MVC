@@ -1046,8 +1046,8 @@ Static Function AP_JUNTA(aLista, cSep)
 Return cRet
 
 /*/{Protheus.doc} AP_AVISAR
-E-mails da decisao (como o legado): APR -> cliente + tecnico + MV_CNSACCO;
-REC -> tecnico + MV_CNSACCO. Falha de e-mail nao desfaz nada.
+E-mails da decisao: APR e REC -> cliente + tecnico + MV_CNSACCO (a recusa tambem
+avisa o cliente, com o motivo - decisao do usuario em 20/10). Falha de e-mail nao desfaz nada.
 @author Henrique
 @since 09/10/2026
 @version P12
@@ -1068,9 +1068,7 @@ Static Function AP_AVISAR(cTrans, cOs, cQuem, cMotivo)
     AAdd(aLin, {If(cTrans == "APR", "Aprovada por", "Recusada por"), U_CNSOUTL("TEXTO", cQuem)})
     AAdd(aLin, {"Em", DToC(Date()) + " &agrave;s " + Left(Time(), 5)})
 
-    If cTrans == "APR"
-        aPara := apia.cnsa002.U_OS_APRPUB("DESTINO", cOs)
-    EndIf
+    aPara := apia.cnsa002.U_OS_APRPUB("DESTINO", cOs)
     AAdd(aPara, AllTrim(Posicione("AA1", 1, xFilial("AA1") + SZ1->Z1_TEC, "AA1_EMAIL")))
     aCco := StrTokArr2(AllTrim(SuperGetMV("MV_CNSACCO", .F., "")), ";", .F.)
     For nI := 1 To Len(aCco)
