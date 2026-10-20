@@ -228,9 +228,8 @@ Return
 // (apia.cnsa002.U_OS_APRPUB "GRAVAR"), as duas na MESMA transacao.
 //
 // Decisoes do usuario (09/10/2026) que diferem da planilha:
-//  - Z1_APVDOR so com o nome do CLIENTE quando ele responde pelo link (W);
-//    D = "Aprovacao automatica"; PRE e APR manual = "Aprovacao manual";
-//    ENV, PRR e REC manual = vazio. Quem fez fica na SZA (ZA_POR/ZA_EMAIL).
+//  - Z1_APVDOR (20/10/2026, tabela de transacoes): quem decidiu - W = cliente,
+//    I = usuario, D = "Aprovacao automatica"; PRR = usuario; PRE nao altera.
 //  - Estado da OS calculado no BeforeTTS (fase ANT); ModelPosVld (VLD) so
 //    confere permissao; InTTS (GRV) grava a reabertura na SZA.
 //  - AF9_APVMAN: S=Sim / N=Nao (a planilha usa 1; decidido S/N em 14/10/2026).
@@ -401,13 +400,13 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
         If cTrans == "PRE"
             aTaf  := AP_TAREFA(SZ1->Z1_PROJET, SZ1->Z1_REVISA, SZ1->Z1_TAREFA)
             cNovo := If(aTaf[2] == "VB", "A", "N")
-            aSZ1  := {{"Z1_APROVAD", cNovo}, {"Z1_APVTIPO", "M"}, {"Z1_APVDOR", "Aprovacao manual"}, ;
+            aSZ1  := {{"Z1_APROVAD", cNovo}, {"Z1_APVTIPO", "M"}, ;
                       {"Z1_APVDATA", ""}, {"Z1_APVHORA", ""}, {"Z1_APVIP", ""}}
             aSZA  := {{"ZA_APROVAD", cNovo}, {"ZA_APVTIPO", "M"}, {"ZA_POR", aUsu[1]}, {"ZA_EMAIL", aUsu[2]}, ;
                       {"ZA_DTREC", dHoje}, {"ZA_HRREC", cAgora}}
         Else
             cNovo := "R"
-            aSZ1  := {{"Z1_APROVAD", "R"}, {"Z1_APVTIPO", "M"}, {"Z1_APVDOR", ""}, {"Z1_APVMAIL", aUsu[2]}, ;
+            aSZ1  := {{"Z1_APROVAD", "R"}, {"Z1_APVTIPO", "M"}, {"Z1_APVDOR", aUsu[1]}, {"Z1_APVMAIL", aUsu[2]}, ;
                       {"Z1_APVDATA", dHoje}, {"Z1_APVHORA", cAgora}, {"Z1_APVIP", ""}, {"Z1_APVOBS", cMotivo}}
             aSZA  := {{"ZA_APROVAD", "R"}, {"ZA_APVTIPO", "M"}, {"ZA_POR", aUsu[1]}, {"ZA_EMAIL", aUsu[2]}, ;
                       {"ZA_DTREC", dHoje}, {"ZA_HRREC", cAgora}, {"ZA_DESCRI", cMotivo}}
@@ -449,8 +448,7 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
         cNovo := If(cTrans == "APR", "S", "R")
         aSZ1  := {{"Z1_APROVAD", cNovo}, {"Z1_APVTIPO", cOrigem}, {"Z1_APVDATA", dHoje}, {"Z1_APVHORA", cAgora}, ;
                   {"Z1_APVIP", If(cOrigem == "W", AP_TXT(jDados, "ip"), "")}, {"Z1_APVMAIL", aUsu[2]}, ;
-                  {"Z1_APVDOR", If(cOrigem == "W", cCliente, If(cTrans == "REC", "", ;
-                                If(cOrigem == "D", "Aprovacao automatica", "Aprovacao manual")))}}
+                  {"Z1_APVDOR", aUsu[1]}}
         aSZA  := {{"ZA_APROVAD", cNovo}, {"ZA_APVTIPO", cOrigem}, {"ZA_POR", aUsu[1]}, {"ZA_EMAIL", aUsu[2]}, ;
                   {"ZA_IP", If(cOrigem == "W", AP_TXT(jDados, "ip"), "")}, {"ZA_DTREC", dHoje}, {"ZA_HRREC", cAgora}}
         // Motivo da recusa (obrigatorio) ou observacao da aprovacao (opcional - decisao do usuario).
