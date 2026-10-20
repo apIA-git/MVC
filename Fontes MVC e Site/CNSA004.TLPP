@@ -230,6 +230,8 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
     Local cAgora   := Left(Time(), 5)
     Local lMudou   := .F.
     Local jOs      := Nil
+    Local jInt     := Nil
+    Local aJsInt   := {}
     Local cAlias   := ""
     Local aEnv     := {}
     Local cMsgEnv  := ""
@@ -492,6 +494,18 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
         jOs["projeto"]   := AllTrim(SZ1->Z1_PROJET) + " " + AllTrim(Posicione("AF8", 1, xFilial("AF8") + SZ1->Z1_PROJET, "AF8_DESCRI"))
         jOs["chamados"]  := apia.cnsa002.U_OS_APRPUB("CHAMADOS", SZ1->Z1_OS)
         jOs["descricao"] := apia.cnsa002.U_OS_APRPUB("DESCRICAO", SZ1->Z1_OS)
+        // Interacoes desta OS (mais antiga primeiro).
+        aCampos := apia.cnsa002.U_OS_APRPUB("INTERACOES", SZ1->Z1_OS)
+        aJsInt  := {}
+        For nI := 1 To Len(aCampos)
+            jInt := JsonObject():New()
+            jInt["data"]      := aCampos[nI][1]
+            jInt["hora"]      := aCampos[nI][2]
+            jInt["consultor"] := aCampos[nI][3]
+            jInt["texto"]     := aCampos[nI][4]
+            AAdd(aJsInt, jInt)
+        Next nI
+        jOs["interacoes"] := aJsInt
         aRet := {.T., "", jOs}
 
     //--- Legenda (aba Legenda - primeira que casar)
@@ -853,6 +867,7 @@ Static Function AP_ENVIAR(cOs, aPara, cToken, dValid)
     Local cPara := ""
     Local aLin  := apia.cnsa002.U_OS_APRPUB("RESUMO", cOs)
     Local cDesc := U_CNSOUTL("TEXTO", apia.cnsa002.U_OS_APRPUB("DESCRICAO", cOs))
+    Local aInt  := apia.cnsa002.U_OS_APRPUB("INTERACOES", cOs)
     Local cUrl  := AllTrim(SuperGetMV("MV_CNSAURL", .F., "https://www.apia.com.br/Aprovador-OS"))
     Local cLink := ""
     Local cObs  := ""
@@ -868,6 +883,13 @@ Static Function AP_ENVIAR(cOs, aPara, cToken, dValid)
         'font-size:15px;font-weight:bold;padding:12px 28px;border-radius:6px;text-decoration:none">' + ;
         'Aprovar ou recusar a OS</a><br><span style="font-size:12px;color:#6b7280">Link v&aacute;lido at&eacute; ' + ;
         DToC(dValid) + '</span></div>Qualquer d&uacute;vida, entre em contato: <b>pericles@apia.com.br</b>'
+
+    // Interacoes desta OS depois da descricao (mais antiga primeiro).
+    For nI := 1 To Len(aInt)
+        cDesc += If(nI == 1, '<div style="color:#0d5a8a;font-size:18px;font-weight:bold;padding:16px 0 8px">Intera&ccedil;&otilde;es</div>', "") + ;
+            '<div style="padding-bottom:10px"><b>' + aInt[nI][1] + " " + aInt[nI][2] + " - " + U_CNSOUTL("TEXTO", aInt[nI][3]) + '</b><br>' + ;
+            StrTran(StrTran(U_CNSOUTL("TEXTO", aInt[nI][4]), Chr(13) + Chr(10), "<br>"), Chr(10), "<br>") + '</div>'
+    Next nI
 
     For nI := 1 To Len(aPara)
         cPara := AllTrim(aPara[nI])

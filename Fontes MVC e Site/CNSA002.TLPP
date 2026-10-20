@@ -120,6 +120,7 @@ Static Function OS_MONTARMODEL(nOperAtivar)
     Local l_oStrSZ1 := FWFormStruct(1, "SZ1")
     Local l_oStrSZ2 := FWFormStruct(1, "SZ2")
     Local aRelSZ2   := {}
+    Local cTec      := ""
 
     Default nOperAtivar := 0
 
@@ -128,10 +129,12 @@ Static Function OS_MONTARMODEL(nOperAtivar)
     l_oStrSZ1:SetProperty("Z1_SERV", MODEL_FIELD_OBRIGAT, .F.)
     l_oStrSZ1:SetProperty("Z1_TEC", MODEL_FIELD_OBRIGAT, .F.)
 
+    // OS_PREVALIDA na pos-validacao (ao confirmar), nao no bPre: o bPre roda a cada SetValue, antes do valor
+    // entrar, e a lupa do cliente recusava o proprio campo ("Informe o cliente e o site do cliente").
     l_oModel := MPFormModel():New(;
         "FCNS002",;
-        {|oModel| OS_PREVALIDA(oModel)},;
-        {|oModel| OS_VALIDACOBRAR(oModel)})
+        NIL,;
+        {|oModel| OS_PREVALIDA(oModel) .And. OS_VALIDACOBRAR(oModel)})
 
     l_oModel:AddFields(;
         "SZ1MASTER",;
@@ -155,6 +158,12 @@ Static Function OS_MONTARMODEL(nOperAtivar)
         // Numero AA + sequencia do ano no lugar do inicializador (LoadValue: Z1_OS nao e editavel).
         If nOperAtivar == 3
             l_oModel:GetModel("SZ1MASTER"):LoadValue("Z1_OS", OS_PROXIMONUM())
+            // Analista = tecnico do usuario logado (pode trocar na tela).
+            cTec := AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC"))
+            If !Empty(cTec)
+                l_oModel:GetModel("SZ1MASTER"):LoadValue("Z1_TEC", cTec)
+                l_oModel:GetModel("SZ1MASTER"):LoadValue("Z1_NMTEC", OS_NOMETEC(cTec))
+            EndIf
         EndIf
     EndIf
 
@@ -186,7 +195,7 @@ Static Function OS_VALIDACAMPO(p_oField, p_sAcao, p_sCampo, p_vValor)
 Return l_bOk
 
 /*/{Protheus.doc} OS_PREVALIDA
-Inclusao: confere os obrigatorios (SetErrorMessage).
+Inclusao: confere os obrigatorios. Alterar: OS sem chamado nao ganha chamado (SetErrorMessage).
 @param  p_oModel   Objeto do Model (FormModel) sendo validado
 @return lOk        .T. se valido
 /*/
@@ -196,6 +205,11 @@ Static Function OS_PREVALIDA(p_oModel)
                         {"Z1_TIPO", "Informe o codigo do servico."}, {"Z1_DTOS", "Informe a data da OS."}}
     Local nI        := 0
 
+    // Alterar: OS sem chamado nao passa a ter chamado (SZ1 ainda tem o valor gravado).
+    If p_oModel:GetOperation() == 4 .And. Empty(SZ1->Z1_IDCH) .And. !Empty(oModelSZ1:GetValue("Z1_IDCH"))
+        p_oModel:SetErrorMessage("SZ1MASTER", "Z1_IDCH", "SZ1", "Z1_IDCH", "CNSA002", "OS sem chamado nao pode passar a ter chamado.")
+        Return .F.
+    EndIf
     If p_oModel:GetOperation() != 3
         Return .T.
     EndIf
@@ -473,9 +487,10 @@ User Function OS_TELA(nOper)
     Local oModel := Nil
     Local cOs    := SZ1->Z1_OS
 
-    // M->Z1_* no frame que fica vivo com a tela aberta (lupas/F3).
+    // M->Z1_* no frame que fica vivo com a tela aberta (lupas/F3). Pelo dicionario (.T.): inclui os campos
+    // virtuais (nome do cliente etc.) - sem eles o fechamento da lupa fazia LoadValue com Nil.
     If lGrava
-        RegToMemory("SZ1", nOper == MODEL_OPERATION_INSERT, .F.)
+        RegToMemory("SZ1", nOper == MODEL_OPERATION_INSERT, .T.)
     EndIf
     oModel := OS_MONTARMODEL(nOper)
     If nOper == MODEL_OPERATION_INSERT
@@ -1968,7 +1983,8 @@ E-mail e tela de envio da OS (o envio e do U_CNSAPR "ENV"):
   DESCRICAO (cOs)  descricao em texto puro
   CHAMADOS  ()     {"#id - assunto"}
   DESTINO   ()     e-mails do cliente: chamados da OS, senao A1_EMAIL
-@param  cAcao   TELA, RESUMO, DESCRICAO, CHAMADOS ou DESTINO
+  INTERACOES()     interacoes desta OS {data DD/MM/AAAA, hora, consultor, texto}, mais antiga primeiro
+@param  cAcao   TELA, RESUMO, DESCRICAO, CHAMADOS, DESTINO ou INTERACOES
 @param  x1      Parametro da acao (ver tabela acima)
 @return xRet    Conforme a acao
 /*/
@@ -1979,6 +1995,8 @@ Static Function OS_EMAIL(cAcao, x1)
     Local cTexto  := ""
     Local aCh     := {}
     Local aResp   := {}
+    Local cAlias  := ""
+    Local xData   := Nil
     Local nI      := 0
     Local nJ      := 0
 
@@ -2073,6 +2091,34 @@ Static Function OS_EMAIL(cAcao, x1)
             Next nJ
         EndIf
 
+    Case cAcao == "INTERACOES"
+        xRet := {}
+        cOs  := AllTrim(SZ1->Z1_OS)
+        // Blocos do Memo (de quando a OS nao tinha chamado); sem chamado o Memo e so a descricao.
+        If !Empty(AllTrim(SZ1->Z1_IDCH))
+            aCh := OS_SEPARAINTERACOES(SZ1->Z1_SERV)[2]
+            For nI := 1 To Len(aCh)
+                AAdd(xRet, {aCh[nI][1], aCh[nI][2], aCh[nI][4], aCh[nI][5]})
+            Next nI
+        EndIf
+        // ZA2 desta OS. ZA2_DESCRI (Memo) tem que ser a ultima coluna.
+        cAlias := GetNextAlias()
+        BeginSql Alias cAlias
+            SELECT ZA2_DATA, ZA2_HORA, ZA2_CONSUL, ZA2_DESCRI
+            FROM %Table:ZA2% ZA2
+            WHERE ZA2_FILIAL = %xFilial:ZA2%
+              AND ZA2_OS     = %Exp:cOs%
+              AND %NotDel%
+            ORDER BY ZA2_DATA, ZA2_HORA
+        EndSql
+        While !(cAlias)->(Eof())
+            xData := (cAlias)->ZA2_DATA
+            AAdd(xRet, {DToC(If(ValType(xData) == "D", xData, SToD(AllTrim(xData)))), AllTrim((cAlias)->ZA2_HORA), ;
+                OS_NOMETEC(AllTrim((cAlias)->ZA2_CONSUL)), OS_DECODESAFE(AllTrim((cAlias)->ZA2_DESCRI))})
+            (cAlias)->(DbSkip())
+        EndDo
+        (cAlias)->(DbCloseArea())
+
     EndCase
 
 Return xRet
@@ -2080,7 +2126,7 @@ Return xRet
 /*/{Protheus.doc} OS_APRPUB
 Expoe ao CNSA004 (U_CNSAPR) o que e Static aqui:
   GRAVAR (cOs, {{campo, valor}})  grava a SZ1 pelo model leve -> {lOk, cErro}
-  RESUMO, DESTINO, DESCRICAO, CHAMADOS, HORARIO, HORAS (cOs)  ver OS_EMAIL
+  RESUMO, DESTINO, DESCRICAO, CHAMADOS, HORARIO, HORAS, INTERACOES (cOs)  ver OS_EMAIL
 /*/
 User Function OS_APRPUB(cAcao, x1, x2)
     Local xRet   := Nil
