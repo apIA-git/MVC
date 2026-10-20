@@ -976,7 +976,10 @@ Static Function AP_ENVIAR(cOs, aPara, cToken, dValid)
     Local cPara := ""
     Local aLin  := apia.cnsa002.U_OS_APRPUB("RESUMO", cOs)
     Local cDesc := U_CNSOUTL("TEXTO", apia.cnsa002.U_OS_APRPUB("DESCRICAO", cOs))
-    Local cLink := AllTrim(SuperGetMV("MV_CNSAURL", .F., "https://www.apia.com.br/Aprovador-OS")) + "/?t=" + cToken
+    Local cUrl  := AP_SEMBARRA(AllTrim(SuperGetMV("MV_CNSAURL", .F., "https://www.apia.com.br/Aprovador-OS")))
+    // Rota do portal Angular (.../apia_cs/aprovacao/<token>) ou pagina ASP.NET
+    // (.../aprovador-os/?t=<token>) - decide pelo MV_CNSAURL, pra troca ser so o parametro.
+    Local cLink := cUrl + If("/aprovacao" $ Lower(cUrl), "/", "/?t=") + cToken
     Local cObs  := ""
     Local nI    := 0
 
@@ -1001,6 +1004,18 @@ Static Function AP_ENVIAR(cOs, aPara, cToken, dValid)
     Next nI
 
 Return {aOk, aErro}
+
+/*/{Protheus.doc} AP_SEMBARRA
+URL sem a barra final (MV_CNSAURL com ou sem "/" no fim da o mesmo link).
+@author Henrique
+@since 20/10/2026
+@version P12
+/*/
+Static Function AP_SEMBARRA(cUrl)
+    While Right(cUrl, 1) == "/"
+        cUrl := Left(cUrl, Len(cUrl) - 1)
+    EndDo
+Return cUrl
 
 /*/{Protheus.doc} AP_EMAILOK
 Formato minimo de e-mail: algo@dominio.ext, sem espaco.
@@ -1198,7 +1213,9 @@ Return oRest:setStatusResponse(200, aRet[3]:ToJson())
 
 /*/{Protheus.doc} CNSAAP_POST
 POST /CNSAAPROVA?token=&decisao=APR|REC&motivo= - resposta do cliente (origem W).
-IP do header X-Forwarded-For (a pagina repassa o do cliente), senao do parametro ip.
+IP do cliente pelos headers de proxy (X-Forwarded-For / X-Real-IP). Nao aceita mais o
+parametro ip na query: quem chama agora e o navegador do cliente (portal Angular), que
+poderia mandar qualquer valor.
 @author Henrique
 @since 09/10/2026
 @version P12
@@ -1225,11 +1242,15 @@ User Function CNSAAP_POST() As Logical
     EndIf
 
     jDados["motivo"] := AP_TXT(jQuery, "motivo")
-    jDados["ip"]     := AP_TXT(jQuery, "ip")
+    jDados["ip"]     := ""
     If ValType(jHead) == "J" .Or. ValType(jHead) == "O"
         aNomes := jHead:GetNames()
+        // TEMPORARIO (teste interno da rota Angular): quais headers o REST entrega, pra
+        // achar onde vem o IP do cliente no acesso direto. Remover depois do teste.
+        ConOut("CNSAAP_POST headers: " + ArrTokStr(aNomes, ","))
         For nI := 1 To Len(aNomes)
-            If Lower(aNomes[nI]) == "x-forwarded-for" .And. !Empty(jHead[aNomes[nI]])
+            If (Lower(aNomes[nI]) == "x-forwarded-for" .Or. Lower(aNomes[nI]) == "x-real-ip") .And. ;
+                    !Empty(jHead[aNomes[nI]]) .And. Empty(jDados["ip"])
                 aIps := StrTokArr2(cValToChar(jHead[aNomes[nI]]), ",", .F.)
                 jDados["ip"] := AllTrim(aIps[1])
             EndIf
