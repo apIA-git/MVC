@@ -330,7 +330,10 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
                 aReg := If(lMudou, U_CNSAPR("REG", {oSZ1:GetValue("Z1_PROJET"), oSZ1:GetValue("Z1_REVISA"), ;
                     oSZ1:GetValue("Z1_TAREFA")}), {"N", ""})
                 aRet[5] := .T.
-            ElseIf nOper == MODEL_OPERATION_INSERT .Or. lMudou
+            ElseIf nOper == MODEL_OPERATION_INSERT .Or. lMudou .Or. ;
+                    (nOper == MODEL_OPERATION_UPDATE .And. Empty(cAntes))
+                // Inclusao, troca de tarefa, ou OS antiga sem estado (anterior a aprovacao):
+                // aplica a regra da tarefa - sem isso a OS legada nunca chegava a "A enviar".
                 aReg := U_CNSAPR("REG", {oSZ1:GetValue("Z1_PROJET"), oSZ1:GetValue("Z1_REVISA"), oSZ1:GetValue("Z1_TAREFA")})
                 // Reavaliou uma OS ja enviada: grava evento na SZA pra matar o link antigo
                 // (o token so vale se o envio for a ULTIMA linha da OS).
