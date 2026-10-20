@@ -2426,7 +2426,6 @@ Grava uma interacao (ZA2) pelo model CNSAZA2VIEW (o mesmo da tela).
 @return cSeq   Sequencia (3 digitos) da interacao gravada - vazio se falhou
 /*/
 Static Function CH_GRAVARINTERACAO(cIdCh, cConsultor, cTexto, cOs, cErro)
-    Local cAlias      := GetNextAlias()
     Local nSeq        := 1
     Local oModel      := Nil
     Local oModelZA2   := Nil
