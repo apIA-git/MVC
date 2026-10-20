@@ -1442,12 +1442,34 @@ Le a descricao da tarefa do projeto (AF9) via Posicione.
 /*/
 //-------------------------------------------------------------------
 Static Function OS_NOMETAREFA(cProjeto, cTarefa, cRevisa)
+    Local cDesc  := ""
+    Local cAlias := ""
+
     If Empty(cTarefa)
         Return ""
     EndIf
-    // Chave da AF9 e projeto + REVISAO + tarefa (sem a revisao nunca achava a descricao).
-Return AllTrim(Posicione("AF9", 1, xFilial("AF9") + PadR(AllTrim(cProjeto), TamSX3("AF9_PROJET")[1]) + ;
-    PadR(AllTrim(cRevisa), TamSX3("AF9_REVISA")[1]) + PadR(AllTrim(cTarefa), TamSX3("AF9_TAREFA")[1]), "AF9_DESCRI"))
+    // Chave da AF9 e projeto + REVISAO + tarefa.
+    cDesc := AllTrim(Posicione("AF9", 1, xFilial("AF9") + PadR(AllTrim(cProjeto), TamSX3("AF9_PROJET")[1]) + ;
+        PadR(AllTrim(cRevisa), TamSX3("AF9_REVISA")[1]) + PadR(AllTrim(cTarefa), TamSX3("AF9_TAREFA")[1]), "AF9_DESCRI"))
+    // OS sem revisao (antigas) ou com revisao que nao tem a tarefa: usa a revisao mais
+    // recente do projeto que tenha essa tarefa.
+    If Empty(cDesc)
+        cAlias := GetNextAlias()
+        BeginSql Alias cAlias
+            SELECT AF9_DESCRI
+            FROM %Table:AF9% AF9
+            WHERE AF9_FILIAL = %xFilial:AF9%
+              AND TRIM(AF9_PROJET) = %Exp:AllTrim(cProjeto)%
+              AND TRIM(AF9_TAREFA) = %Exp:AllTrim(cTarefa)%
+              AND AF9.%NotDel%
+            ORDER BY AF9_REVISA DESC
+        EndSql
+        If !(cAlias)->(Eof())
+            cDesc := AllTrim((cAlias)->AF9_DESCRI)
+        EndIf
+        (cAlias)->(DbCloseArea())
+    EndIf
+Return cDesc
 
 // Nome do servico (SB1) e do analista (AA1) - Z1_NMTEC/Z1_NMTIPO existem no
 // dicionario (SX3) mas NAO sao coluna fisica na SZ1 (gatilho so-tela, nunca
