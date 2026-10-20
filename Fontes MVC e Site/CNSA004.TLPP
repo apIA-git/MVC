@@ -136,6 +136,7 @@ Static Function HA_MONTARMODEL(nOperAtivar, lSemTela)
     Local aCampos  := {}
     Local aVirtual := {}
     Local nI       := 0
+    Local cVazio   := ""
 
     Default nOperAtivar := 0
     Default lSemTela    := .F.
@@ -149,7 +150,12 @@ Static Function HA_MONTARMODEL(nOperAtivar, lSemTela)
                 oStr:SetProperty(aCampos[nI][MODEL_FIELD_IDFIELD], MODEL_FIELD_VALID,   {|| .T.})
                 oStr:SetProperty(aCampos[nI][MODEL_FIELD_IDFIELD], MODEL_FIELD_WHEN,    {|| .T.})
                 oStr:SetProperty(aCampos[nI][MODEL_FIELD_IDFIELD], MODEL_FIELD_OBRIGAT, .F.)
-                oStr:SetProperty(aCampos[nI][MODEL_FIELD_IDFIELD], MODEL_FIELD_INIT,    {|| Nil})
+                // Inicializador vazio DO TIPO do campo (Nil o MVC recusa: "Erro no
+                // inicializador padrao"). Bloco por macro: um bloco proprio por campo.
+                cVazio := If(aCampos[nI][MODEL_FIELD_TIPO] == "D", 'CToD("")', ;
+                          If(aCampos[nI][MODEL_FIELD_TIPO] == "N", "0", ;
+                          If(aCampos[nI][MODEL_FIELD_TIPO] == "L", ".F.", '""')))
+                oStr:SetProperty(aCampos[nI][MODEL_FIELD_IDFIELD], MODEL_FIELD_INIT, &("{|| " + cVazio + "}"))
             EndIf
         Next nI
         For nI := 1 To Len(aVirtual)
@@ -552,8 +558,8 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
         jOs["cliente"]   := AllTrim(Posicione("SA1", 1, xFilial("SA1") + SZ1->Z1_CLI + SZ1->Z1_LOJA, "A1_NOME")) + ;
                             " (Loja " + AllTrim(SZ1->Z1_LOJA) + ")"
         jOs["data"]      := DToC(SZ1->Z1_DTOS)
-        jOs["horario"]   := AllTrim(SZ1->Z1_HRINI) + " as " + AllTrim(SZ1->Z1_HRFIM)
-        jOs["horas"]     := AllTrim(SZ1->Z1_HRTOT)
+        jOs["horario"]   := apia.cnsa002.U_OS_APRPUB("HORARIO", SZ1->Z1_OS)   // "09:00 as 11:00" (a tela poe o acento)
+        jOs["horas"]     := apia.cnsa002.U_OS_APRPUB("HORAS", SZ1->Z1_OS)
         jOs["analista"]  := AllTrim(Posicione("AA1", 1, xFilial("AA1") + SZ1->Z1_TEC, "AA1_NOMTEC"))
         jOs["projeto"]   := AllTrim(SZ1->Z1_PROJET) + " " + AllTrim(Posicione("AF8", 1, xFilial("AF8") + SZ1->Z1_PROJET, "AF8_DESCRI"))
         jOs["chamados"]  := apia.cnsa002.U_OS_APRPUB("CHAMADOS", SZ1->Z1_OS)
@@ -1040,8 +1046,8 @@ Static Function AP_JUNTA(aLista, cSep)
 Return cRet
 
 /*/{Protheus.doc} AP_AVISAR
-E-mails da decisao (como o legado): APR -> cliente + tecnico + MV_CNSACCO;
-REC -> tecnico + MV_CNSACCO. Falha de e-mail nao desfaz nada.
+E-mails da decisao: APR e REC -> cliente + tecnico + MV_CNSACCO (a recusa tambem
+avisa o cliente, com o motivo - decisao do usuario em 20/10). Falha de e-mail nao desfaz nada.
 @author Henrique
 @since 09/10/2026
 @version P12
@@ -1062,9 +1068,7 @@ Static Function AP_AVISAR(cTrans, cOs, cQuem, cMotivo)
     AAdd(aLin, {If(cTrans == "APR", "Aprovada por", "Recusada por"), U_CNSOUTL("TEXTO", cQuem)})
     AAdd(aLin, {"Em", DToC(Date()) + " &agrave;s " + Left(Time(), 5)})
 
-    If cTrans == "APR"
-        aPara := apia.cnsa002.U_OS_APRPUB("DESTINO", cOs)
-    EndIf
+    aPara := apia.cnsa002.U_OS_APRPUB("DESTINO", cOs)
     AAdd(aPara, AllTrim(Posicione("AA1", 1, xFilial("AA1") + SZ1->Z1_TEC, "AA1_EMAIL")))
     aCco := StrTokArr2(AllTrim(SuperGetMV("MV_CNSACCO", .F., "")), ";", .F.)
     For nI := 1 To Len(aCco)
@@ -1077,7 +1081,8 @@ Static Function AP_AVISAR(cTrans, cOs, cQuem, cMotivo)
                 " O.S. n. " + AllTrim(cOs), ;
                 apia.cnsa001.U_CH_HTMLPUB("", "OS " + AllTrim(cOs) + " " + cAcao, "", ;
                     "A ordem de servi&ccedil;o foi " + cAcao + ".", aLin, ;
-                    If(cTrans == "REC", "Motivo da recusa", ""), If(cTrans == "REC", U_CNSOUTL("TEXTO", cMotivo), ""), ""))
+                    If(Empty(cMotivo), "", If(cTrans == "REC", "Motivo da recusa", "Observa&ccedil;&atilde;o do cliente")), ;
+                    If(Empty(cMotivo), "", U_CNSOUTL("TEXTO", cMotivo)), ""))
         EndIf
     Next nI
 

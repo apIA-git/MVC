@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Aprovação de OS - Ápia</title>
+<!--
+  Aprovador-OS (aposentado em 20/10/2026): a aprovação do cliente agora é a rota
+  pública do portal Angular (/apia_cs/aprovacao/<token>). Esta página só
+  redireciona os links antigos dos e-mails (.../Aprovador-OS/?t=<token>).
+  Sem ASP.NET nem PHP - HTML estático.
+-->
+<script>
+  (function () {
+    var t = (new URLSearchParams(location.search).get('t') || '').toLowerCase();
+    var destino = '/apia_cs/aprovacao/' + (/^[0-9a-f]{64}$/.test(t) ? t : 'invalido');
+    location.replace(destino);
+  })();
+</script>
+</head>
+<body style="font-family: Arial, sans-serif; text-align: center; padding-top: 48px;">
+  <p>Redirecionando para a aprovação da OS...</p>
+  <p><a href="/apia_cs/">Clique aqui se não for redirecionado.</a></p>
+</body>
+</html>

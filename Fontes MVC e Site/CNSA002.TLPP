@@ -1291,6 +1291,19 @@ do campo").
 @version P12
 /*/
 //-------------------------------------------------------------------
+/*/{Protheus.doc} OS_HHMM
+Hora para exibir: "0900" -> "09:00" (ja com dois-pontos ou outro formato: como veio).
+@author Henrique
+@since 20/10/2026
+@version P12
+/*/
+Static Function OS_HHMM(cHora)
+    Local cRet := AllTrim(cValToChar(cHora))
+    If Len(cRet) == 4 .And. !(":" $ cRet)
+        cRet := Left(cRet, 2) + ":" + Right(cRet, 2)
+    EndIf
+Return cRet
+
 Static Function OS_HORACAMPO(cHora, cCampo)
     Local nTam := TamSX3(cCampo)[1]
     Local cRet := cHora
@@ -1428,11 +1441,13 @@ Le a descricao da tarefa do projeto (AF9) via Posicione.
 @version P12
 /*/
 //-------------------------------------------------------------------
-Static Function OS_NOMETAREFA(cProjeto, cTarefa)
+Static Function OS_NOMETAREFA(cProjeto, cTarefa, cRevisa)
     If Empty(cTarefa)
         Return ""
     EndIf
-Return AllTrim(Posicione("AF9", 1, xFilial("AF9") + cProjeto + cTarefa, "AF9_DESCRI"))
+    // Chave da AF9 e projeto + REVISAO + tarefa (sem a revisao nunca achava a descricao).
+Return AllTrim(Posicione("AF9", 1, xFilial("AF9") + PadR(AllTrim(cProjeto), TamSX3("AF9_PROJET")[1]) + ;
+    PadR(AllTrim(cRevisa), TamSX3("AF9_REVISA")[1]) + PadR(AllTrim(cTarefa), TamSX3("AF9_TAREFA")[1]), "AF9_DESCRI"))
 
 // Nome do servico (SB1) e do analista (AA1) - Z1_NMTEC/Z1_NMTIPO existem no
 // dicionario (SX3) mas NAO sao coluna fisica na SZ1 (gatilho so-tela, nunca
@@ -1477,7 +1492,7 @@ Calcula o status derivado da OS, com a mesma regra das 5 legendas
 @param  cAprovad   Valor de Z1_APROVAD ("S"/"A"/outro)
 @param  cFaturar   Valor de Z1_FATURAR ("S"/outro)
 @param  cTec       Codigo do tecnico (Z1_TEC) responsavel
-@return cStatus    "aprovada_faturada", "faturada_sem_aprovacao", "aprovada", "aguardando_aprovacao" ou "negada"
+@return cStatus    "aprovada_faturada", "faturada_sem_aprovacao", "aprovada", "recusada", "aguardando_aprovacao" ou "negada"
 @author Henrique
 @since 02/09/2026
 @version P12
@@ -1492,6 +1507,8 @@ Static Function OS_STATUSCALC(cAprovad, cFaturar, cTec)
         Return "faturada_sem_aprovacao"
     ElseIf lAprovada
         Return "aprovada"
+    ElseIf cAprovad == "R"   // recusada (cliente, manual ou pre-recusa) - nao esta aguardando
+        Return "recusada"
     ElseIf !Empty(cTec)
         Return "aguardando_aprovacao"
     EndIf
@@ -1868,7 +1885,7 @@ User Function OS_APILISTAR() As Logical
             oLinha['nomeProjeto']    := OS_NOMEPROJ(cProjAtual)
             oLinha['revisao']        := AllTrim((cAlias)->Z1_REVISA)
             oLinha['tarefa']         := AllTrim((cAlias)->Z1_TAREFA)
-            oLinha['nomeTarefa']     := OS_NOMETAREFA(cProjAtual, AllTrim((cAlias)->Z1_TAREFA))
+            oLinha['nomeTarefa']     := OS_NOMETAREFA(cProjAtual, AllTrim((cAlias)->Z1_TAREFA), AllTrim((cAlias)->Z1_REVISA))
             oLinha['chamadoHpsd']    := AllTrim((cAlias)->Z1_CHPSD)
             // Z1_IDCH (caractere) - chamado novo (ZA1_IDCH); Z1_CHHDK segue
             // intocado (legado do HPSD, sem uso novo).
@@ -2690,14 +2707,15 @@ Static Function OS_EMAIL(cAcao, x1)
         AAdd(xRet, {"OS", '<span style="color:#1a7fc1">' + AllTrim(SZ1->Z1_OS) + '</span>'})
         AAdd(xRet, {"Cliente", U_CNSOUTL("TEXTO", OS_NOMECLI(AllTrim(SZ1->Z1_CLI), AllTrim(SZ1->Z1_LOJA))) + " (Loja " + AllTrim(SZ1->Z1_LOJA) + ")"})
         AAdd(xRet, {"Data", DToC(SZ1->Z1_DTOS)})
-        AAdd(xRet, {"Hor&aacute;rio", AllTrim(SZ1->Z1_HRINI) + " &agrave;s " + AllTrim(SZ1->Z1_HRFIM)})
-        AAdd(xRet, {"Total de horas", AllTrim(SZ1->Z1_HRTOT)})
+        AAdd(xRet, {"Hor&aacute;rio", StrTran(OS_EMAIL("HORARIO"), " as ", " &agrave;s ")})
+        AAdd(xRet, {"Total de horas", OS_EMAIL("HORAS")})
         AAdd(xRet, {"Analista", U_CNSOUTL("TEXTO", OS_NOMETEC(AllTrim(SZ1->Z1_TEC)))})
         If !Empty(SZ1->Z1_PROJET)
             AAdd(xRet, {"Projeto", AllTrim(SZ1->Z1_PROJET) + " - " + U_CNSOUTL("TEXTO", OS_NOMEPROJ(AllTrim(SZ1->Z1_PROJET)))})
         EndIf
         If !Empty(SZ1->Z1_TAREFA)
-            AAdd(xRet, {"Tarefa", AllTrim(SZ1->Z1_TAREFA) + " - " + U_CNSOUTL("TEXTO", OS_NOMETAREFA(AllTrim(SZ1->Z1_PROJET), AllTrim(SZ1->Z1_TAREFA)))})
+            AAdd(xRet, {"Tarefa", AllTrim(SZ1->Z1_TAREFA) + " - " + U_CNSOUTL("TEXTO", OS_NOMETAREFA(AllTrim(SZ1->Z1_PROJET), ;
+                AllTrim(SZ1->Z1_TAREFA), AllTrim(SZ1->Z1_REVISA)))})
         EndIf
         aCh := OS_ZA3("LER", AllTrim(SZ1->Z1_OS), AllTrim(SZ1->Z1_IDCH))
         If Len(aCh) > 0
@@ -2707,6 +2725,20 @@ Static Function OS_EMAIL(cAcao, x1)
                     U_CNSOUTL("TEXTO", Posicione("ZA1", 1, xFilial("ZA1") + aCh[nI], "ZA1_ASSUNT"))
             Next nI
             AAdd(xRet, {"Chamados", cTexto})
+        EndIf
+
+    //--- Horario "09:00 as 11:00" (a hora e gravada sem os dois-pontos: 0900) -----
+    Case cAcao == "HORARIO"
+        xRet := OS_HHMM(SZ1->Z1_HRINI) + " as " + OS_HHMM(SZ1->Z1_HRFIM)
+
+    //--- Total de horas "02:00": Z1_HRTOT ou, vazio, o Z1_TOTAL (horas decimais) ----
+    Case cAcao == "HORAS"
+        If !Empty(AllTrim(SZ1->Z1_HRTOT))
+            xRet := OS_HHMM(SZ1->Z1_HRTOT)
+        ElseIf SZ1->Z1_TOTAL > 0
+            xRet := StrZero(Int(SZ1->Z1_TOTAL), 2) + ":" + StrZero(Round((SZ1->Z1_TOTAL - Int(SZ1->Z1_TOTAL)) * 60, 0), 2)
+        Else
+            xRet := ""
         EndIf
 
     //--- Descricao da OS em texto puro (sem interacoes do Memo e sem tags HTML) ---
@@ -2780,7 +2812,7 @@ User Function OS_APRPUB(cAcao, x1, x2)
 
     SZ1->(DbSetOrder(1))
     If !SZ1->(DbSeek(cFilAnt + cOs))
-        Return If(cAcao == "GRAVAR", {.F., "OS nao encontrada."}, If(cAcao == "DESCRICAO", "", {}))
+        Return If(cAcao == "GRAVAR", {.F., "OS nao encontrada."}, If(cAcao $ "DESCRICAO|HORARIO|HORAS", "", {}))
     EndIf
 
     Do Case
@@ -2810,7 +2842,7 @@ User Function OS_APRPUB(cAcao, x1, x2)
     Case cAcao == "DESCRICAO"
         xRet := OS_EMAIL("DESCRICAO", cOs)
 
-    Otherwise   // RESUMO, DESTINO, CHAMADOS (SZ1 posicionada)
+    Otherwise   // RESUMO, DESTINO, CHAMADOS, HORARIO, HORAS (SZ1 posicionada)
         xRet := OS_EMAIL(cAcao)
     EndCase
 
