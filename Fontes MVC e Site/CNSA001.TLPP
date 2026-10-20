@@ -149,7 +149,7 @@ Static Function CH_MONTARMODEL(lAtivarInsert)
     l_oModel := MPFormModel():New(;
         "FCNS001",;
         NIL,;
-        {|oModel| CH_PREVALIDA(oModel) .And. CH_POSGRAVACAO(oModel)},;
+        {|oModel| CH_PREVALIDA(oModel)},;
         NIL,;
         NIL)
 
@@ -178,6 +178,8 @@ Static Function CH_MONTARMODEL(lAtivarInsert)
     EndIf
 
     l_oModel:SetPrimaryKey({"ZA1_FILIAL","ZA1_IDCH"})
+    // E-mails e oferta de agenda depois de gravar (se a gravacao falhar, nada sai).
+    l_oModel:InstallEvent("CNS001POS", /*cOwner*/, CNS001POS():New())
 
     If lAtivarInsert
         l_oModel:SetOperation(MODEL_OPERATION_INSERT)
@@ -332,7 +334,7 @@ Static Function CH_PREVALIDA(p_oModel)
 Return l_bOk
 
 /*/{Protheus.doc} CH_POSGRAVACAO
-Antes do commit: e-mails de alteracao/remocao/designacao e oferta de agenda (tela).
+Depois de gravar (evento CNS001POS): e-mails de alteracao/remocao/designacao e oferta de agenda (tela).
 @param  p_oModel   Model da tela de Chamados
 @return .T. sempre
 /*/
@@ -591,6 +593,22 @@ Static Function CH_PROXZA2(cIdCh)
     (cAlias)->(DbCloseArea())
 
 Return nSeq
+
+/*/{Protheus.doc} CNS001POS
+Evento do model do chamado: AfterTTS (depois de gravar) chama o CH_POSGRAVACAO.
+/*/
+// TLPP: membro sem visibilidade e PRIVATE.
+Class CNS001POS From FWModelEvent
+    Public Method New() Constructor
+    Public Method AfterTTS(oModel, cModelId)
+EndClass
+
+Method New() Class CNS001POS
+Return Self
+
+Method AfterTTS(oModel, cModelId) Class CNS001POS
+    CH_POSGRAVACAO(oModel)
+Return
 
 /*/{Protheus.doc} CH_TEMACESSOGRUPO
 Administrador = tecnico do usuario com AA1_RSPMNT = 1.
@@ -1050,6 +1068,7 @@ User Function CH_EXCLUIRTELA()
     Local oBtnOk         := Nil
     Local oBtnCan        := Nil
     Local oGetMotivo     := Nil
+    Local oCombo         := Nil
     Local cIdCh          := ""
     Local cMotivo        := ""
     Local aResultado     := {}
@@ -1063,6 +1082,10 @@ User Function CH_EXCLUIRTELA()
     EndIf
 
     cIdCh := AllTrim(ZA1->ZA1_IDCH)
+
+    If !MsgYesNo("Confirma excluir o chamado " + cIdCh + "?", "Excluir")
+        Return
+    EndIf
 
     aEnvio := CH_PERGUNTAEMAIL("Excluir Chamado " + cIdCh, !Empty(AllTrim(ZA1->ZA1_EMAIL)), !Empty(AllTrim(ZA1->ZA1_CONSUL)))
     lNotificarCliente := aEnvio[1]
@@ -1129,6 +1152,10 @@ User Function CH_EXCLUIRINTERACAOTELA()
     Local nOpcao     := 0
     Local aEnvio     := {}
     Local aResultado := {}
+    Local oDlg       := Nil
+    Local oLista     := Nil
+    Private nOpcLista := 1
+    Private lEscolheu := .F.
 
     If ZA1->(Eof()) .Or. ZA1->(Bof())
         MsgAlert("Nenhum chamado selecionado.", "Excluir Interação")
@@ -1158,16 +1185,21 @@ User Function CH_EXCLUIRINTERACAOTELA()
         Return
     EndIf
 
-    nOpcao := AChoice("Excluir Interação - Chamado " + cIdCh, aExibicao)
-    If nOpcao == 0
+    DEFINE MSDIALOG oDlg TITLE "Excluir Interação - Chamado " + cIdCh FROM 0,0 TO 320,520 PIXEL
+        @ 05,05 LISTBOX oLista VAR nOpcLista ITEMS aExibicao SIZE 250,130 PIXEL OF oDlg
+        TButton():New(140, 140, "Excluir",  oDlg, {|| lEscolheu := .T., oDlg:End()}, 55,14,,,.F.,.T.,.F.,,.F.,,,.F.)
+        TButton():New(140, 200, "Cancelar", oDlg, {|| oDlg:End()},                   55,14,,,.F.,.T.,.F.,,.F.,,,.F.)
+    ACTIVATE MSDIALOG oDlg CENTERED
+    If !lEscolheu .Or. nOpcLista < 1 .Or. nOpcLista > Len(aSeqs)
         Return
     EndIf
+    nOpcao := nOpcLista
 
     If !MsgYesNo("Confirma excluir a Interação " + aSeqs[nOpcao] + "?", "Excluir Interação")
         Return
     EndIf
 
-    aEnvio := CH_PERGUNTAEMAIL("Excluir Interacao - Chamado " + cIdCh, .T., .T.)
+    aEnvio := CH_PERGUNTAEMAIL("Excluir Interacao - Chamado " + cIdCh, !Empty(AllTrim(ZA1->ZA1_EMAIL)), !Empty(AllTrim(ZA1->ZA1_CONSUL)))
 
     aResultado := CH_NUCLEOEXCLUIRINTERACAO(cIdCh, aSeqs[nOpcao], aEnvio[1], aEnvio[2])
 
@@ -1214,7 +1246,9 @@ Static Function CH_NUCLEOINCLUIR(cAssunto, cDtAbertura, cTipo, cCodCliente, cLoj
     Begin Sequence
 
         // Obrigatorios: CH_PREVALIDA (lCnsaIncluirIncompleto libera tipo/projeto/tarefa pro e-mail).
-        Default cLojaCliente := "01"
+        If Empty(cLojaCliente) .And. !Empty(cCodCliente)
+            cLojaCliente := "01"
+        EndIf
 
         If Empty(cDtAbertura)
             cDtAbertura := DTOS(Date())
@@ -1415,6 +1449,7 @@ Static Function CH_NUCLEOALTERAR(cIdCh, cAssunto, cDtAbertura, cTipo, cCodClient
         If lLimparCliente
             oModelZA1:LoadValue("ZA1_CLIENT", "")
             oModelZA1:LoadValue("ZA1_LOJA",   "")
+            oModelZA1:LoadValue("ZA1_NOME",   "")
         ElseIf !Empty(cCodCliente)
             oModelZA1:LoadValue("ZA1_CLIENT", cCodCliente)
             oModelZA1:LoadValue("ZA1_LOJA",   If(Empty(cLojaCliente), "01", cLojaCliente))
@@ -1432,6 +1467,7 @@ Static Function CH_NUCLEOALTERAR(cIdCh, cAssunto, cDtAbertura, cTipo, cCodClient
 
         If lLimparConsultor
             oModelZA1:LoadValue("ZA1_CONSUL", "")
+            oModelZA1:LoadValue("ZA1_NOMTEC", "")
         ElseIf !Empty(cCodConsultor)
             oModelZA1:LoadValue("ZA1_CONSUL", cCodConsultor)
             U_CNSA_TECNICO()
@@ -2103,8 +2139,12 @@ Static Function CH_GRAVARAGENDA(cIdCh, cDataIni, cDataFim, cCodTecnico, cHoraIni
     Begin Sequence
 
         // Obrigatorios ficam no front; aqui so protecoes tecnicas (chamado inexistente, data invalida, teto de 730 dias).
-        Default cDataFim := cDataIni
-        Default cLojaCliente := "01"
+        If Empty(cDataFim)
+            cDataFim := cDataIni
+        EndIf
+        If Empty(cLojaCliente) .And. !Empty(cCodCliente)
+            cLojaCliente := "01"
+        EndIf
         Default lNotificarTecnico := .T.
 
         If !CH_ACHARZA1(cIdCh)
