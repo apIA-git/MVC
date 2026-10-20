@@ -196,6 +196,7 @@ Return {{"!Empty(SZA->ZA_ENVDT)",                                               
 //   LEG  ({aprovad, apvtipo, apvdata, envdt, dtdigit})   {cLegenda, cCor} (aba Legenda)
 //   LEGS ()                                      todas as {cLegenda, cCor} (browse classico)
 //   REG  (cOs ou {proj, rev, tarefa})           {cAprovad, cApvTipo} pela tarefa (AF9_APVMAN S/N, AF9_UM)
+//   HIS  (cOs)                                  historico da OS (SZA) -> {JsonObject}, mais antigo primeiro
 
 /*/{Protheus.doc} CNSAPR
 Aprovacao de OS - todas as transacoes (ver tabela acima).
@@ -236,6 +237,8 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
     Local cErro    := ""
     Local aCampos  := {}
     Local dValid   := CToD("")
+    Local aLeg     := {}
+    Local jLin     := Nil
 
     Default cOrigem := ""
     Default jDados  := JsonObject():New()
@@ -508,6 +511,45 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
                  {"Aguardando cliente", "amarelo"}, {"Prazo vencido", "rosa"}, ;
                  {"Aprovada (cliente)", "verde"}, {"Aprovada (prazo)", "azul"}, ;
                  {"Aprovada (manual)", "azul"}, {"Aprovada", "verde"}}
+
+    //--- Historico da OS (SZA) - evento com a mesma legenda do browse do historico (HA_LEGS)
+    Case cTrans == "HIS"
+        aRet   := {}
+        cOs    := AP_VAL("ZA_OS", AllTrim(cValToChar(xAlvo)))
+        aLeg   := HA_LEGS()
+        cAlias := GetNextAlias()
+        BeginSql Alias cAlias
+            SELECT ZA.R_E_C_N_O_ REC
+            FROM %Table:SZA% ZA
+            WHERE ZA.ZA_FILIAL = %xFilial:SZA%
+              AND ZA.ZA_OS = %Exp:cOs%
+              AND ZA.%NotDel%
+            ORDER BY ZA.ZA_SEQ
+        EndSql
+        DbSelectArea("SZA")
+        While !(cAlias)->(Eof())
+            SZA->(DbGoto((cAlias)->REC))
+            jLin := JsonObject():New()
+            jLin["seq"]    := AllTrim(SZA->ZA_SEQ)
+            jLin["evento"] := ""
+            For nI := 1 To Len(aLeg)
+                If &(aLeg[nI][1])
+                    jLin["evento"] := aLeg[nI][4]
+                    Exit
+                EndIf
+            Next nI
+            // Envio tem ZA_ENVDT; os demais eventos, ZA_DTREC.
+            jLin["data"]     := DToC(If(Empty(SZA->ZA_ENVDT), SZA->ZA_DTREC, SZA->ZA_ENVDT))
+            jLin["hora"]     := AllTrim(If(Empty(SZA->ZA_ENVDT), SZA->ZA_HRREC, SZA->ZA_ENVHR))
+            jLin["por"]      := AllTrim(SZA->ZA_POR)
+            jLin["email"]    := AllTrim(SZA->ZA_EMAIL)
+            jLin["ip"]       := AllTrim(SZA->ZA_IP)
+            jLin["motivo"]   := AllTrim(SZA->ZA_DESCRI)
+            jLin["validade"] := If(Empty(SZA->ZA_ENVDT), "", DToC(SZA->ZA_VALID))
+            AAdd(aRet, jLin)
+            (cAlias)->(DbSkip())
+        EndDo
+        (cAlias)->(DbCloseArea())
 
     //--- Estado que a regra daria (nao grava)
     Case cTrans == "REG"
@@ -1033,6 +1075,28 @@ User Function CNSAP_API() As Logical
     If Len(aRet) >= 5
         oJson["mensagem"] := aRet[5]
     EndIf
+
+Return oRest:setStatusResponse(200, oJson:ToJson())
+
+/*/{Protheus.doc} CNSAP_HIS
+GET /CNSAPR?os= - historico das aprovacoes da OS (SZA) para o portal (usuario logado).
+/*/
+@Get(endpoint="/CNSAPR")
+User Function CNSAP_HIS() As Logical
+    Local jQuery := oRest:getQueryRequest() As Json
+    Local cOs    := AP_TXT(jQuery, "os")
+    Local oJson  := JsonObject():New()
+
+    // Usuario de servico (pagina do cliente) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return AP_ERRO(403, "Usuario sem acesso a este recurso.")
+    EndIf
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
+    If Empty(cOs)
+        Return AP_ERRO(400, "Informe a OS.")
+    EndIf
+    oJson["os"]    := cOs
+    oJson["items"] := U_CNSAPR("HIS", cOs)
 
 Return oRest:setStatusResponse(200, oJson:ToJson())
 
