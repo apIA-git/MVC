@@ -976,7 +976,7 @@ Static Function AP_ENVIAR(cOs, aPara, cToken, dValid)
     Local cPara := ""
     Local aLin  := apia.cnsa002.U_OS_APRPUB("RESUMO", cOs)
     Local cDesc := U_CNSOUTL("TEXTO", apia.cnsa002.U_OS_APRPUB("DESCRICAO", cOs))
-    Local cUrl  := AllTrim(SuperGetMV("MV_CNSAURL", .F., "https://www.apia.com.br/Aprovador-OS"))
+    Local cUrl  := AP_SEMBARRA(AllTrim(SuperGetMV("MV_CNSAURL", .F., "https://www.apia.com.br/Aprovador-OS")))
     // Rota do portal Angular (.../apia_cs/aprovacao/<token>) ou pagina ASP.NET
     // (.../aprovador-os/?t=<token>) - decide pelo MV_CNSAURL, pra troca ser so o parametro.
     Local cLink := cUrl + If("/aprovacao" $ Lower(cUrl), "/", "/?t=") + cToken
@@ -1004,6 +1004,18 @@ Static Function AP_ENVIAR(cOs, aPara, cToken, dValid)
     Next nI
 
 Return {aOk, aErro}
+
+/*/{Protheus.doc} AP_SEMBARRA
+URL sem a barra final (MV_CNSAURL com ou sem "/" no fim da o mesmo link).
+@author Henrique
+@since 20/10/2026
+@version P12
+/*/
+Static Function AP_SEMBARRA(cUrl)
+    While Right(cUrl, 1) == "/"
+        cUrl := Left(cUrl, Len(cUrl) - 1)
+    EndDo
+Return cUrl
 
 /*/{Protheus.doc} AP_EMAILOK
 Formato minimo de e-mail: algo@dominio.ext, sem espaco.
