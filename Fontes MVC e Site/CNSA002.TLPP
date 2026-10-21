@@ -516,6 +516,7 @@ User Function OS_TELA(nOper)
     // Model desta tela como ativo (o ViewDef usa o ativo). FWExecView devolve 0 quando grava.
     FWModelActive(oModel)
     If FWExecView("Ordem de Servico", "apia.cnsa002.u_cns002", nOper, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel) == 0 .And. lGrava
+        OS_ZA3("DESCRICAO", cOs)
         OS_EMAIL("TELA", cOs)
     EndIf
 Return
@@ -666,6 +667,7 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
 
         If lOk
             OS_ZA3("GRAVAR", cOs, aParCh[2])
+            OS_ZA3("DESCRICAO", cOs)
             ConfirmSX8()
         Else
             ConfirmSX8(.F.)
@@ -814,6 +816,7 @@ Static Function OS_NUCLEOALTERAR(jQuery)
                 OS_ZA3("GRAVAR", cOs, aParCh[2])
             EndIf
             OS_MIGRARINTERACOES(cOs)
+            OS_ZA3("DESCRICAO", cOs)
         EndIf
 
     Recover Using oErroExcpt
@@ -1899,6 +1902,8 @@ Chamados da OS - um por vez (Z1_IDCH = o atual); a ZA3 guarda todos por onde a O
   VALIDAR (cOs, aCh, cCli, cLoja)  "" ou a mensagem (um chamado so, do mesmo cliente/loja)
   GRAVAR  (cOs, aCh)               acrescenta na ZA3 (nao apaga: trocar de chamado mantem o historico)
   APAGAR  (cOs)                    apaga a ZA3 da OS (exclusao da OS)
+  DESCRICAO (cOs)                  OS com chamado e descricao vazia (ou a automatica): grava
+                                   "Referente ao(s) chamado(s) #..." com todos os chamados da OS
 /*/
 Static Function OS_ZA3(cAcao, x1, x2, x3, x4)
     Local xRet   := Nil
@@ -1973,6 +1978,26 @@ Static Function OS_ZA3(cAcao, x1, x2, x3, x4)
                 ZA3->(MsUnlock())
             EndIf
         Next nI
+
+    Case cAcao == "DESCRICAO"
+        cOs := PadR(AllTrim(x1), TamSX3("Z1_OS")[1])
+        SZ1->(DbSetOrder(1))
+        If SZ1->(DbSeek(cFilAnt + cOs)) .And. !Empty(SZ1->Z1_IDCH)
+            // So mexe na descricao vazia ou na automatica: texto digitado fica.
+            cCod := OS_TEXTOPURO(OS_SEPARAINTERACOES(SZ1->Z1_SERV)[1])
+            If Empty(cCod) .Or. Left(cCod, 12) == "Referente ao"
+                aCh  := OS_ZA3("LER", cOs, SZ1->Z1_IDCH)
+                cCod := If(Len(aCh) == 1, "Referente ao chamado ", "Referente aos chamados ")
+                ZA1->(DbSetOrder(1))
+                For nI := 1 To Len(aCh)
+                    cCod += If(nI > 1, ", ", "") + "#" + aCh[nI] + ;
+                        If(ZA1->(DbSeek(xFilial("ZA1") + aCh[nI])), " - " + AllTrim(ZA1->ZA1_ASSUNT), "")
+                Next nI
+                RecLock("SZ1", .F.)
+                    SZ1->Z1_SERV := cCod + OS_BLOCOSINTERACAO(SZ1->Z1_SERV)
+                SZ1->(MsUnlock())
+            EndIf
+        EndIf
 
     Case cAcao == "APAGAR"
         cOs := PadR(AllTrim(x1), TamSX3("ZA3_OS")[1])
