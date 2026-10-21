@@ -66,7 +66,7 @@ User Function MenuDef()
     Local aRotina := {}
 
     ADD OPTION aRotina TITLE "Pesquisar"        ACTION "AxPesqui"                            OPERATION 1 ACCESS 0
-    ADD OPTION aRotina TITLE "Visualizar"       ACTION "apia.cnsa001.U_CH_VISUALIZARTELA"    OPERATION 2 ACCESS 0
+    ADD OPTION aRotina TITLE "Visualizar"       ACTION "apia.cnsa001.U_CH_TELA(1)"           OPERATION 2 ACCESS 0
     ADD OPTION aRotina TITLE "Incluir"          ACTION "apia.cnsa001.U_CH_INCLUIRTELA"       OPERATION 3 ACCESS 0
     // Admin altera qualquer chamado; quem nao e admin, so os proprios (CH_ALTERARTELA + CH_PREVALIDA).
     ADD OPTION aRotina TITLE "Alterar"          ACTION "apia.cnsa001.U_CH_ALTERARTELA"       OPERATION 4 ACCESS 0
@@ -130,7 +130,13 @@ User Function ModelDef()
 
 Return CH_MONTARMODEL()
 
-Static Function CH_MONTARMODEL(lAtivarInsert)
+/*/{Protheus.doc} CH_MONTARMODEL
+Model do chamado (ZA1 + ZA2 + SZ6). Com nOperAtivar tambem ativa, NA MESMA funcao: ativar em
+outro frame quebra o INITVALUE com "owner private environment not found".
+@param  nOperAtivar    Operacao pra ja ativar (MODEL_OPERATION_*) - vazio = so monta
+@return l_oModel       Objeto MPFormModel montado
+/*/
+Static Function CH_MONTARMODEL(nOperAtivar)
     Local l_oModel  := Nil
     Local l_oStrZA1 := FWFormStruct(1, "ZA1")
     Local l_oStrZA2 := FWFormStruct(1, "ZA2")
@@ -140,7 +146,7 @@ Static Function CH_MONTARMODEL(lAtivarInsert)
 
     Local oGridSZ6  := Nil
 
-    Default lAtivarInsert := .F.
+    Default nOperAtivar := 0
     l_oStrZA1:SetProperty("ZA1_CLIENT", MODEL_FIELD_OBRIGAT, .F.)
     l_oStrZA1:SetProperty("ZA1_LOJA",   MODEL_FIELD_OBRIGAT, .F.)
     l_oStrZA1:SetProperty("ZA1_CONSUL", MODEL_FIELD_OBRIGAT, .F.)
@@ -181,8 +187,8 @@ Static Function CH_MONTARMODEL(lAtivarInsert)
     // E-mails e oferta de agenda depois de gravar (se a gravacao falhar, nada sai).
     l_oModel:InstallEvent("CNS001POS", /*cOwner*/, CNS001POS():New())
 
-    If lAtivarInsert
-        l_oModel:SetOperation(MODEL_OPERATION_INSERT)
+    If nOperAtivar > 0
+        l_oModel:SetOperation(nOperAtivar)
         l_oModel:Activate()
     EndIf
 
@@ -675,8 +681,7 @@ User Function CH_ALTERARTELA()
     // Admin altera qualquer chamado; quem nao e admin, so o proprio (sem tecnico: assumir antes).
     If CH_TEMACESSOGRUPO() .Or. ;
         (!Empty(AllTrim(ZA1->ZA1_CONSUL)) .And. AllTrim(ZA1->ZA1_CONSUL) == AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC")))
-        // Identificador = namespace (ModelDef/ViewDef sem sufixo dentro do Namespace).
-        FWExecView("Registro de Chamados", "apia.cnsa001.u_cns001", 4)
+        U_CH_TELA(MODEL_OPERATION_UPDATE)
         Return
     EndIf
 
@@ -688,41 +693,61 @@ User Function CH_ALTERARTELA()
 
 Return
 
-/*/{Protheus.doc} CH_VISUALIZARTELA
-Opcao de menu "Visualizar" da tela classica: abre a View em modo consulta.
-Visualizar/Incluir - ACTION "VIEWDEF.CNSA001" nao dispara nada dentro do Namespace (confirmado via debug: zero log ao clicar). Troca pro mesmo caminho FWExecView que ja funciona em CH_ALTERARTELA (comprovado por log).
+/*/{Protheus.doc} CH_TELA
+Menu Visualizar/Incluir/Alterar (igual ao OS_TELA da OS): monta e ativa o model aqui e abre a View.
+@param  nOper     MODEL_OPERATION_VIEW (1), INSERT (3) ou UPDATE (4)
+@return lGravou   .T. se o usuario confirmou e gravou
 /*/
-User Function CH_VISUALIZARTELA()
-    // MODEL_OPERATION_VIEW e 1 (2 e so o codigo do botao no ADD OPTION).
-    FWExecView("Registro de Chamados", "apia.cnsa001.u_cns001", MODEL_OPERATION_VIEW)
-Return
-
-/*/{Protheus.doc} CH_INCLUIRTELA
-Opcao de menu "Incluir" da tela classica: abre a View em modo inclusao.
-/*/
-User Function CH_INCLUIRTELA()
-    Local oModel   := Nil
-    Local aEnvio   := {}
+User Function CH_TELA(nOper)
+    Local lGrava   := nOper == MODEL_OPERATION_INSERT .Or. nOper == MODEL_OPERATION_UPDATE
+    Local lGravou  := .F.
     Local lNumerou := .F.
+    Local oModel   := Nil
+    Local aCpos    := {}
+    Local cCpo     := ""
+    Local nI       := 0
 
-    // Monta E ativa o model aqui: em outro frame o INITVALUE do Insert quebra ("owner private environment not found").
-    // M->ZA1_* neste frame, que fica vivo com a tela aberta (senao a lupa F3 do cliente quebra ao fechar).
-    RegToMemory("ZA1", .T., .F.)
-
-    oModel := CH_MONTARMODEL(.T.)
+    // M->ZA1_* no frame que fica vivo com a tela aberta (lupas/F3). Pelo dicionario (.T.): inclui os campos
+    // virtuais (nome do cliente etc.) - sem eles a lupa tentava criar o M-> e dava "owner private environment not found".
+    If lGrava
+        RegToMemory("ZA1", nOper == MODEL_OPERATION_INSERT, .T.)
+        // Campo que ficou sem M-> (ou com Nil) quebrava o fechamento da lupa - cria vazio e avisa no console.
+        aCpos := FWFormStruct(1, "ZA1"):GetFields()
+        For nI := 1 To Len(aCpos)
+            cCpo := aCpos[nI][MODEL_FIELD_IDFIELD]
+            If Type("M->" + cCpo) == "U"
+                ConOut("CH_TELA: M->" + cCpo + " sem valor (Nil) - criado vazio")
+                &("M->" + cCpo) := CriaVar(cCpo, .F.)
+            EndIf
+        Next nI
+    EndIf
+    oModel := CH_MONTARMODEL(nOper)
 
     // O dicionario nao inicializa ZA1_IDCH: sem isto o chamado gravava sem ID.
-    If Empty(oModel:GetValue("ZA1MASTER", "ZA1_IDCH"))
+    If nOper == MODEL_OPERATION_INSERT .And. Empty(oModel:GetValue("ZA1MASTER", "ZA1_IDCH"))
         oModel:GetModel("ZA1MASTER"):LoadValue("ZA1_IDCH", GetSxeNum("ZA1", "ZA1_IDCH"))
         lNumerou := .T.
     EndIf
 
     // Model desta tela como ativo (o ViewDef usa o ativo). FWExecView devolve 0 quando grava.
     FWModelActive(oModel)
-    If FWExecView("Registro de Chamados", "apia.cnsa001.u_cns001", MODEL_OPERATION_INSERT, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel) == 0
-        If lNumerou
+    lGravou := FWExecView("Registro de Chamados", "apia.cnsa001.u_cns001", nOper, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel) == 0 .And. lGrava
+    If lNumerou
+        If lGravou
             ConfirmSX8()
+        Else
+            RollBackSX8()
         EndIf
+    EndIf
+Return lGravou
+
+/*/{Protheus.doc} CH_INCLUIRTELA
+Opcao de menu "Incluir" da tela classica: abre a View em modo inclusao (CH_TELA) e oferece os e-mails.
+/*/
+User Function CH_INCLUIRTELA()
+    Local aEnvio := {}
+
+    If U_CH_TELA(MODEL_OPERATION_INSERT)
         // Mesma escolha do portal: tecnico (designacao) e cliente ("Chamado Aberto").
         aEnvio := CH_PERGUNTAEMAIL("Inclusao do Chamado " + AllTrim(ZA1->ZA1_IDCH), ;
             !Empty(AllTrim(ZA1->ZA1_EMAIL)), !Empty(AllTrim(ZA1->ZA1_CONSUL)))
@@ -732,8 +757,6 @@ User Function CH_INCLUIRTELA()
         If aEnvio[1]
             CH_NOTIFICARCHAMADOCRIADO(AllTrim(ZA1->ZA1_EMAIL), AllTrim(ZA1->ZA1_IDCH))
         EndIf
-    ElseIf lNumerou
-        RollBackSX8()
     EndIf
 Return
 
@@ -1262,7 +1285,7 @@ Static Function CH_NUCLEOINCLUIR(cAssunto, cDtAbertura, cTipo, cCodCliente, cLoj
         Public lCnsaIncluirIncompleto := !lExigirCompletos
 
         // Monta e ativa na mesma funcao (owner private environment).
-        oModel := CH_MONTARMODEL(.T.)
+        oModel := CH_MONTARMODEL(MODEL_OPERATION_INSERT)
 
         oModelZA1 := oModel:GetModel("ZA1MASTER")
 
