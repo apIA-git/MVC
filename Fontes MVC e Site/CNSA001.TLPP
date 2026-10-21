@@ -151,13 +151,13 @@ Static Function CH_MONTARMODEL(lAtivarInsert)
         NIL,;
         {|oModel| CH_PREVALIDA(oModel)},;
         NIL,;
-        {|oModel| CH_VALIDACANCELA(oModel)})
+        NIL)
 
     l_oModel:AddFields(;
         "ZA1MASTER",;
         NIL,;
         l_oStrZA1,;
-        {|_f,_a,_c,_v| CH_VALIDACAMPO(_f,_a,_c,_v)},;
+        NIL,;
         NIL)
 
     l_oModel:AddGrid("ZA2DETAIL", "ZA1MASTER", l_oStrZA2)
@@ -187,14 +187,6 @@ Static Function CH_MONTARMODEL(lAtivarInsert)
     EndIf
 
 Return l_oModel
-
-// Stubs .T. de volta: sem eles (limpeza de 20/10) a lupa (F3) do Alterar dava
-// "_SetNamedPrvt: owner private environment not found" no FWInitCpo. Nao remover.
-Static Function CH_VALIDACAMPO(oModel, cAcao, cCampo, xValor)
-Return .T.
-
-Static Function CH_VALIDACANCELA(oModel)
-Return .T.
 
 /*/{Protheus.doc} CH_PREVALIDA
 Pos-validacao do model (Incluir/Alterar/Assumir): obrigatorios, permissao, chamado fechado e regras do
