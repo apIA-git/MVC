@@ -582,7 +582,8 @@ Posiciona a ZA1 no chamado.
 Static Function CH_ACHARZA1(cIdCh)
     DbSelectArea("ZA1")
     ZA1->(DbSetOrder(1))
-Return ZA1->(DbSeek(xFilial("ZA1") + cIdCh))
+// Vazio ou sem PadR casava chave parcial (idCh vazio achava o 1o chamado da filial).
+Return !Empty(AllTrim(cIdCh)) .And. ZA1->(DbSeek(xFilial("ZA1") + PadR(AllTrim(cIdCh), TamSX3("ZA1_IDCH")[1])))
 
 /*/{Protheus.doc} CH_PROXZA2
 Proxima ZA2_IDGRID do chamado (1 se nao tem interacao). ZA2_IDCH e Character: nao usar Val() (ORA-01722).
@@ -1045,7 +1046,8 @@ User Function CNSA_TECNICO()
     Local cNome  := ""
 
     cCod  := AllTrim(oModel:GetValue("ZA1MASTER", "ZA1_CONSUL"))
-    cNome := Posicione("AA1", 1, xFilial("AA1") + cCod, "AA1_NOMTEC")
+    // Codigo vazio: Posicione cairia no 1o tecnico da AA1.
+    cNome := If(Empty(cCod), "", Posicione("AA1", 1, xFilial("AA1") + cCod, "AA1_NOMTEC"))
 
     oModel:LoadValue("ZA1MASTER", "ZA1_NOMTEC", SubStr(cNome, 1, TamSX3("ZA1_NOMTEC")[1]))
 
@@ -1932,7 +1934,7 @@ User Function CH_APICHAMADOS() As Logical
         dbSelectArea("ZA1")
         ZA1->(DbSetOrder(1))
         If !Empty(cIdChParam)
-            If ZA1->(DbSeek(cFilAtu + cIdChParam))
+            If ZA1->(DbSeek(cFilAtu + PadR(cIdChParam, TamSX3("ZA1_IDCH")[1])))
                 AAdd(aTodos, {;
                     AllTrim(ZA1->ZA1_IDCH), ;
                     CH_DECODESAFE(AllTrim(ZA1->ZA1_ASSUNT)), ;

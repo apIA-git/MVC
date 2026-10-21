@@ -419,7 +419,7 @@ Static Function OS_NUCLEOCOPIAR(cOsOrigem)
 
     DbSelectArea("SZ1")
     SZ1->(DbSetOrder(1))
-    If !SZ1->(DbSeek(cFilAnt + cOsOrigem))
+    If !SZ1->(DbSeek(cFilAnt + PadR(cOsOrigem, TamSX3("Z1_OS")[1])))
         Return {.F., "OS nao encontrada.", ""}
     EndIf
 
@@ -733,7 +733,7 @@ Static Function OS_NUCLEOALTERAR(jQuery)
 
     DbSelectArea("SZ1")
     SZ1->(DbSetOrder(1))
-    If !SZ1->(DbSeek(cFilAnt + cOs))
+    If !SZ1->(DbSeek(cFilAnt + PadR(cOs, TamSX3("Z1_OS")[1])))
         Return {.F., "OS nao encontrada.", cOs}
     EndIf
     cIdChAnt := AllTrim(SZ1->Z1_IDCH)
@@ -746,7 +746,7 @@ Static Function OS_NUCLEOALTERAR(jQuery)
         If !Empty(cMsgCh)
             Return {.F., cMsgCh, cOs}
         EndIf
-        SZ1->(DbSeek(cFilAnt + cOs))
+        SZ1->(DbSeek(cFilAnt + PadR(cOs, TamSX3("Z1_OS")[1])))
     EndIf
 
     Begin Sequence
@@ -1440,7 +1440,7 @@ User Function OS_APIEXCLUIR() As Logical
 
         DbSelectArea("SZ1")
         SZ1->(DbSetOrder(1))
-        If !SZ1->(DbSeek(cFilAnt + cOs))
+        If !SZ1->(DbSeek(cFilAnt + PadR(cOs, TamSX3("Z1_OS")[1])))
             Return OS_ERRO(404, "OS nao encontrada.")
         EndIf
 
@@ -1649,7 +1649,7 @@ Static Function OS_MIGRARINTERACOES(cOs)
 
     DbSelectArea("SZ1")
     SZ1->(DbSetOrder(1))
-    If !SZ1->(DbSeek(cFilAnt + cOs))
+    If !SZ1->(DbSeek(cFilAnt + PadR(cOs, TamSX3("Z1_OS")[1])))
         Return
     EndIf
 
@@ -1740,7 +1740,7 @@ User Function OS_APILISTAINTERACOES() As Logical
 
         DbSelectArea("SZ1")
         SZ1->(DbSetOrder(1))
-        If !SZ1->(DbSeek(cFilAnt + cOs))
+        If !SZ1->(DbSeek(cFilAnt + PadR(cOs, TamSX3("Z1_OS")[1])))
             Return OS_ERRO(404, "OS nao encontrada.")
         EndIf
 
@@ -1872,7 +1872,7 @@ User Function OS_APINOVAINTERACAO() As Logical
 
         DbSelectArea("SZ1")
         SZ1->(DbSetOrder(1))
-        If !SZ1->(DbSeek(cFilAnt + cOs))
+        If !SZ1->(DbSeek(cFilAnt + PadR(cOs, TamSX3("Z1_OS")[1])))
             Return OS_ERRO(404, "OS nao encontrada.")
         EndIf
 
@@ -1990,7 +1990,7 @@ Static Function OS_ZA3(cAcao, x1, x2, x3, x4)
     Case cAcao == "DESCRICAO"
         cOs := PadR(AllTrim(x1), TamSX3("Z1_OS")[1])
         SZ1->(DbSetOrder(1))
-        If SZ1->(DbSeek(cFilAnt + cOs)) .And. !Empty(SZ1->Z1_IDCH)
+        If SZ1->(DbSeek(cFilAnt + PadR(cOs, TamSX3("Z1_OS")[1]))) .And. !Empty(SZ1->Z1_IDCH)
             // So mexe na descricao vazia ou na automatica: texto digitado fica.
             cCod := OS_TEXTOPURO(OS_SEPARAINTERACOES(SZ1->Z1_SERV)[1])
             If Empty(cCod) .Or. Left(cCod, 12) == "Referente ao"
@@ -2052,7 +2052,7 @@ Static Function OS_EMAIL(cAcao, x1)
     Case cAcao == "TELA"
         cOs := PadR(AllTrim(cValToChar(x1)), TamSX3("Z1_OS")[1])
         SZ1->(DbSetOrder(1))
-        If !Empty(cOs) .And. SZ1->(DbSeek(cFilAnt + cOs))
+        If !Empty(cOs) .And. SZ1->(DbSeek(cFilAnt + PadR(cOs, TamSX3("Z1_OS")[1])))
             If MsgYesNo("Deseja enviar ao cliente? Ele recebe por e-mail o link para aprovar ou recusar a OS " + ;
                     AllTrim(cOs) + " (valido por " + cValToChar(SuperGetMV("MV_CNSAVLD", .F., 2)) + " dias).", "OS " + AllTrim(cOs))
                 aResp := apia.cnsa004.U_CNSAPR("ENV", cOs)
@@ -2192,7 +2192,7 @@ User Function OS_APRPUB(cAcao, x1, x2)
     Local nI     := 0
 
     SZ1->(DbSetOrder(1))
-    If !SZ1->(DbSeek(cFilAnt + cOs))
+    If !SZ1->(DbSeek(cFilAnt + PadR(cOs, TamSX3("Z1_OS")[1])))
         Return If(cAcao == "GRAVAR", {.F., "OS nao encontrada."}, If(cAcao $ "DESCRICAO|HORARIO|HORAS|TAREFA", "", {}))
     EndIf
 

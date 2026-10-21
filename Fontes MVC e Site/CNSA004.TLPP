@@ -485,10 +485,15 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
         aEnv := AP_ENVIAR(cOs, aEnv, cToken, dValid)
         If Empty(aEnv[1])
             // Nenhum e-mail saiu: o envio e desfeito (linha na SZA mata o token) e a OS volta a "a enviar".
-            AP_GRAVAR(cOs, {{"Z1_ENVDT", ""}, {"Z1_ENVHR", ""}, {"Z1_OSENVCL", "N"}, {"Z1_APVDOR", ""}, {"Z1_APVMAIL", ""}}, ;
+            aRet := AP_GRAVAR(cOs, {{"Z1_ENVDT", ""}, {"Z1_ENVHR", ""}, {"Z1_OSENVCL", "N"}, {"Z1_APVDOR", ""}, {"Z1_APVMAIL", ""}}, ;
                 {{"ZA_APROVAD", "N"}, {"ZA_APVTIPO", ""}, {"ZA_POR", aUsu[1]}, {"ZA_EMAIL", aUsu[2]}, ;
                  {"ZA_DTREC", dHoje}, {"ZA_HRREC", cAgora}, {"ZA_DESCRI", "Envio cancelado: nenhum e-mail saiu"}})
             AP_DESTRAVAR(cOs)
+            // Desfazer falhou: o token segue valido e o job aprovaria por prazo sem o cliente ter recebido o link.
+            If !aRet[1]
+                ConOut("CNSAPR ENV: desfazer falhou OS " + AllTrim(cOs) + ": " + aRet[2])
+                Return {.F., "Nenhum e-mail saiu e o envio NAO foi desfeito (" + aRet[2] + "). Avise o administrador.", "", ""}
+            EndIf
             Return {.F., "Nenhum e-mail foi enviado ao cliente (" + AP_JUNTA(aEnv[2], ", ") + "). " + ;
                 "A OS continua a enviar - confira o e-mail e envie de novo.", "", ""}
         EndIf
@@ -631,7 +636,7 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
             Next nI
             For nI := 1 To Len(aRet[2])
                 xVal := SZA->(FieldGet(FieldPos(aRet[2][nI][1])))
-                jLin[aRet[2][nI][1]] := If(ValType(xVal) == "D", DToC(xVal), If(ValType(xVal) == "C", AllTrim(xVal), xVal))
+                jLin[aRet[2][nI][1]] := If(ValType(xVal) == "D", If(Empty(xVal), "", DToC(xVal)), If(ValType(xVal) == "C", AllTrim(xVal), xVal))
             Next nI
             AAdd(aRet[1], jLin)
             (cAlias)->(DbSkip())
