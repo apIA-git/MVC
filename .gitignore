@@ -9,4 +9,5 @@
 
 # Diversos
 *.log
-status_completo.txtgraphify-out/
+status_completo.txt
+graphify-out/
