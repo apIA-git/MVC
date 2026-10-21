@@ -130,7 +130,7 @@ User Function ModelDef()
 
 Return CH_MONTARMODEL()
 
-Static Function CH_MONTARMODEL(nOperAtivar)
+Static Function CH_MONTARMODEL(lAtivarInsert)
     Local l_oModel  := Nil
     Local l_oStrZA1 := FWFormStruct(1, "ZA1")
     Local l_oStrZA2 := FWFormStruct(1, "ZA2")
@@ -140,7 +140,7 @@ Static Function CH_MONTARMODEL(nOperAtivar)
 
     Local oGridSZ6  := Nil
 
-    Default nOperAtivar := 0
+    Default lAtivarInsert := .F.
     l_oStrZA1:SetProperty("ZA1_CLIENT", MODEL_FIELD_OBRIGAT, .F.)
     l_oStrZA1:SetProperty("ZA1_LOJA",   MODEL_FIELD_OBRIGAT, .F.)
     l_oStrZA1:SetProperty("ZA1_CONSUL", MODEL_FIELD_OBRIGAT, .F.)
@@ -151,13 +151,13 @@ Static Function CH_MONTARMODEL(nOperAtivar)
         NIL,;
         {|oModel| CH_PREVALIDA(oModel)},;
         NIL,;
-        NIL)
+        {|oModel| CH_VALIDACANCELA(oModel)})
 
     l_oModel:AddFields(;
         "ZA1MASTER",;
         NIL,;
         l_oStrZA1,;
-        NIL,;
+        {|_f,_a,_c,_v| CH_VALIDACAMPO(_f,_a,_c,_v)},;
         NIL)
 
     l_oModel:AddGrid("ZA2DETAIL", "ZA1MASTER", l_oStrZA2)
@@ -181,14 +181,20 @@ Static Function CH_MONTARMODEL(nOperAtivar)
     // E-mails e oferta de agenda depois de gravar (se a gravacao falhar, nada sai).
     l_oModel:InstallEvent("CNS001POS", /*cOwner*/, CNS001POS():New())
 
-    // Ativa NA MESMA funcao que montou o model: ativar em outro frame da "owner private environment not
-    // found" (INITVALUE do Insert e lupa F3 do Alterar).
-    If nOperAtivar > 0
-        l_oModel:SetOperation(nOperAtivar)
+    If lAtivarInsert
+        l_oModel:SetOperation(MODEL_OPERATION_INSERT)
         l_oModel:Activate()
     EndIf
 
 Return l_oModel
+
+// Stubs .T. de volta: sem eles (limpeza de 20/10) a lupa (F3) do Alterar dava
+// "_SetNamedPrvt: owner private environment not found" no FWInitCpo. Nao remover.
+Static Function CH_VALIDACAMPO(oModel, cAcao, cCampo, xValor)
+Return .T.
+
+Static Function CH_VALIDACANCELA(oModel)
+Return .T.
 
 /*/{Protheus.doc} CH_PREVALIDA
 Pos-validacao do model (Incluir/Alterar/Assumir): obrigatorios, permissao, chamado fechado e regras do
@@ -673,19 +679,12 @@ Return {lOfereceCli .And. lChkCli, lOfereceTec .And. lChkTec}
 Menu Alterar (admin: qualquer chamado; demais: so o proprio).
 /*/
 User Function CH_ALTERARTELA()
-    Local oModel := Nil
 
     // Admin altera qualquer chamado; quem nao e admin, so o proprio (sem tecnico: assumir antes).
     If CH_TEMACESSOGRUPO() .Or. ;
         (!Empty(AllTrim(ZA1->ZA1_CONSUL)) .And. AllTrim(ZA1->ZA1_CONSUL) == AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC")))
-        // M->ZA1_* neste frame, que fica vivo com a tela aberta. Pelo dicionario (.T.): no Alterar, com .F. so
-        // os campos fisicos ganham M-> e a lupa (F3) tentava criar o M-> que faltava e dava
-        // "_SetNamedPrvt: owner private environment not found" (a tela de OS usa .T. e funciona).
-        RegToMemory("ZA1", .F., .T.)
-        oModel := CH_MONTARMODEL(MODEL_OPERATION_UPDATE)
-        // Model desta tela como ativo (o ViewDef usa o ativo). Identificador = namespace.
-        FWModelActive(oModel)
-        FWExecView("Registro de Chamados", "apia.cnsa001.u_cns001", MODEL_OPERATION_UPDATE, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel)
+        // Identificador = namespace (ModelDef/ViewDef sem sufixo dentro do Namespace).
+        FWExecView("Registro de Chamados", "apia.cnsa001.u_cns001", 4)
         Return
     EndIf
 
@@ -718,7 +717,7 @@ User Function CH_INCLUIRTELA()
     // M->ZA1_* neste frame, que fica vivo com a tela aberta (senao a lupa F3 do cliente quebra ao fechar).
     RegToMemory("ZA1", .T., .F.)
 
-    oModel := CH_MONTARMODEL(MODEL_OPERATION_INSERT)
+    oModel := CH_MONTARMODEL(.T.)
 
     // O dicionario nao inicializa ZA1_IDCH: sem isto o chamado gravava sem ID.
     If Empty(oModel:GetValue("ZA1MASTER", "ZA1_IDCH"))
@@ -1271,7 +1270,7 @@ Static Function CH_NUCLEOINCLUIR(cAssunto, cDtAbertura, cTipo, cCodCliente, cLoj
         Public lCnsaIncluirIncompleto := !lExigirCompletos
 
         // Monta e ativa na mesma funcao (owner private environment).
-        oModel := CH_MONTARMODEL(MODEL_OPERATION_INSERT)
+        oModel := CH_MONTARMODEL(.T.)
 
         oModelZA1 := oModel:GetModel("ZA1MASTER")
 
