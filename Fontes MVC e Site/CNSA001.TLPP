@@ -803,6 +803,8 @@ User Function CH_TELA(nOper)
     // Model desta tela como ativo (o ViewDef usa o ativo). FWExecView devolve 0 quando grava.
     FWModelActive(oModel)
     lGravou := FWExecView("Registro de Chamados", "apia.cnsa001.u_cns001", nOper, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel) == 0 .And. lGrava
+    // Fecha o model desta tela: senao ele fica ativo (FWModelActive) depois que a funcao que o ativou ja saiu.
+    oModel:DeActivate()
     If lNumerou
         If lGravou
             ConfirmSX8()
