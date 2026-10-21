@@ -792,10 +792,7 @@ User Function CH_TELA(nOper)
             EndIf
         Next nI
     EndIf
-    // Incluir: monta e ativa aqui (funciona). Alterar/Visualizar: so monta e o FWExecView ativa - ativado
-    // fora dele, a validacao/lupa de campo dava "owner private environment not found" no FWInitCpo
-    // (TDN DSFIN-4587: o model nao pode ser ativado num programa diferente de onde e usado).
-    oModel := CH_MONTARMODEL(If(nOper == MODEL_OPERATION_INSERT, nOper, 0))
+    oModel := CH_MONTARMODEL(nOper)
 
     // O dicionario nao inicializa ZA1_IDCH: sem isto o chamado gravava sem ID.
     If nOper == MODEL_OPERATION_INSERT .And. Empty(oModel:GetValue("ZA1MASTER", "ZA1_IDCH"))
@@ -806,10 +803,8 @@ User Function CH_TELA(nOper)
     // Model desta tela como ativo (o ViewDef usa o ativo). FWExecView devolve 0 quando grava.
     FWModelActive(oModel)
     lGravou := FWExecView("Registro de Chamados", "apia.cnsa001.u_cns001", nOper, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel) == 0 .And. lGrava
-    // Fecha o model desta tela: senao ele fica ativo (FWModelActive) depois que a tela fechou.
-    If oModel:IsActive()
-        oModel:DeActivate()
-    EndIf
+    // Fecha o model desta tela: senao ele fica ativo (FWModelActive) depois que a funcao que o ativou ja saiu.
+    oModel:DeActivate()
     If lNumerou
         If lGravou
             ConfirmSX8()
