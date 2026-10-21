@@ -1996,6 +1996,7 @@ E-mail e tela de envio da OS (o envio e do U_CNSAPR "ENV"):
   RESUMO    ()     linhas do cartao do e-mail (SZ1 posicionada)
   HORARIO   ()     "09:00 as 11:00"
   HORAS     ()     total "02:00"
+  TAREFA    ()     "codigo - descricao" da tarefa ("" sem tarefa)
   DESCRICAO (cOs)  descricao em texto puro
   CHAMADOS  ()     {"#id - assunto"}
   DESTINO   ()     e-mails do cliente: chamados da OS, senao A1_EMAIL
@@ -2045,8 +2046,10 @@ Static Function OS_EMAIL(cAcao, x1)
             AAdd(xRet, {"Projeto", AllTrim(SZ1->Z1_PROJET) + " - " + U_CNSOUTL("TEXTO", OS_NOMEPROJ(AllTrim(SZ1->Z1_PROJET)))})
         EndIf
         If !Empty(SZ1->Z1_TAREFA)
-            cTexto := OS_NOMETAREFA(AllTrim(SZ1->Z1_PROJET), AllTrim(SZ1->Z1_TAREFA), AllTrim(SZ1->Z1_REVISA))
-            AAdd(xRet, {"Tarefa", AllTrim(SZ1->Z1_TAREFA) + If(Empty(cTexto), "", " - " + U_CNSOUTL("TEXTO", cTexto))})
+            AAdd(xRet, {"Tarefa", U_CNSOUTL("TEXTO", OS_EMAIL("TAREFA"))})
+        EndIf
+        If !Empty(SZ1->Z1_CHCLI)
+            AAdd(xRet, {"Chamado Cliente", U_CNSOUTL("TEXTO", AllTrim(SZ1->Z1_CHCLI))})
         EndIf
         aCh := OS_ZA3("LER", AllTrim(SZ1->Z1_OS), AllTrim(SZ1->Z1_IDCH))
         If Len(aCh) > 0
@@ -2060,6 +2063,13 @@ Static Function OS_EMAIL(cAcao, x1)
 
     Case cAcao == "HORARIO"
         xRet := OS_HHMM(SZ1->Z1_HRINI) + " as " + OS_HHMM(SZ1->Z1_HRFIM)
+
+    Case cAcao == "TAREFA"
+        xRet := ""
+        If !Empty(SZ1->Z1_TAREFA)
+            cTexto := OS_NOMETAREFA(AllTrim(SZ1->Z1_PROJET), AllTrim(SZ1->Z1_TAREFA), AllTrim(SZ1->Z1_REVISA))
+            xRet   := AllTrim(SZ1->Z1_TAREFA) + If(Empty(cTexto), "", " - " + cTexto)
+        EndIf
 
     Case cAcao == "HORAS"
         If !Empty(AllTrim(SZ1->Z1_HRTOT))
@@ -2142,7 +2152,7 @@ Return xRet
 /*/{Protheus.doc} OS_APRPUB
 Expoe ao CNSA004 (U_CNSAPR) o que e Static aqui:
   GRAVAR (cOs, {{campo, valor}})  grava a SZ1 pelo model leve -> {lOk, cErro}
-  RESUMO, DESTINO, DESCRICAO, CHAMADOS, HORARIO, HORAS, INTERACOES (cOs)  ver OS_EMAIL
+  RESUMO, DESTINO, DESCRICAO, CHAMADOS, HORARIO, HORAS, TAREFA, INTERACOES (cOs)  ver OS_EMAIL
 /*/
 User Function OS_APRPUB(cAcao, x1, x2)
     Local xRet   := Nil
@@ -2153,7 +2163,7 @@ User Function OS_APRPUB(cAcao, x1, x2)
 
     SZ1->(DbSetOrder(1))
     If !SZ1->(DbSeek(cFilAnt + cOs))
-        Return If(cAcao == "GRAVAR", {.F., "OS nao encontrada."}, If(cAcao $ "DESCRICAO|HORARIO|HORAS", "", {}))
+        Return If(cAcao == "GRAVAR", {.F., "OS nao encontrada."}, If(cAcao $ "DESCRICAO|HORARIO|HORAS|TAREFA", "", {}))
     EndIf
 
     Do Case
@@ -2178,7 +2188,7 @@ User Function OS_APRPUB(cAcao, x1, x2)
     Case cAcao == "DESCRICAO"
         xRet := OS_EMAIL("DESCRICAO", cOs)
 
-    Otherwise   // RESUMO, DESTINO, CHAMADOS, HORARIO, HORAS (SZ1 posicionada)
+    Otherwise   // RESUMO, DESTINO, CHAMADOS, HORARIO, HORAS, TAREFA, INTERACOES (SZ1 posicionada)
         xRet := OS_EMAIL(cAcao)
     EndCase
 

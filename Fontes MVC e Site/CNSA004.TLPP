@@ -233,6 +233,7 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
     Local jOs      := Nil
     Local jInt     := Nil
     Local aJsInt   := {}
+    Local cNomeCli := ""
     Local cAlias   := ""
     Local aEnv     := {}
     Local cMsgEnv  := ""
@@ -489,13 +490,19 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
         EndIf
         jOs := JsonObject():New()
         jOs["os"]        := AllTrim(SZ1->Z1_OS)
-        jOs["cliente"]   := AllTrim(Posicione("SA1", 1, xFilial("SA1") + SZ1->Z1_CLI + SZ1->Z1_LOJA, "A1_NOME")) + ;
-                            " (Loja " + AllTrim(SZ1->Z1_LOJA) + ")"
+        // Mesmo nome do e-mail: reduzido, senao o completo.
+        cNomeCli := AllTrim(Posicione("SA1", 1, xFilial("SA1") + SZ1->Z1_CLI + SZ1->Z1_LOJA, "A1_NREDUZ"))
+        If Empty(cNomeCli)
+            cNomeCli := AllTrim(Posicione("SA1", 1, xFilial("SA1") + SZ1->Z1_CLI + SZ1->Z1_LOJA, "A1_NOME"))
+        EndIf
+        jOs["cliente"]   := cNomeCli + " (Loja " + AllTrim(SZ1->Z1_LOJA) + ")"
         jOs["data"]      := DToC(SZ1->Z1_DTOS)
         jOs["horario"]   := apia.cnsa002.U_OS_APRPUB("HORARIO", SZ1->Z1_OS)   // "09:00 as 11:00" (a tela poe o acento)
         jOs["horas"]     := apia.cnsa002.U_OS_APRPUB("HORAS", SZ1->Z1_OS)
         jOs["analista"]  := AllTrim(Posicione("AA1", 1, xFilial("AA1") + SZ1->Z1_TEC, "AA1_NOMTEC"))
-        jOs["projeto"]   := AllTrim(SZ1->Z1_PROJET) + " " + AllTrim(Posicione("AF8", 1, xFilial("AF8") + SZ1->Z1_PROJET, "AF8_DESCRI"))
+        jOs["projeto"]   := If(Empty(SZ1->Z1_PROJET), "", AllTrim(SZ1->Z1_PROJET) + " - " + AllTrim(Posicione("AF8", 1, xFilial("AF8") + SZ1->Z1_PROJET, "AF8_DESCRI")))
+        jOs["tarefa"]    := apia.cnsa002.U_OS_APRPUB("TAREFA", SZ1->Z1_OS)
+        jOs["chamadoCliente"] := AllTrim(SZ1->Z1_CHCLI)
         jOs["chamados"]  := apia.cnsa002.U_OS_APRPUB("CHAMADOS", SZ1->Z1_OS)
         jOs["descricao"] := apia.cnsa002.U_OS_APRPUB("DESCRICAO", SZ1->Z1_OS)
         // Interacoes desta OS (mais antiga primeiro).
@@ -913,8 +920,7 @@ Static Function AP_ENVIAR(cOs, aPara, cToken, dValid)
     Local aErro := {}
     Local cPara := ""
     Local aLin  := apia.cnsa002.U_OS_APRPUB("RESUMO", cOs)
-    Local cDesc := U_CNSOUTL("TEXTO", apia.cnsa002.U_OS_APRPUB("DESCRICAO", cOs))
-    Local aInt  := apia.cnsa002.U_OS_APRPUB("INTERACOES", cOs)
+    Local cDesc := AP_DESCHTML(cOs)
     Local cUrl  := AllTrim(SuperGetMV("MV_CNSAURL", .F., "https://www.apia.com.br/Aprovador-OS"))
     Local cLink := ""
     Local cObs  := ""
@@ -931,13 +937,6 @@ Static Function AP_ENVIAR(cOs, aPara, cToken, dValid)
         'Aprovar ou recusar a OS</a><br><span style="font-size:12px;color:#6b7280">Link v&aacute;lido at&eacute; ' + ;
         DToC(dValid) + '</span></div>Qualquer d&uacute;vida, entre em contato: <b>pericles@apia.com.br</b>'
 
-    // Interacoes desta OS depois da descricao (mais antiga primeiro).
-    For nI := 1 To Len(aInt)
-        cDesc += If(nI == 1, '<div style="color:#0d5a8a;font-size:18px;font-weight:bold;padding:16px 0 8px">Intera&ccedil;&otilde;es</div>', "") + ;
-            '<div style="padding-bottom:10px"><b>' + aInt[nI][1] + " " + aInt[nI][2] + " - " + U_CNSOUTL("TEXTO", aInt[nI][3]) + '</b><br>' + ;
-            StrTran(StrTran(U_CNSOUTL("TEXTO", aInt[nI][4]), Chr(13) + Chr(10), "<br>"), Chr(10), "<br>") + '</div>'
-    Next nI
-
     For nI := 1 To Len(aPara)
         cPara := AllTrim(aPara[nI])
         If !AP_EMAILOK(cPara)
@@ -953,6 +952,22 @@ Static Function AP_ENVIAR(cOs, aPara, cToken, dValid)
     Next nI
 
 Return {aOk, aErro}
+
+/*/{Protheus.doc} AP_DESCHTML
+Descricao da OS e, depois dela, as interacoes (mais antiga primeiro) - corpo dos e-mails ao cliente.
+/*/
+Static Function AP_DESCHTML(cOs)
+    Local cDesc := U_CNSOUTL("TEXTO", apia.cnsa002.U_OS_APRPUB("DESCRICAO", cOs))
+    Local aInt  := apia.cnsa002.U_OS_APRPUB("INTERACOES", cOs)
+    Local nI    := 0
+
+    For nI := 1 To Len(aInt)
+        cDesc += If(nI == 1, '<div style="color:#0d5a8a;font-size:18px;font-weight:bold;padding:16px 0 8px">Intera&ccedil;&otilde;es</div>', "") + ;
+            '<div style="padding-bottom:10px"><b>' + aInt[nI][1] + " " + aInt[nI][2] + " - " + U_CNSOUTL("TEXTO", aInt[nI][3]) + '</b><br>' + ;
+            StrTran(StrTran(U_CNSOUTL("TEXTO", aInt[nI][4]), Chr(13) + Chr(10), "<br>"), Chr(10), "<br>") + '</div>'
+    Next nI
+
+Return cDesc
 
 /*/{Protheus.doc} AP_EMAILOK
 Formato minimo de e-mail: algo@dominio.ext, sem espaco.
@@ -981,6 +996,7 @@ Static Function AP_AVISAR(cTrans, cOs, cQuem, cMotivo)
     Local aLin     := {}
     Local cCliente := ""
     Local cAcao    := If(cTrans == "APR", "aprovada", "recusada")
+    Local cCorpo   := ""
     Local nI       := 0
 
     If !AP_SZ1(cOs)
@@ -990,6 +1006,13 @@ Static Function AP_AVISAR(cTrans, cOs, cQuem, cMotivo)
     aLin     := apia.cnsa002.U_OS_APRPUB("RESUMO", cOs)
     AAdd(aLin, {If(cTrans == "APR", "Aprovada por", "Recusada por"), U_CNSOUTL("TEXTO", cQuem)})
     AAdd(aLin, {"Em", DToC(Date()) + " &agrave;s " + Left(Time(), 5)})
+
+    // Motivo (quando tem) e depois a descricao com as interacoes, igual ao e-mail do envio.
+    If !Empty(cMotivo)
+        cCorpo := '<b>' + If(cTrans == "REC", "Motivo da recusa", "Observa&ccedil;&atilde;o do cliente") + ':</b> ' + ;
+            U_CNSOUTL("TEXTO", cMotivo) + '<br><br>'
+    EndIf
+    cCorpo += AP_DESCHTML(cOs)
 
     aPara := apia.cnsa002.U_OS_APRPUB("DESTINO", cOs)
     AAdd(aPara, AllTrim(Posicione("AA1", 1, xFilial("AA1") + SZ1->Z1_TEC, "AA1_EMAIL")))
@@ -1003,9 +1026,7 @@ Static Function AP_AVISAR(cTrans, cOs, cQuem, cMotivo)
             apia.cnsa001.U_CH_MAILPUB(aPara[nI], FwNoAccent(cCliente) + " - " + If(cTrans == "APR", "Aprovada", "Recusada") + ;
                 " O.S. n. " + AllTrim(cOs), ;
                 apia.cnsa001.U_CH_HTMLPUB("", "OS " + AllTrim(cOs) + " " + cAcao, "", ;
-                    "A ordem de servi&ccedil;o foi " + cAcao + ".", aLin, ;
-                    If(Empty(cMotivo), "", If(cTrans == "REC", "Motivo da recusa", "Observa&ccedil;&atilde;o do cliente")), ;
-                    If(Empty(cMotivo), "", U_CNSOUTL("TEXTO", cMotivo)), ""))
+                    "A ordem de servi&ccedil;o foi " + cAcao + ".", aLin, "Descri&ccedil;&atilde;o", cCorpo, ""))
         EndIf
     Next nI
 
