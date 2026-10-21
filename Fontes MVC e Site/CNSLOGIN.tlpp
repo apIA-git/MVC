@@ -16,12 +16,12 @@
 User Function CNSLOGIN_VALIDAR() As Logical
     Local oJson := JsonObject():New()
 
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
+
     // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
     If U_CNSSERVICO()
         Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
     EndIf
-
-    oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     oJson['codigo']  := __cUserId
     oJson['usuario'] := AllTrim(UsrRetName(__cUserId))

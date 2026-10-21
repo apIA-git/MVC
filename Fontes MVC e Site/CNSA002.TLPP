@@ -78,7 +78,7 @@ User Function ViewDef()
     Local l_oStruSZ2 := FWFormStruct(2, "SZ2")
 
     // Sem model ativo, ou ativo de outra rotina: monta o da OS (Nil = "Undefined View").
-    If l_oModel == Nil .Or. Left(l_oModel:GetId(), 7) != "FCNS002"
+    If l_oModel == Nil .Or. l_oModel:GetId() != "FCNS002"
         l_oModel := OS_MONTARMODEL()
     EndIf
 
@@ -112,9 +112,11 @@ Return OS_MONTARMODEL()
 Model da OS (SZ1 + SZ2). Com nOperAtivar tambem ativa, NA MESMA funcao: ativar em
 outro frame quebra o INITVALUE com "owner private environment not found".
 @param  nOperAtivar    Operacao pra ja ativar (MODEL_OPERATION_*) - vazio = so monta
+@param  bTela          Tela (FWExecView) aberta AQUI, depois de ativar: o FWInitCpo so funciona enquanto a
+                       funcao que instanciou o model esta na pilha (TDN DSFIN-4587, igual ao CH_MONTARMODEL)
 @return l_oModel       Objeto MPFormModel montado
 /*/
-Static Function OS_MONTARMODEL(nOperAtivar)
+Static Function OS_MONTARMODEL(nOperAtivar, bTela)
 
     Local l_oModel  := Nil
     Local l_oStrSZ1 := FWFormStruct(1, "SZ1")
@@ -167,6 +169,9 @@ Static Function OS_MONTARMODEL(nOperAtivar)
                 // Mesmo nome do dicionario (AA1_NOMRED), no tamanho exato do campo (senao FWNOWIDTH).
                 l_oModel:GetModel("SZ1MASTER"):LoadValue("Z1_NMTEC", PadR(Left(AllTrim(Posicione("AA1", 1, xFilial("AA1") + PadR(cTec, TamSX3("AA1_CODTEC")[1]), "AA1_NOMRED")), TamSX3("Z1_NMTEC")[1]), TamSX3("Z1_NMTEC")[1]))
             EndIf
+        EndIf
+        If bTela <> Nil
+            Eval(bTela, l_oModel)
         EndIf
     EndIf
 
@@ -259,7 +264,7 @@ Static Function OS_VALIDACOBRAR(p_oModel)
         Return .T.
     EndIf
 
-    If !OS_AGENDANAOCOBRA(oModelSZ1:GetValue("Z1_TEC"), oModelSZ1:GetValue("Z1_CLI"), oModelSZ1:GetValue("Z1_LOJA"), ;
+    If !U_CNSOUTL("NAOCOBRA", oModelSZ1:GetValue("Z1_TEC"), oModelSZ1:GetValue("Z1_CLI"), oModelSZ1:GetValue("Z1_LOJA"), ;
             DToS(oModelSZ1:GetValue("Z1_DTOS")), oModelSZ1:GetValue("Z1_HRINI"), oModelSZ1:GetValue("Z1_HRFIM"))
         Return .T.
     EndIf
@@ -274,77 +279,6 @@ Static Function OS_VALIDACOBRAR(p_oModel)
     EndIf
 
 Return .T.
-
-/*/{Protheus.doc} OS_AGENDANAOCOBRA
-O agendamento (SZ6) da OS esta "Nao Cobrar"? Tecnico + cliente (+ loja) + data + horario com
-15 min de tolerancia - mesma regra do CNS001_AGENDANAOCOBRA (cnslib).
-@param  cTec     Tecnico (AA1_CODTEC)
-@param  cCli     Cliente (A1_COD)
-@param  cLoja    Loja do cliente (vazia = qualquer loja)
-@param  cData    Data AAAAMMDD
-@param  cHrIni   Hora inicial (HH:MM ou HHMM)
-@param  cHrFim   Hora final (HH:MM ou HHMM)
-@return lNaoCob  .T. se achou agendamento correspondente com Z6_COBRAR = "NAO"
-/*/
-Static Function OS_AGENDANAOCOBRA(cTec, cCli, cLoja, cData, cHrIni, cHrFim)
-    Local cAlias  := ""
-    Local lNaoCob := .F.
-    Local nIni    := 0
-    Local nFim    := 0
-
-    cTec   := AllTrim(cTec)
-    cCli   := AllTrim(cCli)
-    cLoja  := AllTrim(cLoja)
-    cData  := AllTrim(cData)
-    nIni   := OS_AGENDANAOCOBRA_MIN(cHrIni)
-    nFim   := OS_AGENDANAOCOBRA_MIN(cHrFim)
-
-    If Empty(cTec) .Or. Empty(cCli) .Or. Len(cData) != 8 .Or. nIni < 0 .Or. nFim < 0
-        Return .F.
-    EndIf
-
-    cAlias := GetNextAlias()
-    BeginSql Alias cAlias
-        SELECT Z6_LOJA, Z6_HMINI, Z6_HMFIM, Z6_COBRAR
-        FROM %Table:SZ6% SZ6
-        WHERE Z6_FILIAL  = %xFilial:SZ6%
-          AND Z6_TECNICO = %Exp:cTec%
-          AND Z6_CLIENTE = %Exp:cCli%
-          AND Z6_DTAGE   = %Exp:cData%
-          AND %NotDel%
-    EndSql
-    While !(cAlias)->(Eof())
-        If (Empty(cLoja) .Or. Empty(AllTrim((cAlias)->Z6_LOJA)) .Or. AllTrim((cAlias)->Z6_LOJA) == cLoja) .And. ;
-                Abs(OS_AGENDANAOCOBRA_MIN((cAlias)->Z6_HMINI) - nIni) <= 15 .And. ;
-                Abs(OS_AGENDANAOCOBRA_MIN((cAlias)->Z6_HMFIM) - nFim) <= 15
-            If Upper(AllTrim((cAlias)->Z6_COBRAR)) == "NAO"
-                lNaoCob := .T.
-                Exit
-            EndIf
-        EndIf
-        (cAlias)->(DbSkip())
-    EndDo
-    (cAlias)->(DbCloseArea())
-
-Return lNaoCob
-
-// "HH:MM"/"HHMM" -> minutos do dia (-1 se invalido).
-Static Function OS_AGENDANAOCOBRA_MIN(cHora)
-    Local cDig := ""
-    Local nI   := 0
-
-    cHora := AllTrim(cHora)
-    For nI := 1 To Len(cHora)
-        If IsDigit(SubStr(cHora, nI, 1))
-            cDig += SubStr(cHora, nI, 1)
-        EndIf
-    Next nI
-    If Len(cDig) < 3
-        Return -1
-    EndIf
-    cDig := PadL(cDig, 4, "0")
-
-Return Val(Left(cDig, 2)) * 60 + Val(SubStr(cDig, 3, 2))
 
 /*/{Protheus.doc} OS_MODELLEVE
 Model leve (so SZ1, sem o grid SZ2) do REST e da aprovacao - monta E ativa aqui (ver OS_MONTARMODEL).
@@ -412,6 +346,8 @@ Static Function OS_NUCLEOCOPIAR(cOsOrigem)
     Local lOk        := .F.
     Local cErro      := ""
     Local oErroExcpt := Nil
+    Local bErro      := Nil
+    Local jFase      := JsonObject():New()
 
     If Empty(cOsOrigem)
         Return {.F., "Informe o numero da OS a copiar.", ""}
@@ -419,7 +355,7 @@ Static Function OS_NUCLEOCOPIAR(cOsOrigem)
 
     DbSelectArea("SZ1")
     SZ1->(DbSetOrder(1))
-    If !SZ1->(DbSeek(cFilAnt + cOsOrigem))
+    If !SZ1->(DbSeek(cFilAnt + PadR(cOsOrigem, TamSX3("Z1_OS")[1])))
         Return {.F., "OS nao encontrada.", ""}
     EndIf
 
@@ -429,6 +365,8 @@ Static Function OS_NUCLEOCOPIAR(cOsOrigem)
         EndIf
     Next nI
 
+    // Sem o ErrorBlock o erro nao cai no Recover.
+    bErro := ErrorBlock({|e| Break(e)})
     Begin Sequence
 
         cOsNova := OS_PROXIMONUM()
@@ -460,6 +398,10 @@ Static Function OS_NUCLEOCOPIAR(cOsOrigem)
 
         If !lOk
             cErro := OS_ERROMODEL(oModel, "Falha ao copiar a OS.")
+            // Commit nao gravou (o AfterTTS nao roda): solta a trava da aprovacao e descarta o aviso.
+            jFase["fase"]   := "DEP"
+            jFase["falhou"] := "S"
+            apia.cnsa004.U_CNSAPR("OS", oModel, "", jFase)
         EndIf
 
         oModel:DeActivate(lOk)
@@ -468,30 +410,38 @@ Static Function OS_NUCLEOCOPIAR(cOsOrigem)
         lOk   := .F.
         cErro := "Erro interno: " + oErroExcpt:Description
         If oModel <> Nil
+            // Erro no meio do commit nao passa pelo AfterTTS: solta a trava da aprovacao e descarta o aviso.
+            jFase["fase"]   := "DEP"
+            jFase["falhou"] := "S"
+            apia.cnsa004.U_CNSAPR("OS", oModel, "", jFase)
             oModel:DeActivate()
         EndIf
     End Sequence
+    ErrorBlock(bErro)
 
-    If !lOk
-        ConfirmSX8(.F.)
-        Return {.F., cErro, ""}
+    // Solta a reserva do numero (OS_PROXIMONUM): gravada ou nao, nao precisa mais.
+    If !Empty(cOsNova)
+        Leave1Code("CNSA002_OS" + xFilial("SZ1") + cOsNova)
     EndIf
 
-    ConfirmSX8()
+    If !lOk
+        Return {.F., cErro, ""}
+    EndIf
 
 Return {.T., "", cOsNova}
 
 /*/{Protheus.doc} OS_TELA
-Menu Visualizar/Incluir/Alterar/Excluir: monta e ativa o model aqui e abre a View.
+Menu Visualizar/Incluir/Alterar/Excluir: monta e ativa o model e abre a View dentro do OS_MONTARMODEL.
 @param  nOper  MODEL_OPERATION_VIEW (1), INSERT (3), UPDATE (4) ou DELETE (5)
 /*/
 User Function OS_TELA(nOper)
-    Local lGrava := nOper == MODEL_OPERATION_INSERT .Or. nOper == MODEL_OPERATION_UPDATE
-    Local oModel := Nil
-    Local cOs    := SZ1->Z1_OS
-    Local aCpos  := {}
-    Local cCpo   := ""
-    Local nI     := 0
+    Local lGrava   := nOper == MODEL_OPERATION_INSERT .Or. nOper == MODEL_OPERATION_UPDATE
+    Local lGravou  := .F.
+    Local oModel   := Nil
+    Local cOs      := SZ1->Z1_OS
+    Local aCpos    := {}
+    Local cCpo     := ""
+    Local nI       := 0
 
     // M->Z1_* no frame que fica vivo com a tela aberta (lupas/F3). Pelo dicionario (.T.): inclui os campos
     // virtuais (nome do cliente etc.) - sem eles o fechamento da lupa fazia LoadValue com Nil.
@@ -508,17 +458,26 @@ User Function OS_TELA(nOper)
             EndIf
         Next nI
     EndIf
-    oModel := OS_MONTARMODEL(nOper)
+    // A tela abre DENTRO do OS_MONTARMODEL (bTela): fora dele o FWInitCpo dava "owner private environment not found".
+    // Model desta tela como ativo (o ViewDef usa o ativo). FWExecView devolve 0 quando confirma.
+    oModel := OS_MONTARMODEL(nOper, {|o| cOs := If(nOper == MODEL_OPERATION_INSERT, o:GetModel("SZ1MASTER"):GetValue("Z1_OS"), cOs), ;
+        FWModelActive(o), ;
+        lGravou := FWExecView("Ordem de Servico", "apia.cnsa002.u_cns002", nOper, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, o) == 0})
+    // Fecha o model desta tela: senao ele fica ativo (FWModelActive) depois que a tela fechou.
+    oModel:DeActivate()
+    // Inclusao: solta a reserva do numero (OS_PROXIMONUM), gravada ou cancelada.
     If nOper == MODEL_OPERATION_INSERT
-        cOs := oModel:GetModel("SZ1MASTER"):GetValue("Z1_OS")
+        Leave1Code("CNSA002_OS" + xFilial("SZ1") + AllTrim(cOs))
     EndIf
 
-    // Model desta tela como ativo (o ViewDef usa o ativo). FWExecView devolve 0 quando grava.
-    FWModelActive(oModel)
-    If FWExecView("Ordem de Servico", "apia.cnsa002.u_cns002", nOper, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel) == 0 .And. lGrava
+    Do Case
+    Case lGravou .And. lGrava
         OS_ZA3("DESCRICAO", cOs)
         OS_EMAIL("TELA", cOs)
-    EndIf
+    Case lGravou .And. nOper == MODEL_OPERATION_DELETE
+        // Mesmo do REST (OS_APIEXCLUIR): apaga a ZA3 da OS.
+        OS_ZA3("APAGAR", cOs)
+    EndCase
 Return
 
 /*/{Protheus.doc} OS_COPIARTELA
@@ -605,11 +564,15 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
     Local aHrFim     := OS_LERHORA(jQuery, "horaFinal", "horaFinalDec")
     Local aParCh     := OS_ZA3("PARAM", jQuery)
     Local cMsgCh     := OS_ZA3("VALIDAR", "", aParCh[2], cCli, If(Empty(cLoja), "01", cLoja))
+    Local bErro      := Nil
+    Local jFase      := JsonObject():New()
 
     If !Empty(cMsgCh)
         Return {.F., cMsgCh, ""}
     EndIf
 
+    // Sem o ErrorBlock o erro nao cai no Recover.
+    bErro := ErrorBlock({|e| Break(e)})
     Begin Sequence
 
         oModel    := OS_MODELLEVE(MODEL_OPERATION_INSERT)
@@ -661,6 +624,10 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
 
         If !lOk
             cErro := OS_ERROMODEL(oModel, "Falha ao validar/gravar a OS.")
+            // Commit nao gravou (o AfterTTS nao roda): solta a trava da aprovacao e descarta o aviso.
+            jFase["fase"]   := "DEP"
+            jFase["falhou"] := "S"
+            apia.cnsa004.U_CNSAPR("OS", oModel, "", jFase)
         EndIf
 
         oModel:DeActivate(lOk)
@@ -668,19 +635,25 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
         If lOk
             OS_ZA3("GRAVAR", cOs, aParCh[2])
             OS_ZA3("DESCRICAO", cOs)
-            ConfirmSX8()
-        Else
-            ConfirmSX8(.F.)
         EndIf
 
     Recover Using oErroExcpt
         lOk   := .F.
         cErro := "Erro interno: " + oErroExcpt:Description
-        ConfirmSX8(.F.)
         If oModel <> Nil
+            // Erro no meio do commit nao passa pelo AfterTTS: solta a trava da aprovacao e descarta o aviso.
+            jFase["fase"]   := "DEP"
+            jFase["falhou"] := "S"
+            apia.cnsa004.U_CNSAPR("OS", oModel, "", jFase)
             oModel:DeActivate()
         EndIf
     End Sequence
+    ErrorBlock(bErro)
+
+    // Solta a reserva do numero (OS_PROXIMONUM): gravada ou nao, nao precisa mais.
+    If !Empty(cOs)
+        Leave1Code("CNSA002_OS" + xFilial("SZ1") + cOs)
+    EndIf
 
 Return {lOk, cErro, cOs}
 
@@ -690,15 +663,15 @@ POST /CNSAOSINCLUIR - inclui a OS.
 /*/
 @Post(endpoint="/CNSAOSINCLUIR")
 User Function OS_APIINCLUIR() As Logical
-    Local jQuery     := oRest:getQueryRequest() As Json
+    Local jQuery     := OS_PARAMS() As Json
     Local aResultado := {}
+
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     // Usuario de servico (pagina do cliente) so acessa /CNSAAPROVA.
     If U_CNSSERVICO()
         Return OS_ERRO(403, "Usuario sem acesso a este recurso.")
     EndIf
-
-    oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     aResultado := OS_NUCLEOINCLUIR(jQuery)
 
@@ -726,6 +699,8 @@ Static Function OS_NUCLEOALTERAR(jQuery)
     Local aParCh     := OS_ZA3("PARAM", jQuery)
     Local cMsgCh     := ""
     Local cIdChAnt   := ""
+    Local bErro      := Nil
+    Local jFase      := JsonObject():New()
 
     If Empty(cOs)
         Return {.F., "Informe o numero da OS (?os=000001).", ""}
@@ -733,7 +708,7 @@ Static Function OS_NUCLEOALTERAR(jQuery)
 
     DbSelectArea("SZ1")
     SZ1->(DbSetOrder(1))
-    If !SZ1->(DbSeek(cFilAnt + cOs))
+    If !SZ1->(DbSeek(cFilAnt + PadR(cOs, TamSX3("Z1_OS")[1])))
         Return {.F., "OS nao encontrada.", cOs}
     EndIf
     cIdChAnt := AllTrim(SZ1->Z1_IDCH)
@@ -746,9 +721,11 @@ Static Function OS_NUCLEOALTERAR(jQuery)
         If !Empty(cMsgCh)
             Return {.F., cMsgCh, cOs}
         EndIf
-        SZ1->(DbSeek(cFilAnt + cOs))
+        SZ1->(DbSeek(cFilAnt + PadR(cOs, TamSX3("Z1_OS")[1])))
     EndIf
 
+    // Sem o ErrorBlock o erro nao cai no Recover.
+    bErro := ErrorBlock({|e| Break(e)})
     Begin Sequence
 
         oModel    := OS_MODELLEVE(MODEL_OPERATION_UPDATE)
@@ -802,11 +779,15 @@ Static Function OS_NUCLEOALTERAR(jQuery)
 
         If !lOk
             cErro := OS_ERROMODEL(oModel, "Falha ao validar/gravar a alteracao.")
+            // Commit nao gravou (o AfterTTS nao roda): solta a trava da aprovacao e descarta o aviso.
+            jFase["fase"]   := "DEP"
+            jFase["falhou"] := "S"
+            apia.cnsa004.U_CNSAPR("OS", oModel, "", jFase)
         EndIf
 
         oModel:DeActivate(lOk)
 
-        // OS que ganhou chamado: interacoes do Memo passam pra ZA2.
+        // OS legada com blocos de interacao no Memo e chamado: os blocos passam pra ZA2.
         If lOk
             If aParCh[1]
                 // O chamado anterior fica na ZA3 (OS antiga podia ter so o Z1_IDCH).
@@ -823,9 +804,14 @@ Static Function OS_NUCLEOALTERAR(jQuery)
         lOk   := .F.
         cErro := "Erro interno: " + oErroExcpt:Description
         If oModel <> Nil
+            // Erro no meio do commit nao passa pelo AfterTTS: solta a trava da aprovacao e descarta o aviso.
+            jFase["fase"]   := "DEP"
+            jFase["falhou"] := "S"
+            apia.cnsa004.U_CNSAPR("OS", oModel, "", jFase)
             oModel:DeActivate()
         EndIf
     End Sequence
+    ErrorBlock(bErro)
 
 Return {lOk, cErro, cOs}
 
@@ -835,15 +821,15 @@ POST /CNSAOSALTERAR - alteracao parcial (404 se a OS nao existe).
 /*/
 @Post(endpoint="/CNSAOSALTERAR")
 User Function OS_APIALTERAR() As Logical
-    Local jQuery     := oRest:getQueryRequest() As Json
+    Local jQuery     := OS_PARAMS() As Json
     Local aResultado := {}
+
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     // Usuario de servico (pagina do cliente) so acessa /CNSAAPROVA.
     If U_CNSSERVICO()
         Return OS_ERRO(403, "Usuario sem acesso a este recurso.")
     EndIf
-
-    oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     aResultado := OS_NUCLEOALTERAR(jQuery)
 
@@ -1097,21 +1083,6 @@ Static Function OS_DATAISO(dData)
     EndIf
 Return Left(cData, 4) + "-" + SubStr(cData, 5, 2) + "-" + Right(cData, 2)
 
-/*/{Protheus.doc} OS_ESCAPARJSON
-Escapa texto para string JSON.
-@param  cTexto   Texto a escapar
-@return cRet     Texto escapado, pronto para JSON
-/*/
-Static Function OS_ESCAPARJSON(cTexto)
-    Local cRet := cTexto
-    cRet := StrTran(cRet, '\',  '\\')
-    cRet := StrTran(cRet, '"',  '\"')
-    cRet := StrTran(cRet, Chr(13)+Chr(10), '\n')
-    cRet := StrTran(cRet, Chr(10), '\n')
-    cRet := StrTran(cRet, Chr(13), '\n')
-    cRet := StrTran(cRet, Chr(9),  '\t')
-Return cRet
-
 /*/{Protheus.doc} OS_LERJSONNUM
 Campo numerico do Json (0 se ausente).
 @param  jDados   Objeto Json (query string ou corpo)
@@ -1124,33 +1095,6 @@ Static Function OS_LERJSONNUM(jDados, cCampo)
         Return 0
     EndIf
 Return Val(cValToChar(xVal))
-
-/*/{Protheus.doc} OS_DECODESAFE
-Acento UTF-8 que chega quebrado em 2 caracteres CP1252 (igual ao CH_DECODESAFE do CNSA001).
-@param  cTexto   Texto possivelmente com bytes UTF-8 quebrados em CP1252
-@return cRet     Texto reconstruido/decodificado
-/*/
-Static Function OS_DECODESAFE(cTexto)
-    Local cRet  := ""
-    Local nLen  := Len(cTexto)
-    Local nI    := 1
-    Local nB1, nB2
-
-    While nI <= nLen
-        nB1 := Asc(SubStr(cTexto, nI, 1))
-        If (nB1 == 195 .Or. nB1 == 194) .And. nI < nLen
-            nB2 := Asc(SubStr(cTexto, nI + 1, 1))
-            If nB2 >= 128 .And. nB2 <= 191
-                cRet += Chr(((nB1 - 192) * 64) + (nB2 - 128))
-                nI   += 2
-                Loop
-            EndIf
-        EndIf
-        cRet += SubStr(cTexto, nI, 1)
-        nI++
-    EndDo
-
-Return cRet
 
 /*/{Protheus.doc} OS_PROXIMONUM
 Proximo numero: ano (2 digitos) + sequencia do ano (26000001...). Conta as excluidas e
@@ -1188,7 +1132,7 @@ Static Function OS_PROXIMONUM()
 Return cOs
 
 /*/{Protheus.doc} OS_LERJSONTXT
-Campo texto do Json, com OS_DECODESAFE ("" se ausente).
+Campo texto do Json, com U_CNSOUTL "UTF8" ("" se ausente).
 @param  jDados   Objeto Json (query string ou corpo)
 @param  cCampo   Nome do campo a ler
 @return cVal     Valor texto decodificado, ou "" se ausente/nao-texto
@@ -1198,13 +1142,49 @@ Static Function OS_LERJSONTXT(jDados, cCampo)
     If xVal == Nil .Or. ValType(xVal) != "C"
         Return ""
     EndIf
-Return OS_DECODESAFE(xVal)
+Return U_CNSOUTL("UTF8", xVal)
 
 /*/{Protheus.doc} OS_ERRO
 Resposta de erro dos endpoints: {"erro": cMsg}.
 /*/
 Static Function OS_ERRO(nStatus, cMsg)
-Return oRest:setStatusResponse(nStatus, '{"erro":"' + OS_ESCAPARJSON(cMsg) + '"}')
+    Local oJson := JsonObject():New()
+
+    oJson["erro"] := cMsg
+Return oRest:setStatusResponse(nStatus, oJson:ToJson())
+
+/*/{Protheus.doc} OS_PARAMS
+Parametros do POST: query string e, por cima, o corpo JSON (mesmas chaves) - aceita os dois.
+@return jParam   JsonObject com os parametros (numero do corpo vira texto, como na query)
+/*/
+Static Function OS_PARAMS()
+    Local jParam := JsonObject():New()
+    Local jCorpo := JsonObject():New()
+    Local cCorpo := oRest:getBodyRequest()
+    Local aFonte := {oRest:getQueryRequest()}
+    Local jFonte := Nil
+    Local aNomes := {}
+    Local xVal   := Nil
+    Local nI     := 0
+    Local nJ     := 0
+
+    // Corpo so se for JSON valido (FromJson devolve Nil quando parseou).
+    If ValType(cCorpo) == "C" .And. !Empty(cCorpo) .And. Empty(jCorpo:FromJson(cCorpo))
+        AAdd(aFonte, jCorpo)
+    EndIf
+    For nI := 1 To Len(aFonte)
+        jFonte := aFonte[nI]
+        If ValType(jFonte) == "J"
+            aNomes := jFonte:GetNames()
+            For nJ := 1 To Len(aNomes)
+                xVal := jFonte[aNomes[nJ]]
+                // Logico/numero do corpo vira texto como na query ("1"/"0"), igual ao CH_PARAMS.
+                jParam[aNomes[nJ]] := If(ValType(xVal) == "L", If(xVal, "1", "0"), If(ValType(xVal) == "N", cValToChar(xVal), xVal))
+            Next nJ
+        EndIf
+    Next nI
+
+Return jParam
 
 /*/{Protheus.doc} OS_RESPOSTAOK
 JSON de sucesso: sucesso, os, mensagem, aprovad e interna.
@@ -1257,14 +1237,17 @@ User Function OS_APILISTAR() As Logical
     Local cSemAte    := ""
     Local cFApv      := ""
     Local cSemApv    := ""
+    Local bErro      := Nil
+
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     // Usuario de servico (pagina do cliente) so acessa /CNSAAPROVA.
     If U_CNSSERVICO()
         Return OS_ERRO(403, "Usuario sem acesso a este recurso.")
     EndIf
 
-    oRest:setKeyHeaderResponse("Content-Type", "application/json")
-
+    // Sem o ErrorBlock o erro nao cai no Recover. Restaurado em toda saida.
+    bErro := ErrorBlock({|e| Break(e)})
     Begin Sequence
 
         nPagina   := OS_LERJSONNUM(jQuery, "pagina")
@@ -1314,12 +1297,12 @@ User Function OS_APILISTAR() As Logical
                             OR UPPER(Z1_OS) LIKE '%'||%Exp:cTextoUp%||'%'
                             OR EXISTS (
                                 SELECT 1 FROM %Table:SA1% SA1
-                                WHERE SA1.A1_FILIAL = Z1_FILIAL AND SA1.A1_COD = Z1_CLI AND SA1.A1_LOJA = Z1_LOJA
+                                WHERE SA1.A1_FILIAL = %xFilial:SA1% AND SA1.A1_COD = Z1_CLI AND SA1.A1_LOJA = Z1_LOJA
                                   AND SA1.D_E_L_E_T_ = ' ' AND (UPPER(SA1.A1_NOME) LIKE '%'||%Exp:cTextoUp%||'%' OR UPPER(SA1.A1_NREDUZ) LIKE '%'||%Exp:cTextoUp%||'%')
                             )
                             OR EXISTS (
                                 SELECT 1 FROM %Table:AA1% AA1
-                                WHERE AA1.AA1_FILIAL = Z1_FILIAL AND AA1.AA1_CODTEC = Z1_TEC
+                                WHERE AA1.AA1_FILIAL = %xFilial:AA1% AND AA1.AA1_CODTEC = Z1_TEC
                                   AND AA1.D_E_L_E_T_ = ' ' AND UPPER(AA1.AA1_NOMTEC) LIKE '%'||%Exp:cTextoUp%||'%'
                             )
                           )
@@ -1402,13 +1385,16 @@ User Function OS_APILISTAR() As Logical
         oJson['tamanho']      := nTamanho
         oJson['items']        := aRetorno
 
+        ErrorBlock(bErro)
         Return oRest:setStatusResponse(200, oJson:ToJson())
 
     Recover Using oErro
+        ErrorBlock(bErro)
         If oErro != Nil
             Return OS_ERRO(500, oErro:Description)
         EndIf
     End Sequence
+    ErrorBlock(bErro)
 
 Return OS_ERRO(500, "Erro desconhecido.")
 
@@ -1418,29 +1404,35 @@ POST /CNSAOSEXCLUIR - exclui a OS e os chamados ligados (ZA3).
 /*/
 @Post(endpoint="/CNSAOSEXCLUIR")
 User Function OS_APIEXCLUIR() As Logical
-    Local jQuery     := oRest:getQueryRequest() As Json
+    Local jQuery     := OS_PARAMS() As Json
     Local cOs        := AllTrim(OS_LERJSONTXT(jQuery,"os")) As Character
     Local oErro      := Nil
     Local oModel     := Nil
     Local lOk        := .F.
     Local cErro      := ""
+    Local bErro      := Nil
+    Local jFase      := JsonObject():New()
+
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     // Usuario de servico (pagina do cliente) so acessa /CNSAAPROVA.
     If U_CNSSERVICO()
         Return OS_ERRO(403, "Usuario sem acesso a este recurso.")
     EndIf
 
-    oRest:setKeyHeaderResponse("Content-Type", "application/json")
-
+    // Sem o ErrorBlock o erro nao cai no Recover. Restaurado em toda saida.
+    bErro := ErrorBlock({|e| Break(e)})
     Begin Sequence
 
         If Empty(cOs)
+            ErrorBlock(bErro)
             Return OS_ERRO(400, "Informe o numero da OS.")
         EndIf
 
         DbSelectArea("SZ1")
         SZ1->(DbSetOrder(1))
-        If !SZ1->(DbSeek(cFilAnt + cOs))
+        If !SZ1->(DbSeek(cFilAnt + PadR(cOs, TamSX3("Z1_OS")[1])))
+            ErrorBlock(bErro)
             Return OS_ERRO(404, "OS nao encontrada.")
         EndIf
 
@@ -1452,6 +1444,10 @@ User Function OS_APIEXCLUIR() As Logical
 
         If !lOk
             cErro := OS_ERROMODEL(oModel, "Falha ao excluir a OS.")
+            // Commit nao gravou (o AfterTTS nao roda): solta a trava da aprovacao e descarta o aviso.
+            jFase["fase"]   := "DEP"
+            jFase["falhou"] := "S"
+            apia.cnsa004.U_CNSAPR("OS", oModel, "", jFase)
         EndIf
 
         oModel:DeActivate(lOk)
@@ -1461,14 +1457,23 @@ User Function OS_APIEXCLUIR() As Logical
         EndIf
 
         If !lOk
+            ErrorBlock(bErro)
             Return OS_ERRO(400, cErro)
         EndIf
 
+        ErrorBlock(bErro)
         Return oRest:setStatusResponse(200, OS_RESPOSTAOK(cOs, "OS excluida com sucesso."))
 
     Recover Using oErro
+        ErrorBlock(bErro)
+        If oModel <> Nil
+            jFase["fase"]   := "DEP"
+            jFase["falhou"] := "S"
+            apia.cnsa004.U_CNSAPR("OS", oModel, "", jFase)
+        EndIf
         Return OS_ERRO(500, oErro:Description)
     End Sequence
+    ErrorBlock(bErro)
 
 Return OS_ERRO(500, "Erro desconhecido.")
 
@@ -1478,24 +1483,28 @@ POST /CNSAOSCOPIAR - copia a OS.
 /*/
 @Post(endpoint="/CNSAOSCOPIAR")
 User Function OS_APICOPIAR() As Logical
-    Local jQuery    := oRest:getQueryRequest() As Json
+    Local jQuery    := OS_PARAMS() As Json
     Local cOsOrigem := AllTrim(OS_LERJSONTXT(jQuery,"os")) As Character
     Local oJson     := JsonObject():New()
     Local oErro     := Nil
     Local aResultado := {}
+    Local bErro      := Nil
+
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     // Usuario de servico (pagina do cliente) so acessa /CNSAAPROVA.
     If U_CNSSERVICO()
         Return OS_ERRO(403, "Usuario sem acesso a este recurso.")
     EndIf
 
-    oRest:setKeyHeaderResponse("Content-Type", "application/json")
-
+    // Sem o ErrorBlock o erro nao cai no Recover. Restaurado em toda saida.
+    bErro := ErrorBlock({|e| Break(e)})
     Begin Sequence
 
         aResultado := OS_NUCLEOCOPIAR(cOsOrigem)
 
         If !aResultado[1]
+            ErrorBlock(bErro)
             Return OS_ERRO(If(aResultado[2] == "OS nao encontrada.", 404, 400), aResultado[2])
         EndIf
 
@@ -1504,11 +1513,14 @@ User Function OS_APICOPIAR() As Logical
         oJson['osNova']     := aResultado[3]
         oJson['mensagem']   := "OS copiada com sucesso."
 
+        ErrorBlock(bErro)
         Return oRest:setStatusResponse(200, oJson:ToJson())
 
     Recover Using oErro
+        ErrorBlock(bErro)
         Return OS_ERRO(500, oErro:Description)
     End Sequence
+    ErrorBlock(bErro)
 
 Return OS_ERRO(500, "Erro desconhecido.")
 
@@ -1533,43 +1545,6 @@ Static Function OS_LIMPABORDAS(cTexto)
     EndDo
 
 Return cRet
-
-/*/{Protheus.doc} OS_TEXTOPURO
-HTML do editor -> texto puro.
-@param  cHtml   Texto em HTML
-@return cRet    Texto puro
-/*/
-Static Function OS_TEXTOPURO(cHtml)
-    Local cRet  := cHtml
-    Local cCRLF := Chr(13) + Chr(10)
-    Local nIni  := 0
-    Local nFim  := 0
-
-    cRet := StrTran(cRet, "<br>",   cCRLF)
-    cRet := StrTran(cRet, "<br/>",  cCRLF)
-    cRet := StrTran(cRet, "<br />", cCRLF)
-    cRet := StrTran(cRet, "</p>",   cCRLF)
-    cRet := StrTran(cRet, "</div>", cCRLF)
-    cRet := StrTran(cRet, "</li>",  cCRLF)
-
-    nIni := At("<", cRet)
-    While nIni > 0
-        nFim := At(">", SubStr(cRet, nIni))
-        If nFim == 0
-            Exit
-        EndIf
-        cRet := Left(cRet, nIni - 1) + SubStr(cRet, nIni + nFim)
-        nIni := At("<", cRet)
-    EndDo
-
-    cRet := StrTran(cRet, "&nbsp;", " ")
-    cRet := StrTran(cRet, "&lt;",   "<")
-    cRet := StrTran(cRet, "&gt;",   ">")
-    cRet := StrTran(cRet, "&quot;", '"')
-    cRet := StrTran(cRet, "&#39;",  "'")
-    cRet := StrTran(cRet, "&amp;",  "&")
-
-Return OS_LIMPABORDAS(cRet)
 
 /*/{Protheus.doc} OS_SEPARAINTERACOES
 Separa o Memo Z1_SERV em descricao e blocos de interacao.
@@ -1635,7 +1610,8 @@ Static Function OS_BLOCOSINTERACAO(cMemo)
 Return Chr(13) + Chr(10) + Chr(13) + Chr(10) + SubStr(cMemo, nPos)
 
 /*/{Protheus.doc} OS_MIGRARINTERACOES
-OS que ganhou chamado: blocos do Memo vao para a ZA2 do chamado; o Memo fica so com a descricao.
+OS legada (de antes do chamado na OS) com blocos de interacao no Memo e chamado: os blocos vao para
+a ZA2 do chamado e o Memo fica so com a descricao. OS sem chamado nao ganha chamado (OS_PREVALIDA).
 @param  cOs   Numero da OS (Z1_OS)
 /*/
 Static Function OS_MIGRARINTERACOES(cOs)
@@ -1649,7 +1625,7 @@ Static Function OS_MIGRARINTERACOES(cOs)
 
     DbSelectArea("SZ1")
     SZ1->(DbSetOrder(1))
-    If !SZ1->(DbSeek(cFilAnt + cOs))
+    If !SZ1->(DbSeek(cFilAnt + PadR(cOs, TamSX3("Z1_OS")[1])))
         Return
     EndIf
 
@@ -1724,23 +1700,28 @@ User Function OS_APILISTAINTERACOES() As Logical
     Local cData   := ""
     Local aCh     := {}
     Local cChCli  := ""
+    Local bErro   := Nil
+
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     // Usuario de servico (pagina do cliente) so acessa /CNSAAPROVA.
     If U_CNSSERVICO()
         Return OS_ERRO(403, "Usuario sem acesso a este recurso.")
     EndIf
 
-    oRest:setKeyHeaderResponse("Content-Type", "application/json")
-
+    // Sem o ErrorBlock o erro nao cai no Recover. Restaurado em toda saida.
+    bErro := ErrorBlock({|e| Break(e)})
     Begin Sequence
 
         If Empty(cOs)
+            ErrorBlock(bErro)
             Return OS_ERRO(400, "Informe o numero da OS.")
         EndIf
 
         DbSelectArea("SZ1")
         SZ1->(DbSetOrder(1))
-        If !SZ1->(DbSeek(cFilAnt + cOs))
+        If !SZ1->(DbSeek(cFilAnt + PadR(cOs, TamSX3("Z1_OS")[1])))
+            ErrorBlock(bErro)
             Return OS_ERRO(404, "OS nao encontrada.")
         EndIf
 
@@ -1800,11 +1781,11 @@ User Function OS_APILISTAINTERACOES() As Logical
             oLinha['consultor'] := OS_NOMETEC(AllTrim((cAlias)->ZA2_CONSUL))
             oLinha['data']      := cData
             oLinha['hora']      := AllTrim((cAlias)->ZA2_HORA)
-            oLinha['texto']     := OS_DECODESAFE(AllTrim((cAlias)->ZA2_DESCRI))
+            oLinha['texto']     := U_CNSOUTL("UTF8", AllTrim((cAlias)->ZA2_DESCRI))
             oLinha['os']        := cOs
             oLinha['chamadoCliente'] := cChCli
             oLinha['idCh']      := AllTrim((cAlias)->ZA2_IDCH)
-            oLinha['assunto']   := OS_DECODESAFE(AllTrim(Posicione("ZA1", 1, xFilial("ZA1") + AllTrim((cAlias)->ZA2_IDCH), "ZA1_ASSUNT")))
+            oLinha['assunto']   := U_CNSOUTL("UTF8", AllTrim(Posicione("ZA1", 1, xFilial("ZA1") + AllTrim((cAlias)->ZA2_IDCH), "ZA1_ASSUNT")))
             AAdd(aOrdem, {cData + AllTrim((cAlias)->ZA2_HORA), oLinha})
 
             (cAlias)->(DbSkip())
@@ -1825,18 +1806,21 @@ User Function OS_APILISTAINTERACOES() As Logical
             ZA1->(DbSeek(xFilial("ZA1") + aCh[nI]))
             oLinha := JsonObject():New()
             oLinha['idCh']    := aCh[nI]
-            oLinha['assunto'] := OS_DECODESAFE(AllTrim(ZA1->ZA1_ASSUNT))
+            oLinha['assunto'] := U_CNSOUTL("UTF8", AllTrim(ZA1->ZA1_ASSUNT))
             oLinha['status']  := AllTrim(ZA1->ZA1_STATUS)
             oLinha['data']    := OS_DATAISO(ZA1->ZA1_DATA)   // abertura - ordem cronologica
             aCh[nI] := oLinha
         Next nI
         oJson['chamados'] := aCh
 
+        ErrorBlock(bErro)
         Return oRest:setStatusResponse(200, oJson:ToJson())
 
     Recover Using oErro
+        ErrorBlock(bErro)
         Return OS_ERRO(500, oErro:Description)
     End Sequence
+    ErrorBlock(bErro)
 
 Return OS_ERRO(500, "Erro desconhecido.")
 
@@ -1846,37 +1830,44 @@ POST /CNSAOSINTERACOESINCLUIR - OS sem chamado: o texto substitui a descricao (Z
 /*/
 @Post(endpoint="/CNSAOSINTERACOESINCLUIR")
 User Function OS_APINOVAINTERACAO() As Logical
-    Local jQuery     := oRest:getQueryRequest() As Json
+    Local jQuery     := OS_PARAMS() As Json
     Local cOs        := AllTrim(OS_LERJSONTXT(jQuery,"os"))
-    Local cTexto     := OS_TEXTOPURO(OS_LERJSONTXT(jQuery,"texto"))
+    Local cTexto     := U_CNSOUTL("TEXTOPURO", OS_LERJSONTXT(jQuery,"texto"))
     Local oJson      := JsonObject():New()
     Local oErro      := Nil
     Local lMudou     := .F.
     Local jMot       := JsonObject():New()
+    Local bErro      := Nil
+
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     // Usuario de servico (pagina do cliente) so acessa /CNSAAPROVA.
     If U_CNSSERVICO()
         Return OS_ERRO(403, "Usuario sem acesso a este recurso.")
     EndIf
 
-    oRest:setKeyHeaderResponse("Content-Type", "application/json")
-
+    // Sem o ErrorBlock o erro nao cai no Recover. Restaurado em toda saida.
+    bErro := ErrorBlock({|e| Break(e)})
     Begin Sequence
 
         If Empty(cOs)
+            ErrorBlock(bErro)
             Return OS_ERRO(400, "Informe o numero da OS.")
         EndIf
         If Empty(cTexto)
+            ErrorBlock(bErro)
             Return OS_ERRO(400, "Escreva o texto da interacao.")
         EndIf
 
         DbSelectArea("SZ1")
         SZ1->(DbSetOrder(1))
-        If !SZ1->(DbSeek(cFilAnt + cOs))
+        If !SZ1->(DbSeek(cFilAnt + PadR(cOs, TamSX3("Z1_OS")[1])))
+            ErrorBlock(bErro)
             Return OS_ERRO(404, "OS nao encontrada.")
         EndIf
 
         If !Empty(AllTrim(SZ1->Z1_IDCH))
+            ErrorBlock(bErro)
             Return OS_ERRO(400, "OS vinculada ao chamado " + AllTrim(SZ1->Z1_IDCH) + " - a interacao deve ser gravada no chamado.")
         EndIf
 
@@ -1895,11 +1886,14 @@ User Function OS_APINOVAINTERACAO() As Logical
         oJson['descricao'] := cTexto
         oJson['mensagem'] := "Interacao adicionada com sucesso."
 
+        ErrorBlock(bErro)
         Return oRest:setStatusResponse(200, oJson:ToJson())
 
     Recover Using oErro
+        ErrorBlock(bErro)
         Return OS_ERRO(500, oErro:Description)
     End Sequence
+    ErrorBlock(bErro)
 
 Return OS_ERRO(500, "Erro desconhecido.")
 
@@ -1990,9 +1984,9 @@ Static Function OS_ZA3(cAcao, x1, x2, x3, x4)
     Case cAcao == "DESCRICAO"
         cOs := PadR(AllTrim(x1), TamSX3("Z1_OS")[1])
         SZ1->(DbSetOrder(1))
-        If SZ1->(DbSeek(cFilAnt + cOs)) .And. !Empty(SZ1->Z1_IDCH)
+        If SZ1->(DbSeek(cFilAnt + PadR(cOs, TamSX3("Z1_OS")[1]))) .And. !Empty(SZ1->Z1_IDCH)
             // So mexe na descricao vazia ou na automatica: texto digitado fica.
-            cCod := OS_TEXTOPURO(OS_SEPARAINTERACOES(SZ1->Z1_SERV)[1])
+            cCod := U_CNSOUTL("TEXTOPURO", OS_SEPARAINTERACOES(SZ1->Z1_SERV)[1])
             If Empty(cCod) .Or. Left(cCod, 12) == "Referente ao"
                 aCh  := OS_ZA3("LER", cOs, SZ1->Z1_IDCH)
                 cCod := If(Len(aCh) == 1, "Referente ao chamado ", "Referente aos chamados ")
@@ -2052,7 +2046,7 @@ Static Function OS_EMAIL(cAcao, x1)
     Case cAcao == "TELA"
         cOs := PadR(AllTrim(cValToChar(x1)), TamSX3("Z1_OS")[1])
         SZ1->(DbSetOrder(1))
-        If !Empty(cOs) .And. SZ1->(DbSeek(cFilAnt + cOs))
+        If !Empty(cOs) .And. SZ1->(DbSeek(cFilAnt + PadR(cOs, TamSX3("Z1_OS")[1])))
             If MsgYesNo("Deseja enviar ao cliente? Ele recebe por e-mail o link para aprovar ou recusar a OS " + ;
                     AllTrim(cOs) + " (valido por " + cValToChar(SuperGetMV("MV_CNSAVLD", .F., 2)) + " dias).", "OS " + AllTrim(cOs))
                 aResp := apia.cnsa004.U_CNSAPR("ENV", cOs)
@@ -2111,12 +2105,7 @@ Static Function OS_EMAIL(cAcao, x1)
         EndIf
 
     Case cAcao == "DESCRICAO"
-        xRet := OS_SEPARAINTERACOES(OS_DESC(x1))[1]
-        xRet := StrTran(StrTran(StrTran(xRet, "</p>", Chr(10)), "<br>", Chr(10)), "<br/>", Chr(10))
-        While At("<", xRet) > 0 .And. At(">", xRet) > At("<", xRet)
-            xRet := Stuff(xRet, At("<", xRet), At(">", xRet) - At("<", xRet) + 1, "")
-        EndDo
-        xRet := StrTran(xRet, "&nbsp;", " ")
+        xRet := U_CNSOUTL("TEXTOPURO", OS_SEPARAINTERACOES(OS_DESC(x1))[1])
 
     Case cAcao == "CHAMADOS"
         xRet := {}
@@ -2128,24 +2117,21 @@ Static Function OS_EMAIL(cAcao, x1)
     Case cAcao == "DESTINO"
         xRet := {}
         aCh  := OS_ZA3("LER", AllTrim(SZ1->Z1_OS), AllTrim(SZ1->Z1_IDCH))
+        // E-mails dos chamados numa string so; sem nenhum, o do cliente.
+        cTexto := ""
         For nI := 1 To Len(aCh)
-            aResp := StrTokArr2(StrTran(Posicione("ZA1", 1, xFilial("ZA1") + aCh[nI], "ZA1_EMAIL"), ",", ";"), ";", .F.)
-            For nJ := 1 To Len(aResp)
-                cEmail := Lower(AllTrim(aResp[nJ]))
-                If "@" $ cEmail .And. AScan(xRet, cEmail) == 0
-                    AAdd(xRet, cEmail)
-                EndIf
-            Next nJ
+            cTexto += ";" + Posicione("ZA1", 1, xFilial("ZA1") + aCh[nI], "ZA1_EMAIL")
         Next nI
-        If Len(xRet) == 0
-            aResp := StrTokArr2(StrTran(Posicione("SA1", 1, xFilial("SA1") + SZ1->Z1_CLI + SZ1->Z1_LOJA, "A1_EMAIL"), ",", ";"), ";", .F.)
-            For nJ := 1 To Len(aResp)
-                cEmail := Lower(AllTrim(aResp[nJ]))
-                If "@" $ cEmail .And. AScan(xRet, cEmail) == 0
-                    AAdd(xRet, cEmail)
-                EndIf
-            Next nJ
+        If !("@" $ cTexto)
+            cTexto := Posicione("SA1", 1, xFilial("SA1") + SZ1->Z1_CLI + SZ1->Z1_LOJA, "A1_EMAIL")
         EndIf
+        aResp := StrTokArr2(StrTran(cTexto, ",", ";"), ";", .F.)
+        For nJ := 1 To Len(aResp)
+            cEmail := Lower(AllTrim(aResp[nJ]))
+            If "@" $ cEmail .And. AScan(xRet, cEmail) == 0
+                AAdd(xRet, cEmail)
+            EndIf
+        Next nJ
 
     Case cAcao == "INTERACOES"
         xRet := {}
@@ -2170,7 +2156,7 @@ Static Function OS_EMAIL(cAcao, x1)
         While !(cAlias)->(Eof())
             xData := (cAlias)->ZA2_DATA
             AAdd(xRet, {DToC(If(ValType(xData) == "D", xData, SToD(AllTrim(xData)))), AllTrim((cAlias)->ZA2_HORA), ;
-                OS_NOMETEC(AllTrim((cAlias)->ZA2_CONSUL)), OS_DECODESAFE(AllTrim((cAlias)->ZA2_DESCRI))})
+                OS_NOMETEC(AllTrim((cAlias)->ZA2_CONSUL)), U_CNSOUTL("UTF8", AllTrim((cAlias)->ZA2_DESCRI))})
             (cAlias)->(DbSkip())
         EndDo
         (cAlias)->(DbCloseArea())
@@ -2192,7 +2178,7 @@ User Function OS_APRPUB(cAcao, x1, x2)
     Local nI     := 0
 
     SZ1->(DbSetOrder(1))
-    If !SZ1->(DbSeek(cFilAnt + cOs))
+    If !SZ1->(DbSeek(cFilAnt + PadR(cOs, TamSX3("Z1_OS")[1])))
         Return If(cAcao == "GRAVAR", {.F., "OS nao encontrada."}, If(cAcao $ "DESCRICAO|HORARIO|HORAS|TAREFA", "", {}))
     EndIf
 
@@ -2227,7 +2213,7 @@ Return xRet
 /*/{Protheus.doc} CNS002APR
 Evento de aprovacao do model da OS (U_CNSAPR "OS"):
   ModelPosVld = fase VLD (permissao), BeforeTTS = ANT (calcula Z1_APROVAD/Z1_APVTIPO),
-  InTTS = GRV (grava a reabertura na SZA)
+  InTTS = GRV (grava a reabertura na SZA), AfterTTS = DEP (pos-commit, fora da transacao)
 /*/
 // TLPP: membro sem visibilidade e PRIVATE.
 Class CNS002APR From FWModelEvent
@@ -2237,6 +2223,7 @@ Class CNS002APR From FWModelEvent
     Public Method ModelPosVld(oModel, cModelId)
     Public Method BeforeTTS(oModel, cModelId)
     Public Method InTTS(oModel, cModelId)
+    Public Method AfterTTS(oModel, cModelId)
 EndClass
 
 Method New() Class CNS002APR
@@ -2281,6 +2268,15 @@ Method InTTS(oModel, cModelId) Class CNS002APR
 
 Return
 
+// Depois do commit: e-mail pendente da invalidacao do link e libera a trava da aprovacao (U_CNSAPR).
+Method AfterTTS(oModel, cModelId) Class CNS002APR
+    Local jFase := JsonObject():New()
+
+    jFase["fase"] := "DEP"
+    apia.cnsa004.U_CNSAPR("OS", oModel, "", jFase)
+
+Return
+
 /*/{Protheus.doc} OS_APRTELA
 Menu de aprovacao da tela classica (regra, estado e e-mails no U_CNSAPR):
   ENV enviar ao cliente, PRE/PRR pre-aprovar/pre-recusar (M), APR/REC aprovar/recusar (I)
@@ -2294,8 +2290,8 @@ User Function OS_APRTELA(cTrans)
     Local cOrigem := ""
     Local oDlg    := Nil
     Local oBtnOk  := Nil
-    Private cMotAprov := Space(240)
-    Private lMotConf  := .F.
+    Local cMotAprov := Space(240)
+    Local lMotConf  := .F.
 
     If SZ1->(Eof()) .Or. SZ1->(Bof()) .Or. Empty(cOs)
         MsgAlert("Nenhuma OS selecionada.", "Aprovacao de OS")

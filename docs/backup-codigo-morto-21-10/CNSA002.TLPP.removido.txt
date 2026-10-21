@@ -1,0 +1,152 @@
+// Codigo removido de CNSA002.TLPP na auditoria de 21/10/2026 (copia de seguranca).
+// Fonte completo anterior: git show backup-auditoria-21-10:"Fontes MVC e Site/CNSA002.TLPP"
+
+/*/{Protheus.doc} OS_AGENDANAOCOBRA
+O agendamento (SZ6) da OS esta "Nao Cobrar"? Tecnico + cliente (+ loja) + data + horario com
+15 min de tolerancia - mesma regra do CNS001_AGENDANAOCOBRA (cnslib).
+@param  cTec     Tecnico (AA1_CODTEC)
+@param  cCli     Cliente (A1_COD)
+@param  cLoja    Loja do cliente (vazia = qualquer loja)
+@param  cData    Data AAAAMMDD
+@param  cHrIni   Hora inicial (HH:MM ou HHMM)
+@param  cHrFim   Hora final (HH:MM ou HHMM)
+@return lNaoCob  .T. se achou agendamento correspondente com Z6_COBRAR = "NAO"
+/*/
+Static Function OS_AGENDANAOCOBRA(cTec, cCli, cLoja, cData, cHrIni, cHrFim)
+    Local cAlias  := ""
+    Local lNaoCob := .F.
+    Local nIni    := 0
+    Local nFim    := 0
+
+    cTec   := AllTrim(cTec)
+    cCli   := AllTrim(cCli)
+    cLoja  := AllTrim(cLoja)
+    cData  := AllTrim(cData)
+    nIni   := OS_AGENDANAOCOBRA_MIN(cHrIni)
+    nFim   := OS_AGENDANAOCOBRA_MIN(cHrFim)
+
+    If Empty(cTec) .Or. Empty(cCli) .Or. Len(cData) != 8 .Or. nIni < 0 .Or. nFim < 0
+        Return .F.
+    EndIf
+
+    cAlias := GetNextAlias()
+    BeginSql Alias cAlias
+        SELECT Z6_LOJA, Z6_HMINI, Z6_HMFIM, Z6_COBRAR
+        FROM %Table:SZ6% SZ6
+        WHERE Z6_FILIAL  = %xFilial:SZ6%
+          AND Z6_TECNICO = %Exp:cTec%
+          AND Z6_CLIENTE = %Exp:cCli%
+          AND Z6_DTAGE   = %Exp:cData%
+          AND %NotDel%
+    EndSql
+    While !(cAlias)->(Eof())
+        If (Empty(cLoja) .Or. Empty(AllTrim((cAlias)->Z6_LOJA)) .Or. AllTrim((cAlias)->Z6_LOJA) == cLoja) .And. ;
+                Abs(OS_AGENDANAOCOBRA_MIN((cAlias)->Z6_HMINI) - nIni) <= 15 .And. ;
+                Abs(OS_AGENDANAOCOBRA_MIN((cAlias)->Z6_HMFIM) - nFim) <= 15
+            If Upper(AllTrim((cAlias)->Z6_COBRAR)) == "NAO"
+                lNaoCob := .T.
+                Exit
+            EndIf
+        EndIf
+        (cAlias)->(DbSkip())
+    EndDo
+    (cAlias)->(DbCloseArea())
+
+Return lNaoCob
+
+// "HH:MM"/"HHMM" -> minutos do dia (-1 se invalido).
+Static Function OS_AGENDANAOCOBRA_MIN(cHora)
+    Local cDig := ""
+    Local nI   := 0
+
+    cHora := AllTrim(cHora)
+    For nI := 1 To Len(cHora)
+        If IsDigit(SubStr(cHora, nI, 1))
+            cDig += SubStr(cHora, nI, 1)
+        EndIf
+    Next nI
+    If Len(cDig) < 3
+        Return -1
+    EndIf
+    cDig := PadL(cDig, 4, "0")
+
+Return Val(Left(cDig, 2)) * 60 + Val(SubStr(cDig, 3, 2))
+
+/*/{Protheus.doc} OS_ESCAPARJSON
+Escapa texto para string JSON.
+@param  cTexto   Texto a escapar
+@return cRet     Texto escapado, pronto para JSON
+/*/
+Static Function OS_ESCAPARJSON(cTexto)
+    Local cRet := cTexto
+    cRet := StrTran(cRet, '\',  '\\')
+    cRet := StrTran(cRet, '"',  '\"')
+    cRet := StrTran(cRet, Chr(13)+Chr(10), '\n')
+    cRet := StrTran(cRet, Chr(10), '\n')
+    cRet := StrTran(cRet, Chr(13), '\n')
+    cRet := StrTran(cRet, Chr(9),  '\t')
+Return cRet
+
+/*/{Protheus.doc} OS_DECODESAFE
+Acento UTF-8 que chega quebrado em 2 caracteres CP1252 (igual ao CH_DECODESAFE do CNSA001).
+@param  cTexto   Texto possivelmente com bytes UTF-8 quebrados em CP1252
+@return cRet     Texto reconstruido/decodificado
+/*/
+Static Function OS_DECODESAFE(cTexto)
+    Local cRet  := ""
+    Local nLen  := Len(cTexto)
+    Local nI    := 1
+    Local nB1, nB2
+
+    While nI <= nLen
+        nB1 := Asc(SubStr(cTexto, nI, 1))
+        If (nB1 == 195 .Or. nB1 == 194) .And. nI < nLen
+            nB2 := Asc(SubStr(cTexto, nI + 1, 1))
+            If nB2 >= 128 .And. nB2 <= 191
+                cRet += Chr(((nB1 - 192) * 64) + (nB2 - 128))
+                nI   += 2
+                Loop
+            EndIf
+        EndIf
+        cRet += SubStr(cTexto, nI, 1)
+        nI++
+    EndDo
+
+Return cRet
+
+/*/{Protheus.doc} OS_TEXTOPURO
+HTML do editor -> texto puro.
+@param  cHtml   Texto em HTML
+@return cRet    Texto puro
+/*/
+Static Function OS_TEXTOPURO(cHtml)
+    Local cRet  := cHtml
+    Local cCRLF := Chr(13) + Chr(10)
+    Local nIni  := 0
+    Local nFim  := 0
+
+    cRet := StrTran(cRet, "<br>",   cCRLF)
+    cRet := StrTran(cRet, "<br/>",  cCRLF)
+    cRet := StrTran(cRet, "<br />", cCRLF)
+    cRet := StrTran(cRet, "</p>",   cCRLF)
+    cRet := StrTran(cRet, "</div>", cCRLF)
+    cRet := StrTran(cRet, "</li>",  cCRLF)
+
+    nIni := At("<", cRet)
+    While nIni > 0
+        nFim := At(">", SubStr(cRet, nIni))
+        If nFim == 0
+            Exit
+        EndIf
+        cRet := Left(cRet, nIni - 1) + SubStr(cRet, nIni + nFim)
+        nIni := At("<", cRet)
+    EndDo
+
+    cRet := StrTran(cRet, "&nbsp;", " ")
+    cRet := StrTran(cRet, "&lt;",   "<")
+    cRet := StrTran(cRet, "&gt;",   ">")
+    cRet := StrTran(cRet, "&quot;", '"')
+    cRet := StrTran(cRet, "&#39;",  "'")
+    cRet := StrTran(cRet, "&amp;",  "&")
+
+Return OS_LIMPABORDAS(cRet)

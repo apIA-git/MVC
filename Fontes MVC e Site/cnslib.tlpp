@@ -4,6 +4,9 @@
 #include "tlpp-core.th"
 #INCLUDE 'tlpp-rest.th'
 
+// Cache do token do Graph na thread (U_CNSOUTL "TOKEN"): valor e validade em segundos.
+Static cOutlToken  := ""
+Static nOutlExpira := 0
 
 @Get(endpoint="/CNSLIBCOMPONENTES")
 User Function CNS001_COMPONENTES_LISTAR() As Logical
@@ -19,14 +22,17 @@ User Function CNS001_COMPONENTES_LISTAR() As Logical
     Local cResposta     := ""
     Local nI            := 0
     Local oErro         := Nil
+    Local bErro         := Nil
+
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
     // Usuario de servico da pagina do cliente (Aprovador-OS) so acessa /CNSAAPROVA.
     If U_CNSSERVICO()
         Return oRest:setStatusResponse(403, '{"erro":"Usuario sem acesso a este recurso."}')
     EndIf
 
-    oRest:setKeyHeaderResponse("Content-Type", "application/json")
-
+    // Sem o ErrorBlock o erro nao cai no Recover. Restaurado em toda saida.
+    bErro := ErrorBlock({|e| Break(e)})
     Begin Sequence
 
         // Busca por nome acentuado (ex "Joao") - DecodeUTF8 no filtro digitado
@@ -54,11 +60,13 @@ User Function CNS001_COMPONENTES_LISTAR() As Logical
                 aItens := CNS001_CLILUPA(cFiltroParam)
             Case cTipoParam == "projeto"
                 If Empty(cClienteParam)
+                    ErrorBlock(bErro)
                     Return oRest:setStatusResponse(400, '{"resultado":false,"erro":"Informe o cliente (?cliente=000001) antes de buscar o projeto."}')
                 EndIf
                 aItens := CNS001_PROJLUPA(cFiltroParam, cClienteParam, If(Empty(cLojaParam), "01", cLojaParam))
             Case cTipoParam == "tarefa"
                 If Empty(cProjetoParam)
+                    ErrorBlock(bErro)
                     Return oRest:setStatusResponse(400, '{"resultado":false,"erro":"Informe o projeto (?projeto=000001) antes de buscar a tarefa."}')
                 EndIf
                 aItens := CNS001_TARLUPA(cFiltroParam, cProjetoParam)
@@ -71,6 +79,7 @@ User Function CNS001_COMPONENTES_LISTAR() As Logical
                 aItens := CNS001_SERVLUPA(cFiltroParam, cClienteParam, cLojaParam, aAgendaParam)
             Case cTipoParam == "proposta"
                 If Empty(cClienteParam)
+                    ErrorBlock(bErro)
                     Return oRest:setStatusResponse(400, '{"resultado":false,"erro":"Informe o cliente (?cliente=000001) antes de buscar a proposta."}')
                 EndIf
                 aItens := CNS001_PROPLUPA(cFiltroParam, cClienteParam, If(Empty(cLojaParam), "01", cLojaParam))
@@ -78,6 +87,7 @@ User Function CNS001_COMPONENTES_LISTAR() As Logical
                 // Cliente opcional: a OS pode vincular o chamado antes de escolher o cliente.
                 aItens := CNS001_CHAMLUPA(cFiltroParam, cClienteParam, If(Empty(cLojaParam), "01", cLojaParam))
             OtherWise
+                ErrorBlock(bErro)
                 Return oRest:setStatusResponse(400, '{"resultado":false,"erro":"Informe um tipo valido (?tipo=tecnico, cliente, projeto, tarefa, modulo, motivo, servico, proposta ou chamado)."}')
         EndCase
 
@@ -100,13 +110,16 @@ User Function CNS001_COMPONENTES_LISTAR() As Logical
 
         cResposta := '{"resultado":' + If(Len(aItens) > 0, "true", "false") + ',"items":' + cItensJson + '}'
 
+        ErrorBlock(bErro)
         Return oRest:setStatusResponse(200, cResposta)
 
     Recover Using oErro
+        ErrorBlock(bErro)
         If oErro != Nil
             Return oRest:setStatusResponse(500, '{"resultado":false,"erro":"' + CNS001_LUPA_JSONESC(oErro:Description) + '"}')
         EndIf
     End Sequence
+    ErrorBlock(bErro)
 
 Return oRest:setStatusResponse(500, '{"resultado":false,"erro":"Erro desconhecido."}')
 
@@ -471,7 +484,7 @@ Diz se o agendamento (SZ6) que corresponde a uma OS esta marcado como
 "Nao Cobrar" (Z6_COBRAR = "NAO"). Casa OS x agendamento pelo mesmo criterio
 do Z6_TEMOS / localizarPorAgendamento do portal: tecnico + cliente (+ loja,
 se informada) + data + horario inicial e final com tolerancia de 15 min.
-Mesma regra de OS_AGENDANAOCOBRA (CNSA002, validacao ao gravar a OS).
+O CNSA002 usa a mesma pelo U_CNSOUTL("NAOCOBRA") (validacao ao gravar a OS).
 @param  cTec     Tecnico (AA1_CODTEC)
 @param  cCli     Cliente (A1_COD)
 @param  cLoja    Loja do cliente (vazia = qualquer loja)
@@ -643,13 +656,6 @@ Return aRet
 ////////////////////////////////////////////////////////////////////////////////
 
 ////////////////////////////////////////////////////////////////////////////////
-// AllTrim direto quebra se o campo vier NIL/tipo diferente de Character (por
-// exemplo linha com valor nulo no banco) - com filtro vazio a query varre
-// muito mais linhas de uma vez, entao qualquer linha "suja" faz o endpoint
-// inteiro cair (erro nao capturavel pelo Begin/Recover). Blinda cada valor
-// antes de expor no JSON.
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
 // Sugestao enquanto digita (sugestao=1): quem COMECA com o texto (codigo, nome
 // ou nome reduzido) vem primeiro, depois quem so CONTEM - ate 10 itens.
 ////////////////////////////////////////////////////////////////////////////////
@@ -681,6 +687,13 @@ Static Function CNS001_LUPA_SUGERIR(aItens, cFiltro)
 
 Return aRet
 
+////////////////////////////////////////////////////////////////////////////////
+// AllTrim direto quebra se o campo vier NIL/tipo diferente de Character (por
+// exemplo linha com valor nulo no banco) - com filtro vazio a query varre
+// muito mais linhas de uma vez, entao qualquer linha "suja" faz o endpoint
+// inteiro cair (erro nao capturavel pelo Begin/Recover). Blinda cada valor
+// antes de expor no JSON.
+////////////////////////////////////////////////////////////////////////////////
 Static Function CNS001_LUPA_COMPSTR(xValor)
     If ValType(xValor) == "C"
         Return AllTrim(xValor)
@@ -795,6 +808,7 @@ Return apia.cnsa001.U_CNSA_TECNICO()
 // Nome curto (9 caracteres com U_): o CNSA003 e .prw e so enxerga 10.
 //   U_CNSOUTL("AGENDA", oModel)                 evento do modelo da Agenda (CNSA003)
 //   U_CNSOUTL("EXCLUIR", cEmailTec, cIdEvento)  exclusao do chamado (CNSA001)
+//   U_CNSOUTL("UTF8"/"TEXTOPURO"/"NAOCOBRA", ...) utilitarios dos fontes CNSA00x
 // As demais opcoes sao internas (a funcao chama ela mesma).
 //
 // Depende de: Z6_IDOUTL (C 250); AA1_EMAIL do tecnico; MV_CNSATEN/MV_CNSACLI/
@@ -837,13 +851,16 @@ Agenda no Outlook do tecnico - uma funcao, varias opcoes:
   TEXTO   (cTexto)                      texto do banco -> HTML (corrige UTF-8 e acentos)
   OPCAO   (cCampo, cValor)              descricao da opcao no X3_CBOX (ex: "2" -> "Remoto")
   HTTP    (cMetodo, cUrl, cCorpo)       Graph -> {nStatus, cResposta}
-  TOKEN   ()                            token do Graph
+  TOKEN   ()                            token do Graph (cache ate expires_in - 60s)
+  UTF8    (cTexto)                      acento UTF-8 quebrado em 2 chars CP1252 -> CP1252
+  TEXTOPURO (cHtml)                     HTML do editor -> texto puro
+  NAOCOBRA (cTec, cCli, cLoja, cData, cHrIni, cHrFim)  agendamento da OS "Nao Cobrar"? -> .T./.F.
 @author Henrique
 @since 05/10/2026
 @version P12
 /*/
 //-------------------------------------------------------------------
-User Function CNSOUTL(cAcao, x1, x2, x3, x4)
+User Function CNSOUTL(cAcao, x1, x2, x3, x4, x5, x6)
     Local xRet     := Nil
     Local oModel   := Nil
     Local oSZ6     := Nil
@@ -876,6 +893,9 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
     Local nOper    := 0
     Local nI       := 0
     Local lMarca   := .F.
+    Local nIni     := 0
+    Local nFim     := 0
+    Local nAgora   := 0
     // Linha {rotulo, valor} pro e-mail (aLin) e, com lCartao, pro cartao do evento (aCli).
     // Na alteracao (lMarca) o valor dos campos aCpos que mudaram vem destacado no e-mail.
     Local bLinha   := {|lCartao, cRot, cVal, aCpos| If(Empty(cVal), Nil, ;
@@ -1236,6 +1256,11 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
 
     //--- Token do Graph (client credentials, igual ao CH_TOKENGRAPH) ----------
     Case cAcao == "TOKEN"
+        // Token ainda valido nesta thread: reaproveita (segundos desde 01/01/2000).
+        nAgora  := (Date() - SToD("20000101")) * 86400 + Seconds()
+        If !Empty(cOutlToken) .And. nAgora < nOutlExpira
+            Return cOutlToken
+        EndIf
         xRet    := ""
         aCampos := {AllTrim(GetMV("MV_CNSATEN")), AllTrim(GetMV("MV_CNSACLI")), AllTrim(GetMV("MV_CNSASEC"))}
         If AScan(aCampos, {|c| Empty(c)}) > 0
@@ -1252,10 +1277,54 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4)
         oJson := JsonObject():New()
         If ValType(cValor) == "C" .And. Empty(oJson:FromJson(cValor)) .And. ValType(oJson["access_token"]) == "C"
             xRet := oJson["access_token"]
+            // Guarda ate expires_in menos 60s de margem.
+            cOutlToken  := xRet
+            nOutlExpira := nAgora + Val(cValToChar(oJson["expires_in"])) - 60
         Else
             ConOut("CNSOUTLOOK: falha ao obter token do Graph: " + cValToChar(cValor))
         EndIf
         FreeObj(oJson)
+
+    //--- Acento UTF-8 quebrado em 2 chars CP1252 -> CP1252 ---------------------
+    Case cAcao == "UTF8"
+        xRet := CNS001_LUPA_DECODESAFE(cValToChar(x1))
+
+    //--- HTML do editor -> texto puro -----------------------------------------
+    Case cAcao == "TEXTOPURO"
+        xRet := cValToChar(x1)
+        xRet := StrTran(xRet, "<br>",   CRLF)
+        xRet := StrTran(xRet, "<br/>",  CRLF)
+        xRet := StrTran(xRet, "<br />", CRLF)
+        xRet := StrTran(xRet, "</p>",   CRLF)
+        xRet := StrTran(xRet, "</div>", CRLF)
+        xRet := StrTran(xRet, "</li>",  CRLF)
+        // Tira as tags.
+        nIni := At("<", xRet)
+        While nIni > 0
+            nFim := At(">", SubStr(xRet, nIni))
+            If nFim == 0
+                Exit
+            EndIf
+            xRet := Left(xRet, nIni - 1) + SubStr(xRet, nIni + nFim)
+            nIni := At("<", xRet)
+        EndDo
+        xRet := StrTran(xRet, "&nbsp;", " ")
+        xRet := StrTran(xRet, "&lt;",   "<")
+        xRet := StrTran(xRet, "&gt;",   ">")
+        xRet := StrTran(xRet, "&quot;", '"')
+        xRet := StrTran(xRet, "&#39;",  "'")
+        xRet := StrTran(xRet, "&amp;",  "&")
+        // Espaco, tab e quebra de linha das bordas.
+        While Len(xRet) > 0 .And. Left(xRet, 1) $ " " + Chr(9) + Chr(10) + Chr(13)
+            xRet := SubStr(xRet, 2)
+        EndDo
+        While Len(xRet) > 0 .And. Right(xRet, 1) $ " " + Chr(9) + Chr(10) + Chr(13)
+            xRet := Left(xRet, Len(xRet) - 1)
+        EndDo
+
+    //--- Agendamento (SZ6) da OS marcado "Nao Cobrar"? ------------------------
+    Case cAcao == "NAOCOBRA"
+        xRet := CNS001_AGENDANAOCOBRA(x1, x2, x3, x4, x5, x6)
 
     OtherWise
         ConOut("CNSOUTLOOK: acao invalida - " + cAcao)
