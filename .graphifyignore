@@ -1,0 +1,20 @@
+# Grafo consolidado CNSHUB (auditoria 21/10): so fontes TLPP, portal (sem Agenda) e docs do portal
+/.claude/
+.github/
+.vscode/
+Aprovador-OS/
+/docs/
+apia-po-cnshub/.claude/
+apia-po-cnshub/.angular/
+apia-po-cnshub/.vscode/
+apia-po-cnshub/node_modules/
+apia-po-cnshub/dist/
+apia-po-cnshub/public/
+apia-po-cnshub/graphify-out/
+apia-po-cnshub/docs/superpowers/
+apia-po-cnshub/src/app/cns009/
+apia-po-cnshub/src/app/services/cns009-serv*
+apia-po-cnshub/*.json
+apia-po-cnshub/deploy.ps1
+apia-po-cnshub/README.md
+*.xlsx
