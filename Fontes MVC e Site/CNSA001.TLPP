@@ -134,9 +134,12 @@ Return CH_MONTARMODEL()
 Model do chamado (ZA1 + ZA2 + SZ6). Com nOperAtivar tambem ativa, NA MESMA funcao: ativar em
 outro frame quebra o INITVALUE com "owner private environment not found".
 @param  nOperAtivar    Operacao pra ja ativar (MODEL_OPERATION_*) - vazio = so monta
+@param  bTela          Tela (FWExecView) aberta AQUI, depois de ativar: o FWInitCpo (validacao, lupa e
+                       inicializador de campo) so funciona enquanto a funcao que instanciou o model esta na
+                       pilha - TDN DSFIN-4587 ("owner private environment not found")
 @return l_oModel       Objeto MPFormModel montado
 /*/
-Static Function CH_MONTARMODEL(nOperAtivar)
+Static Function CH_MONTARMODEL(nOperAtivar, bTela)
     Local l_oModel  := Nil
     Local l_oStrZA1 := FWFormStruct(1, "ZA1")
     Local l_oStrZA2 := FWFormStruct(1, "ZA2")
@@ -190,6 +193,9 @@ Static Function CH_MONTARMODEL(nOperAtivar)
     If nOperAtivar > 0
         l_oModel:SetOperation(nOperAtivar)
         l_oModel:Activate()
+        If bTela <> Nil
+            Eval(bTela, l_oModel)
+        EndIf
     EndIf
 
 Return l_oModel
@@ -682,6 +688,7 @@ User Function CH_TELA(nOper)
     Local lGrava     := nOper == MODEL_OPERATION_INSERT .Or. nOper == MODEL_OPERATION_UPDATE
     Local lGravou    := .F.
     Local lNumerou   := .F.
+    Local aTela      := {.F., .F.}
     Local oModel     := Nil
     Local aCpos      := {}
     Local cCpo       := ""
@@ -792,18 +799,11 @@ User Function CH_TELA(nOper)
             EndIf
         Next nI
     EndIf
-    oModel := CH_MONTARMODEL(nOper)
-
-    // O dicionario nao inicializa ZA1_IDCH: sem isto o chamado gravava sem ID.
-    If nOper == MODEL_OPERATION_INSERT .And. Empty(oModel:GetValue("ZA1MASTER", "ZA1_IDCH"))
-        oModel:GetModel("ZA1MASTER"):LoadValue("ZA1_IDCH", GetSxeNum("ZA1", "ZA1_IDCH"))
-        lNumerou := .T.
-    EndIf
-
-    // Model desta tela como ativo (o ViewDef usa o ativo). FWExecView devolve 0 quando grava.
-    FWModelActive(oModel)
-    lGravou := FWExecView("Registro de Chamados", "apia.cnsa001.u_cns001", nOper, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel) == 0 .And. lGrava
-    // Fecha o model desta tela: senao ele fica ativo (FWModelActive) depois que a funcao que o ativou ja saiu.
+    // A tela abre DENTRO do CH_MONTARMODEL (bTela): fora dele o FWInitCpo dava "owner private environment not found".
+    oModel := CH_MONTARMODEL(nOper, {|oMdl| aTela := CH_ABRIRTELA(oMdl, nOper)})
+    lGravou  := aTela[1] .And. lGrava
+    lNumerou := aTela[2]
+    // Fecha o model desta tela: senao ele fica ativo (FWModelActive) depois que a tela fechou.
     oModel:DeActivate()
     If lNumerou
         If lGravou
@@ -825,6 +825,25 @@ User Function CH_TELA(nOper)
         EndIf
     EndIf
 Return
+
+/*/{Protheus.doc} CH_ABRIRTELA
+Abre a View do chamado com o model ja ativo (chamada de dentro do CH_MONTARMODEL, ver bTela).
+@param  oModel     Model ativo
+@param  nOper      MODEL_OPERATION_*
+@return aRet       {lConfirmou (FWExecView devolveu 0), lNumerou (numerou o ZA1_IDCH aqui)}
+/*/
+Static Function CH_ABRIRTELA(oModel, nOper)
+    Local lNumerou := .F.
+
+    // O dicionario nao inicializa ZA1_IDCH: sem isto o chamado gravava sem ID.
+    If nOper == MODEL_OPERATION_INSERT .And. Empty(oModel:GetValue("ZA1MASTER", "ZA1_IDCH"))
+        oModel:GetModel("ZA1MASTER"):LoadValue("ZA1_IDCH", GetSxeNum("ZA1", "ZA1_IDCH"))
+        lNumerou := .T.
+    EndIf
+
+    // Model desta tela como ativo (o ViewDef usa o ativo).
+    FWModelActive(oModel)
+Return {FWExecView("Registro de Chamados", "apia.cnsa001.u_cns001", nOper, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel) == 0, lNumerou}
 
 /*/{Protheus.doc} GETIDGRID
 Proxima sequencia do grid ZA2DETAIL. Chamada pelo dicionario: nao mudar o nome.
