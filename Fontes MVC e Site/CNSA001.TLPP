@@ -130,7 +130,7 @@ User Function ModelDef()
 
 Return CH_MONTARMODEL()
 
-Static Function CH_MONTARMODEL(lAtivarInsert)
+Static Function CH_MONTARMODEL(nOperAtivar)
     Local l_oModel  := Nil
     Local l_oStrZA1 := FWFormStruct(1, "ZA1")
     Local l_oStrZA2 := FWFormStruct(1, "ZA2")
@@ -140,7 +140,7 @@ Static Function CH_MONTARMODEL(lAtivarInsert)
 
     Local oGridSZ6  := Nil
 
-    Default lAtivarInsert := .F.
+    Default nOperAtivar := 0
     l_oStrZA1:SetProperty("ZA1_CLIENT", MODEL_FIELD_OBRIGAT, .F.)
     l_oStrZA1:SetProperty("ZA1_LOJA",   MODEL_FIELD_OBRIGAT, .F.)
     l_oStrZA1:SetProperty("ZA1_CONSUL", MODEL_FIELD_OBRIGAT, .F.)
@@ -181,8 +181,10 @@ Static Function CH_MONTARMODEL(lAtivarInsert)
     // E-mails e oferta de agenda depois de gravar (se a gravacao falhar, nada sai).
     l_oModel:InstallEvent("CNS001POS", /*cOwner*/, CNS001POS():New())
 
-    If lAtivarInsert
-        l_oModel:SetOperation(MODEL_OPERATION_INSERT)
+    // Ativa NA MESMA funcao que montou o model: ativar em outro frame da "owner private environment not
+    // found" (INITVALUE do Insert e lupa F3 do Alterar).
+    If nOperAtivar > 0
+        l_oModel:SetOperation(nOperAtivar)
         l_oModel:Activate()
     EndIf
 
@@ -679,9 +681,7 @@ User Function CH_ALTERARTELA()
         // M->ZA1_* neste frame, que fica vivo com a tela aberta - sem isso a lupa (F3) dava
         // "_SetNamedPrvt: owner private environment not found" (mesmo padrao do CH_INCLUIRTELA).
         RegToMemory("ZA1", .F., .F.)
-        oModel := CH_MONTARMODEL()
-        oModel:SetOperation(MODEL_OPERATION_UPDATE)
-        oModel:Activate()
+        oModel := CH_MONTARMODEL(MODEL_OPERATION_UPDATE)
         // Model desta tela como ativo (o ViewDef usa o ativo). Identificador = namespace.
         FWModelActive(oModel)
         FWExecView("Registro de Chamados", "apia.cnsa001.u_cns001", MODEL_OPERATION_UPDATE, , {|| .T.}, NIL, NIL, NIL, NIL, NIL, NIL, oModel)
@@ -717,7 +717,7 @@ User Function CH_INCLUIRTELA()
     // M->ZA1_* neste frame, que fica vivo com a tela aberta (senao a lupa F3 do cliente quebra ao fechar).
     RegToMemory("ZA1", .T., .F.)
 
-    oModel := CH_MONTARMODEL(.T.)
+    oModel := CH_MONTARMODEL(MODEL_OPERATION_INSERT)
 
     // O dicionario nao inicializa ZA1_IDCH: sem isto o chamado gravava sem ID.
     If Empty(oModel:GetValue("ZA1MASTER", "ZA1_IDCH"))
@@ -1270,7 +1270,7 @@ Static Function CH_NUCLEOINCLUIR(cAssunto, cDtAbertura, cTipo, cCodCliente, cLoj
         Public lCnsaIncluirIncompleto := !lExigirCompletos
 
         // Monta e ativa na mesma funcao (owner private environment).
-        oModel := CH_MONTARMODEL(.T.)
+        oModel := CH_MONTARMODEL(MODEL_OPERATION_INSERT)
 
         oModelZA1 := oModel:GetModel("ZA1MASTER")
 
