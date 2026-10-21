@@ -172,7 +172,9 @@ Static Function HA_LEGS()
 Return {{"!Empty(SZA->ZA_ENVDT)",                                                     "YELLOW", "BR_AMARELO", "Aguardando cliente"}, ;
         {"SZA->ZA_APROVAD=='S' .And. SZA->ZA_APVTIPO=='W'",                           "GREEN",  "BR_VERDE",   "Aprovada (cliente)"}, ;
         {"SZA->ZA_APROVAD=='S' .And. SZA->ZA_APVTIPO=='D'",                           "BLUE",   "BR_AZUL",    "Aprovada (prazo)"}, ;
-        {"SZA->ZA_APROVAD=='S' .Or. (SZA->ZA_APROVAD=='A' .And. SZA->ZA_APVTIPO=='M')", "BLUE",   "BR_AZUL",    "Aprovada (manual)"}, ;
+        {"SZA->ZA_APROVAD=='S'",                                                      "BLUE",   "BR_AZUL",    "Aprovada (manual)"}, ;
+        {"SZA->ZA_APROVAD=='A' .And. SZA->ZA_APVTIPO=='M'",                           "BLUE",   "BR_AZUL",    "Pre-aprovada (sem aprovacao do cliente)"}, ;
+        {"SZA->ZA_APROVAD=='R' .And. SZA->ZA_APVTIPO=='M'",                           "BLACK",  "BR_PRETO",   "Pre-recusada (interna)"}, ;
         {"SZA->ZA_APROVAD=='R' .And. SZA->ZA_APVTIPO=='W'",                           "PINK",   "BR_PINK",    "Recusada (cliente)"}, ;
         {"SZA->ZA_APROVAD=='R'",                                                      "PINK",   "BR_PINK",    "Recusada (manual)"}, ;
         {"SZA->ZA_APROVAD=='P'",                                                      "YELLOW", "BR_AMARELO", "Aguardando pre-aprovacao interna"}, ;
@@ -584,8 +586,9 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
     //--- Todas as legendas, na ordem - mesmos textos do AP_LEGENDA (o browse compara o texto)
     Case cTrans == "LEGS"
         aRet := {{"Aprovada (sistema antigo)", "verde"}, {"Enviada (sistema antigo)", "amarelo"}, ;
-                 {"Nao requer aprovacao", "cinza"}, ;
-                 {"Aguardando pre-aprovacao interna", "amarelo"}, {"Recusada (cliente)", "rosa"}, ;
+                 {"Nao requer aprovacao", "cinza"}, {"Pre-aprovada (sem aprovacao do cliente)", "azul"}, ;
+                 {"Aguardando pre-aprovacao interna", "amarelo"}, {"Pre-recusada (interna)", "cinzaEscuro"}, ;
+                 {"Recusada (cliente)", "rosa"}, ;
                  {"Recusada (manual)", "rosa"}, {"Recusada (legado)", "rosa"}, ;
                  {"Pre-aprovada, a enviar", "azul"}, {"A enviar ao cliente", "azul"}, ;
                  {"Aguardando cliente", "amarelo"}, {"Prazo vencido", "rosa"}, ;
@@ -962,13 +965,15 @@ Static Function AP_LEGENDA(aDados)
     Case cAp == "A" .And. Empty(cTp)
         Return {"Nao requer aprovacao", "cinza"}
     Case cAp == "A" .And. cTp == "M"
-        Return {"Aprovada (manual)", "azul"}
+        Return {"Pre-aprovada (sem aprovacao do cliente)", "azul"}
     Case cAp == "P"
         Return {"Aguardando pre-aprovacao interna", "amarelo"}
-    // Pre-recusa (M) e recusa manual (I) = manual; pelo link (W) = cliente (pedido do usuario, 20/10).
+    // Pre-recusa (M) = interna (aba Legenda, linha 4); recusa pelo link (W) = cliente; manual (I) = manual.
+    Case cAp == "R" .And. cTp == "M" .And. lApv
+        Return {"Pre-recusada (interna)", "cinzaEscuro"}
     Case cAp == "R" .And. cTp == "W" .And. lApv
         Return {"Recusada (cliente)", "rosa"}
-    Case cAp == "R" .And. (cTp == "M" .Or. cTp == "I") .And. lApv
+    Case cAp == "R" .And. cTp == "I" .And. lApv
         Return {"Recusada (manual)", "rosa"}
     Case cAp == "N" .And. lApv
         Return {"Recusada (legado)", "rosa"}
