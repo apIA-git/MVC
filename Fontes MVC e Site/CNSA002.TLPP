@@ -486,11 +486,24 @@ User Function OS_TELA(nOper)
     Local lGrava := nOper == MODEL_OPERATION_INSERT .Or. nOper == MODEL_OPERATION_UPDATE
     Local oModel := Nil
     Local cOs    := SZ1->Z1_OS
+    Local aCpos  := {}
+    Local cCpo   := ""
+    Local nI     := 0
 
     // M->Z1_* no frame que fica vivo com a tela aberta (lupas/F3). Pelo dicionario (.T.): inclui os campos
     // virtuais (nome do cliente etc.) - sem eles o fechamento da lupa fazia LoadValue com Nil.
     If lGrava
         RegToMemory("SZ1", nOper == MODEL_OPERATION_INSERT, .T.)
+        // Campo que ficou sem M-> (ou com Nil, ex.: inicializador que nao devolve nada) quebrava o
+        // fechamento da lupa (FWCloseCpo: LoadValue com Nil) - cria vazio do tipo do campo e avisa no console.
+        aCpos := FWFormStruct(1, "SZ1"):GetFields()
+        For nI := 1 To Len(aCpos)
+            cCpo := aCpos[nI][MODEL_FIELD_IDFIELD]
+            If Type("M->" + cCpo) == "U"
+                ConOut("OS_TELA: M->" + cCpo + " sem valor (Nil) - criado vazio")
+                &("M->" + cCpo) := CriaVar(cCpo, .F.)
+            EndIf
+        Next nI
     EndIf
     oModel := OS_MONTARMODEL(nOper)
     If nOper == MODEL_OPERATION_INSERT
