@@ -644,7 +644,7 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
         OS_SETOPC(oModelSZ1, jQuery, {{"local", "Z1_LOCAL"}, {"horasTranDec", "Z1_TRANS", .T.}, {"prevPmt", "Z1_PREVIST"}, ;
             {"numProposta", "Z1_NUMPRO"}, {"pedVenda", "Z1_PV"}, {"hrAlmoco", "Z1_ALMOCO", .T.}, {"projeto", "Z1_PROJET"}, ;
             {"revisao", "Z1_REVISA"}, {"tarefa", "Z1_TAREFA"}, {"chamadoHpsd", "Z1_CHCLI"}})
-        // Z1_IDCH = chamado principal (1o da lista); a lista vai pra ZA3.
+        // Z1_IDCH = o chamado da OS; a ZA3 guarda os chamados por onde ela passou.
         If Len(aParCh[2]) > 0
             oModelSZ1:LoadValue("Z1_IDCH", aParCh[2][1])
         EndIf
@@ -723,6 +723,7 @@ Static Function OS_NUCLEOALTERAR(jQuery)
     Local aHrFim     := OS_LERHORA(jQuery, "horaFinal", "horaFinalDec")
     Local aParCh     := OS_ZA3("PARAM", jQuery)
     Local cMsgCh     := ""
+    Local cIdChAnt   := ""
 
     If Empty(cOs)
         Return {.F., "Informe o numero da OS (?os=000001).", ""}
@@ -733,8 +734,9 @@ Static Function OS_NUCLEOALTERAR(jQuery)
     If !SZ1->(DbSeek(cFilAnt + cOs))
         Return {.F., "OS nao encontrada.", cOs}
     EndIf
+    cIdChAnt := AllTrim(SZ1->Z1_IDCH)
 
-    // Chamados (so se vieram): mesmo cliente/loja e sem tirar chamado com interacao desta OS.
+    // Chamado (so se veio): um so, do mesmo cliente/loja.
     If aParCh[1]
         cMsgCh := OS_ZA3("VALIDAR", cOs, aParCh[2], ;
             If(Empty(AllTrim(OS_LERJSONTXT(jQuery, "codCliente"))), SZ1->Z1_CLI, AllTrim(OS_LERJSONTXT(jQuery, "codCliente"))), ;
@@ -778,7 +780,7 @@ Static Function OS_NUCLEOALTERAR(jQuery)
             {"codAnalista", "Z1_TEC"}, {"osInterna", "Z1_INTERNO"}, {"local", "Z1_LOCAL"}, {"prevPmt", "Z1_PREVIST"}, ;
             {"numProposta", "Z1_NUMPRO"}, {"pedVenda", "Z1_PV"}, {"hrAlmoco", "Z1_ALMOCO", .T.}, {"projeto", "Z1_PROJET"}, ;
             {"revisao", "Z1_REVISA"}, {"tarefa", "Z1_TAREFA"}, {"chamadoHpsd", "Z1_CHCLI"}})
-        // Z1_IDCH = chamado principal (1o da lista); a lista vai pra ZA3.
+        // Z1_IDCH = o chamado atual (trocar tira o anterior); a ZA3 guarda os chamados por onde ela passou.
         If aParCh[1]
             oModelSZ1:LoadValue("Z1_IDCH", If(Len(aParCh[2]) > 0, aParCh[2][1], ""))
         EndIf
@@ -805,6 +807,10 @@ Static Function OS_NUCLEOALTERAR(jQuery)
         // OS que ganhou chamado: interacoes do Memo passam pra ZA2.
         If lOk
             If aParCh[1]
+                // O chamado anterior fica na ZA3 (OS antiga podia ter so o Z1_IDCH).
+                If !Empty(cIdChAnt)
+                    OS_ZA3("GRAVAR", cOs, {cIdChAnt})
+                EndIf
                 OS_ZA3("GRAVAR", cOs, aParCh[2])
             EndIf
             OS_MIGRARINTERACOES(cOs)
@@ -1448,7 +1454,7 @@ User Function OS_APIEXCLUIR() As Logical
         oModel:DeActivate(lOk)
 
         If lOk
-            OS_ZA3("GRAVAR", cOs, {})
+            OS_ZA3("APAGAR", cOs)
         EndIf
 
         If !lOk
@@ -1881,21 +1887,20 @@ User Function OS_APINOVAINTERACAO() As Logical
 Return OS_ERRO(500, "Erro desconhecido.")
 
 /*/{Protheus.doc} OS_ZA3
-Chamados da OS (ZA3; Z1_IDCH = principal):
-  LER     (cOs, cIdChPrincipal)    principal + ZA3 -> array
+Chamados da OS - um por vez (Z1_IDCH = o atual); a ZA3 guarda todos por onde a OS passou:
+  LER     (cOs, cIdChAtual)        atual + ZA3 -> array (todos os chamados da OS)
   PARAM   (jQuery)                 "chamados" (CSV) ou "chamado" -> {lVeio, aCodigos}
-  VALIDAR (cOs, aCh, cCli, cLoja)  "" ou a mensagem (mesmo cliente/loja; nao tirar chamado com interacao desta OS)
-  GRAVAR  (cOs, aCh)               substitui a lista na ZA3
+  VALIDAR (cOs, aCh, cCli, cLoja)  "" ou a mensagem (um chamado so, do mesmo cliente/loja)
+  GRAVAR  (cOs, aCh)               acrescenta na ZA3 (nao apaga: trocar de chamado mantem o historico)
+  APAGAR  (cOs)                    apaga a ZA3 da OS (exclusao da OS)
 /*/
 Static Function OS_ZA3(cAcao, x1, x2, x3, x4)
     Local xRet   := Nil
     Local aCh    := {}
-    Local aAntes := {}
     Local aLista := {}
     Local cAlias := ""
     Local cCod   := ""
     Local cOs    := ""
-    Local nQtd   := 0
     Local nI     := 0
 
     Do Case
@@ -1935,8 +1940,11 @@ Static Function OS_ZA3(cAcao, x1, x2, x3, x4)
         Next nI
 
     Case cAcao == "VALIDAR"
-        cOs  := AllTrim(x1)
         xRet := ""
+        // Um chamado por vez: trocar de chamado tira o anterior da OS (as interacoes dele ficam no historico).
+        If Len(x2) > 1
+            Return "Informe so um chamado por vez."
+        EndIf
         ZA1->(DbSetOrder(1))
         For nI := 1 To Len(x2)
             If !ZA1->(DbSeek(xFilial("ZA1") + x2[nI]))
@@ -1947,30 +1955,20 @@ Static Function OS_ZA3(cAcao, x1, x2, x3, x4)
             EndIf
         Next nI
 
-        If !Empty(cOs)
-            aAntes := OS_ZA3("LER", cOs, Posicione("SZ1", 1, xFilial("SZ1") + cOs, "Z1_IDCH"))
-            For nI := 1 To Len(aAntes)
-                If AScan(x2, aAntes[nI]) == 0
-                    cCod   := aAntes[nI]
-                    cAlias := GetNextAlias()
-                    BeginSql Alias cAlias
-                        SELECT COUNT(*) QTD
-                        FROM %Table:ZA2% ZA2
-                        WHERE ZA2_FILIAL = %xFilial:ZA2%
-                          AND ZA2_IDCH   = %Exp:cCod%
-                          AND ZA2_OS     = %Exp:cOs%
-                          AND %NotDel%
-                    EndSql
-                    nQtd := (cAlias)->QTD
-                    (cAlias)->(DbCloseArea())
-                    If nQtd > 0
-                        Return "Chamado #" + cCod + " ja tem interacao desta OS - nao pode ser removido."
-                    EndIf
-                EndIf
-            Next nI
-        EndIf
-
     Case cAcao == "GRAVAR"
+        cOs := PadR(AllTrim(x1), TamSX3("ZA3_OS")[1])
+        aCh := OS_ZA3("LER", cOs, "")
+        For nI := 1 To Len(x2)
+            If AScan(aCh, AllTrim(x2[nI])) == 0
+                RecLock("ZA3", .T.)
+                    ZA3->ZA3_FILIAL := xFilial("ZA3")
+                    ZA3->ZA3_OS     := cOs
+                    ZA3->ZA3_IDCH   := x2[nI]
+                ZA3->(MsUnlock())
+            EndIf
+        Next nI
+
+    Case cAcao == "APAGAR"
         cOs := PadR(AllTrim(x1), TamSX3("ZA3_OS")[1])
         ZA3->(DbSetOrder(1))
         While ZA3->(DbSeek(xFilial("ZA3") + cOs))
@@ -1978,13 +1976,6 @@ Static Function OS_ZA3(cAcao, x1, x2, x3, x4)
                 ZA3->(DbDelete())
             ZA3->(MsUnlock())
         EndDo
-        For nI := 1 To Len(x2)
-            RecLock("ZA3", .T.)
-                ZA3->ZA3_FILIAL := xFilial("ZA3")
-                ZA3->ZA3_OS     := cOs
-                ZA3->ZA3_IDCH   := x2[nI]
-            ZA3->(MsUnlock())
-        Next nI
 
     EndCase
 
