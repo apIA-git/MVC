@@ -2456,6 +2456,7 @@ Static Function CH_GRAVARINTERACAO(cIdCh, cConsultor, cTexto, cOs, cErro)
     Local oModelZA2   := Nil
     Local lOk         := .F.
     Local oErroModel  := Nil
+    Local jMot        := JsonObject():New()
 
     Default cOs := ""
 
@@ -2481,6 +2482,12 @@ Static Function CH_GRAVARINTERACAO(cIdCh, cConsultor, cTexto, cOs, cErro)
     EndIf
 
     lOk := oModel:VldData() .And. oModel:CommitData()
+
+    // Interacao da OS: OS enviada e sem resposta perde o link (o cliente recebe outro).
+    If lOk .And. !Empty(cOs)
+        jMot["motivo"] := "interacao nova"
+        apia.cnsa004.U_CNSAPR("INV", cOs, "", jMot)
+    EndIf
 
     If !lOk
         oErroModel := oModel:GetErrorMessage()
@@ -2707,6 +2714,8 @@ Static Function CH_NUCLEOEXCLUIRINTERACAO(cIdCh, cSeq, lNotificarCliente, lNotif
     Local cEmailCli  := ""
     Local cStatusCh  := ""
     Local cConsulCh  := ""
+    Local cOsInt     := ""
+    Local jMot       := JsonObject():New()
 
     Default lNotificarCliente := .F.
     Default lNotificarTecnico := .F.
@@ -2727,7 +2736,7 @@ Static Function CH_NUCLEOEXCLUIRINTERACAO(cIdCh, cSeq, lNotificarCliente, lNotif
 
         cAlias := GetNextAlias()
         BeginSql Alias cAlias
-            SELECT ZA2.R_E_C_N_O_ RECNO, ZA2_CONSUL, ZA2_DESCRI
+            SELECT ZA2.R_E_C_N_O_ RECNO, ZA2_CONSUL, ZA2_OS, ZA2_DESCRI
             FROM %Table:ZA2% ZA2
             WHERE ZA2.ZA2_FILIAL = %xFilial:ZA2%
               AND ZA2.ZA2_IDCH   = %Exp:cIdCh%
@@ -2742,6 +2751,7 @@ Static Function CH_NUCLEOEXCLUIRINTERACAO(cIdCh, cSeq, lNotificarCliente, lNotif
 
         nRecno     := (cAlias)->RECNO
         cAutorInteracao := AllTrim((cAlias)->ZA2_CONSUL)
+        cOsInt     := AllTrim((cAlias)->ZA2_OS)
         cTexto     := CH_DECODESAFE(AllTrim((cAlias)->ZA2_DESCRI))
         (cAlias)->(DbCloseArea())
 
@@ -2756,6 +2766,12 @@ Static Function CH_NUCLEOEXCLUIRINTERACAO(cIdCh, cSeq, lNotificarCliente, lNotif
         RecLock("ZA2", .F.)
             ZA2->(DbDelete())
         ZA2->(MsUnlock())
+
+        // Interacao da OS: OS enviada e sem resposta perde o link (o cliente recebe outro).
+        If !Empty(cOsInt)
+            jMot["motivo"] := "interacao excluida"
+            apia.cnsa004.U_CNSAPR("INV", cOsInt, "", jMot)
+        EndIf
 
         If lNotificarCliente .And. !Empty(cEmailCli)
             CH_NOTIFICARINTERACAO(cEmailCli, cIdCh, cTexto, "removida", "Interacao Removida")

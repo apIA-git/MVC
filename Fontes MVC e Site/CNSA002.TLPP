@@ -1851,6 +1851,8 @@ User Function OS_APINOVAINTERACAO() As Logical
     Local cTexto     := OS_TEXTOPURO(OS_LERJSONTXT(jQuery,"texto"))
     Local oJson      := JsonObject():New()
     Local oErro      := Nil
+    Local lMudou     := .F.
+    Local jMot       := JsonObject():New()
 
     // Usuario de servico (pagina do cliente) so acessa /CNSAAPROVA.
     If U_CNSSERVICO()
@@ -1878,9 +1880,15 @@ User Function OS_APINOVAINTERACAO() As Logical
             Return OS_ERRO(400, "OS vinculada ao chamado " + AllTrim(SZ1->Z1_IDCH) + " - a interacao deve ser gravada no chamado.")
         EndIf
 
+        lMudou := AllTrim(SZ1->Z1_SERV) != AllTrim(cTexto)
         RecLock("SZ1", .F.)
             SZ1->Z1_SERV := cTexto
         SZ1->(MsUnlock())
+        // OS enviada e sem resposta: descricao nova mata o link (o cliente recebe outro).
+        If lMudou
+            jMot["motivo"] := "descricao alterada"
+            apia.cnsa004.U_CNSAPR("INV", cOs, "", jMot)
+        EndIf
 
         oJson['sucesso']   := .T.
         oJson['os']        := cOs
@@ -2224,6 +2232,7 @@ Evento de aprovacao do model da OS (U_CNSAPR "OS"):
 // TLPP: membro sem visibilidade e PRIVATE.
 Class CNS002APR From FWModelEvent
     Public Data lReabriu
+    Public Data cInval
     Public Method New() Constructor
     Public Method ModelPosVld(oModel, cModelId)
     Public Method BeforeTTS(oModel, cModelId)
@@ -2232,6 +2241,7 @@ EndClass
 
 Method New() Class CNS002APR
     ::lReabriu := .F.
+    ::cInval   := ""
 Return Self
 
 Method ModelPosVld(oModel, cModelId) Class CNS002APR
@@ -2253,6 +2263,8 @@ Method BeforeTTS(oModel, cModelId) Class CNS002APR
     jFase["fase"] := "ANT"
     aRet := apia.cnsa004.U_CNSAPR("OS", oModel, "", jFase)
     ::lReabriu := Len(aRet) >= 5 .And. aRet[5]
+    // OS enviada que mudou: motivo da invalidacao do link (vai pra SZA e pro e-mail ao cliente).
+    ::cInval   := If(Len(aRet) >= 6, aRet[6], "")
 
 Return
 
@@ -2262,6 +2274,7 @@ Method InTTS(oModel, cModelId) Class CNS002APR
     If ::lReabriu
         jFase["fase"]    := "GRV"
         jFase["reabriu"] := "S"
+        jFase["motivo"]  := ::cInval
         apia.cnsa004.U_CNSAPR("OS", oModel, "", jFase)
         ::lReabriu := .F.
     EndIf

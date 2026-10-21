@@ -16,7 +16,6 @@ User Function CNS004(cOs)
     Local l_oBrowse := Nil
     Local aLeg      := HA_LEGS()
     Local nI        := 0
-    // Mesmo namespace: precisa do prefixo "u_".
     Private aRotina := u_MenuDef()
 
     Default cOs := ""
@@ -193,6 +192,7 @@ Return {{"!Empty(SZA->ZA_ENVDT)",                                               
 //   ENV  (cOs)                       so em N: token no link, so o SHA-256 na SZA - qualquer analista;
 //                                    aRet[5] = "E-mail enviado para: ... Falhou para: ..." 
 //   CNS  (cToken)                    link valido? devolve {lOk, cErro, jOs}
+//   INV  (cOs, "", {motivo})         OS enviada (N) mudou (interacao nova/excluida): mata o link e avisa o cliente
 //   LEG  ({aprovad, apvtipo, apvdata, envdt, dtdigit})   {cLegenda, cCor} (aba Legenda)
 //   LEGS ()                                      todas as {cLegenda, cCor} (browse classico)
 //   REG  (cOs ou {proj, rev, tarefa})           {cAprovad, cApvTipo} pela tarefa (AF9_APVMAN S/N, AF9_UM)
@@ -243,6 +243,8 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
     Local aLeg     := {}
     Local jLin     := Nil
     Local xVal     := Nil
+    Local lUltima  := .F.
+    Local cInval   := ""
 
     Default cOrigem := ""
     Default jDados  := JsonObject():New()
@@ -254,7 +256,7 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
 
     //--- Evento do model da OS (CNS002APR, CNSA002)
     Case cTrans == "OS"
-        aRet   := {.T., "", "", "", .F.}
+        aRet   := {.T., "", "", "", .F., ""}
         If Type("__lA02Interno") == "L" .And. __lA02Interno
             Return aRet
         EndIf
@@ -296,6 +298,7 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
                 // OS ja enviada: evento na SZA mata o link (token so vale na ultima linha).
                 If lMudou .And. !Empty(SZ1->Z1_ENVDT)
                     aRet[5] := .T.
+                    aRet[6] := "troca de projeto/tarefa"
                 EndIf
             ElseIf nOper == MODEL_OPERATION_UPDATE
                 // Edicao comum: aprovacao como esta no banco (outro pode ter mudado com a tela aberta).
@@ -306,6 +309,16 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
                 For nI := 1 To Len(aCampos)
                     oSZ1:LoadValue(aCampos[nI], SZ1->(FieldGet(FieldPos(aCampos[nI]))))
                 Next nI
+                // OS enviada e sem resposta com mudanca no que o cliente ve: o link morre (linha na SZA na
+                // fase GRV) e a OS volta a "a enviar".
+                cInval := AP_MUDOU(oSZ1)
+                If AllTrim(SZ1->Z1_APROVAD) == "N" .And. !Empty(SZ1->Z1_ENVDT) .And. !Empty(cInval)
+                    oSZ1:LoadValue("Z1_ENVDT", AP_VAL("Z1_ENVDT", ""))
+                    oSZ1:LoadValue("Z1_ENVHR", AP_VAL("Z1_ENVHR", ""))
+                    oSZ1:LoadValue("Z1_OSENVCL", "N")
+                    aRet[5] := .T.
+                    aRet[6] := "alteracao de " + cInval
+                EndIf
             EndIf
             If !Empty(aReg)
                 oSZ1:LoadValue("Z1_APROVAD", aReg[1])
@@ -323,13 +336,21 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
             // Reabertura ou reavaliacao de OS enviada: linha com o estado novo (mata o link).
             If AP_TXT(jDados, "reabriu") == "S"
                 aUsu := AP_USUARIO()
-                aRet := AP_GRAVASZA(cOs, {{"ZA_APROVAD", oSZ1:GetValue("Z1_APROVAD")}, ;
-                    {"ZA_APVTIPO", oSZ1:GetValue("Z1_APVTIPO")}, {"ZA_POR", aUsu[1]}, ;
-                    {"ZA_EMAIL", aUsu[2]}, {"ZA_DTREC", dHoje}, {"ZA_HRREC", cAgora}})
+                // Link invalidado (OS enviada que mudou): linha de reabertura (tipo vazio) com o motivo.
+                aSZA := {{"ZA_APROVAD", oSZ1:GetValue("Z1_APROVAD")}, ;
+                    {"ZA_APVTIPO", If(Empty(cMotivo), oSZ1:GetValue("Z1_APVTIPO"), "")}, {"ZA_POR", aUsu[1]}, ;
+                    {"ZA_EMAIL", aUsu[2]}, {"ZA_DTREC", dHoje}, {"ZA_HRREC", cAgora}}
+                If !Empty(cMotivo)
+                    AAdd(aSZA, {"ZA_DESCRI", "Link invalidado: " + cMotivo})
+                EndIf
+                aRet := AP_GRAVASZA(cOs, aSZA)
                 If !aRet[1]
                     ConOut("CNSAPR: historico da OS " + AllTrim(cOs) + " nao gravado - gravacao desfeita: " + aRet[2])
                     DisarmTransaction()
                     UserException("Historico de aprovacao da OS nao gravado: " + aRet[2])
+                EndIf
+                If !Empty(cMotivo)
+                    AP_AVISAR("INV", cOs, aUsu[1], cMotivo)
                 EndIf
             EndIf
         EndCase
@@ -458,6 +479,23 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
             aRet[2] := cMsgEnv + " Mas a OS nao foi gravada (o link nao vai funcionar - envie de novo): " + aRet[2]
         EndIf
 
+    //--- Invalida o link: OS enviada e sem resposta mudou (interacao nova/excluida) - volta a "a enviar"
+    Case cTrans == "INV"
+        cOs  := xAlvo
+        aRet := {.T., "", "", ""}
+        If !AP_SZ1(cOs) .Or. Empty(SZ1->Z1_ENVDT) .Or. !Empty(AP_PEGAR(cOs, "N", "x"))
+            Return aRet
+        EndIf
+        aUsu := AP_USUARIO()
+        aRet := AP_GRAVAR(SZ1->Z1_OS, {{"Z1_ENVDT", ""}, {"Z1_ENVHR", ""}, {"Z1_OSENVCL", "N"}}, ;
+            {{"ZA_APROVAD", "N"}, {"ZA_APVTIPO", ""}, {"ZA_POR", aUsu[1]}, {"ZA_EMAIL", aUsu[2]}, ;
+             {"ZA_DTREC", dHoje}, {"ZA_HRREC", cAgora}, {"ZA_DESCRI", "Link invalidado: " + cMotivo}})
+        AP_DESTRAVAR(cOs)
+        If aRet[1]
+            AP_AVISAR("INV", cOs, aUsu[1], cMotivo)
+            aRet := {.T., "", "N", ""}
+        EndIf
+
     //--- Consulta do link (pagina do cliente)
     Case cTrans == "CNS"
         aRet   := {.F., "INVALIDO", Nil}
@@ -467,26 +505,30 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
         EndIf
         cHash  := AP_HASH(cToken)
         cAlias := GetNextAlias()
-        // So vale se a linha do token for a ULTIMA da OS e ZA_VALID nao venceu.
+        // Token da OS; vale se a linha dele for a ULTIMA da OS e ZA_VALID nao venceu.
         BeginSql Alias cAlias
-            SELECT ZA.ZA_OS, ZA.ZA_VALID
+            SELECT ZA.ZA_OS, ZA.ZA_VALID, ZA.ZA_SEQ,
+                   (SELECT MAX(ZB.ZA_SEQ) FROM %Table:SZA% ZB
+                     WHERE ZB.ZA_FILIAL = ZA.ZA_FILIAL AND ZB.ZA_OS = ZA.ZA_OS AND ZB.%NotDel%) ULTSEQ
             FROM %Table:SZA% ZA
             WHERE ZA.ZA_FILIAL = %xFilial:SZA%
               AND ZA.ZA_HASH = %Exp:cHash%
               AND ZA.%NotDel%
-              AND ZA.ZA_SEQ = (SELECT MAX(ZB.ZA_SEQ) FROM %Table:SZA% ZB
-                               WHERE ZB.ZA_FILIAL = ZA.ZA_FILIAL AND ZB.ZA_OS = ZA.ZA_OS AND ZB.%NotDel%)
         EndSql
-        If !(cAlias)->(Eof()) .And. SToD((cAlias)->ZA_VALID) >= dHoje
-            cOs := (cAlias)->ZA_OS
+        If !(cAlias)->(Eof())
+            cOs     := (cAlias)->ZA_OS
+            lUltima := (cAlias)->ZA_SEQ == (cAlias)->ULTSEQ .And. SToD((cAlias)->ZA_VALID) >= dHoje
         EndIf
         (cAlias)->(DbCloseArea())
         If Empty(cOs) .Or. !AP_SZ1(cOs)
             Return aRet
         EndIf
-        // Pela SZ1 (vale tambem pra OS decidida pelo sistema antigo).
+        // Pela SZ1 primeiro (vale tambem pra OS do sistema antigo): link ja respondido = decidida (409).
         If AllTrim(SZ1->Z1_APROVAD) $ "S|R|A" .And. !Empty(SZ1->Z1_APROVAD)
             Return {.F., "DECIDIDA", Nil}
+        EndIf
+        If !lUltima
+            Return aRet
         EndIf
         jOs := JsonObject():New()
         jOs["os"]        := AllTrim(SZ1->Z1_OS)
@@ -707,6 +749,29 @@ Campos da aprovacao zerados na inclusao, na reavaliacao e na reabertura.
 /*/
 Static Function AP_ZERAR()
 Return {"Z1_APVDOR", "Z1_APVMAIL", "Z1_APVIP", "Z1_APVDATA", "Z1_APVHORA", "Z1_ENVDT", "Z1_ENVHR", "Z1_APVOBS"}
+
+/*/{Protheus.doc} AP_MUDOU
+Campo que o cliente ve (e-mail e tela de aprovacao) e que o model mudou em relacao a SZ1 gravada.
+@return cCampo  titulo do 1o campo alterado ("" se nenhum)
+/*/
+Static Function AP_MUDOU(oSZ1)
+    Local aCampos := {"Z1_SERV", "Z1_DTOS", "Z1_HRINI", "Z1_HRFIM", "Z1_HRTOT", "Z1_TOTAL", "Z1_TRANS", "Z1_ALMOCO", ;
+                      "Z1_CLI", "Z1_LOJA", "Z1_IDCH", "Z1_CHCLI", "Z1_TEC"}
+    Local xNovo   := Nil
+    Local xAntes  := Nil
+    Local nI      := 0
+
+    For nI := 1 To Len(aCampos)
+        If SZ1->(FieldPos(aCampos[nI])) > 0 .And. oSZ1:GetStruct():HasField(aCampos[nI])
+            xNovo  := oSZ1:GetValue(aCampos[nI])
+            xAntes := SZ1->(FieldGet(FieldPos(aCampos[nI])))
+            If If(ValType(xNovo) == "C", AllTrim(xNovo) != AllTrim(xAntes), xNovo != xAntes)
+                Return AllTrim(GetSX3Cache(aCampos[nI], "X3_TITULO"))
+            EndIf
+        EndIf
+    Next nI
+
+Return ""
 
 /*/{Protheus.doc} AP_UTF8
 Acento UTF-8 que chega quebrado em 2 caracteres CP1252 (igual ao CH_DECODESAFE do CNSA001).
@@ -1004,6 +1069,24 @@ Static Function AP_AVISAR(cTrans, cOs, cQuem, cMotivo)
     EndIf
     cCliente := AllTrim(Posicione("SA1", 1, xFilial("SA1") + SZ1->Z1_CLI + SZ1->Z1_LOJA, "A1_NOME"))
     aLin     := apia.cnsa002.U_OS_APRPUB("RESUMO", cOs)
+
+    // Link invalidado: so o cliente (e o controle) - ele vai receber um link novo.
+    If cTrans == "INV"
+        aPara := apia.cnsa002.U_OS_APRPUB("DESTINO", cOs)
+        aCco  := StrTokArr2(AllTrim(SuperGetMV("MV_CNSACCO", .F., "")), ";", .F.)
+        For nI := 1 To Len(aCco)
+            AAdd(aPara, AllTrim(aCco[nI]))
+        Next nI
+        For nI := 1 To Len(aPara)
+            If !Empty(aPara[nI]) .And. AScan(aPara, aPara[nI]) == nI
+                apia.cnsa001.U_CH_MAILPUB(aPara[nI], FwNoAccent(cCliente) + " - Alterada O.S. n. " + AllTrim(cOs), ;
+                    apia.cnsa001.U_CH_HTMLPUB("", "OS " + AllTrim(cOs) + " alterada", "", ;
+                        "A ordem de servi&ccedil;o foi alterada depois do envio para aprova&ccedil;&atilde;o. " + ;
+                        "O link enviado antes n&atilde;o vale mais: voc&ecirc; vai receber um novo link.", aLin, "", "", ""))
+            EndIf
+        Next nI
+        Return
+    EndIf
     AAdd(aLin, {If(cTrans == "APR", "Aprovada por", "Recusada por"), U_CNSOUTL("TEXTO", cQuem)})
     AAdd(aLin, {"Em", DToC(Date()) + " &agrave;s " + Left(Time(), 5)})
 
