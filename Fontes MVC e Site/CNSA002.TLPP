@@ -1720,6 +1720,7 @@ User Function OS_APILISTAINTERACOES() As Logical
     Local cAlias  := ""
     Local cData   := ""
     Local aCh     := {}
+    Local cChCli  := ""
 
     // Usuario de servico (pagina do cliente) so acessa /CNSAAPROVA.
     If U_CNSSERVICO()
@@ -1740,7 +1741,9 @@ User Function OS_APILISTAINTERACOES() As Logical
             Return OS_ERRO(404, "OS nao encontrada.")
         EndIf
 
-        aSep := OS_SEPARAINTERACOES(SZ1->Z1_SERV)
+        aSep   := OS_SEPARAINTERACOES(SZ1->Z1_SERV)
+        // Chamado do cliente (Z1_CHCLI): o mesmo em todas as interacoes desta OS.
+        cChCli := AllTrim(SZ1->Z1_CHCLI)
 
         // OS sem chamado: a descricao vai como item unico.
         If Empty(AllTrim(SZ1->Z1_IDCH))
@@ -1753,6 +1756,7 @@ User Function OS_APILISTAINTERACOES() As Logical
                 oLinha['hora']      := ""
                 oLinha['texto']     := aSep[1]
                 oLinha['os']        := cOs
+                oLinha['chamadoCliente'] := cChCli
                 oLinha['idCh']      := ""
                 oLinha['descricao'] := .T.
                 AAdd(aOrdem, {cData, oLinha})
@@ -1769,6 +1773,7 @@ User Function OS_APILISTAINTERACOES() As Logical
                 oLinha['hora']      := aBloco[2]
                 oLinha['texto']     := aBloco[5]
                 oLinha['os']        := cOs
+                oLinha['chamadoCliente'] := cChCli
                 oLinha['idCh']      := ""
                 AAdd(aOrdem, {cData + aBloco[2], oLinha})
             Next nI
@@ -1794,6 +1799,7 @@ User Function OS_APILISTAINTERACOES() As Logical
             oLinha['hora']      := AllTrim((cAlias)->ZA2_HORA)
             oLinha['texto']     := OS_DECODESAFE(AllTrim((cAlias)->ZA2_DESCRI))
             oLinha['os']        := cOs
+            oLinha['chamadoCliente'] := cChCli
             oLinha['idCh']      := AllTrim((cAlias)->ZA2_IDCH)
             oLinha['assunto']   := OS_DECODESAFE(AllTrim(Posicione("ZA1", 1, xFilial("ZA1") + AllTrim((cAlias)->ZA2_IDCH), "ZA1_ASSUNT")))
             AAdd(aOrdem, {cData + AllTrim((cAlias)->ZA2_HORA), oLinha})
