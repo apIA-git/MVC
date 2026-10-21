@@ -467,7 +467,8 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
         cMsgEnv := "E-mail enviado para: " + AP_JUNTA(aEnv[1], ", ") + ;
             If(Empty(aEnv[2]), "", ". Falhou para: " + AP_JUNTA(aEnv[2], ", ")) + "."
         aSZ1   := {{"Z1_APVMAIL", cEmail}, {"Z1_ENVDT", dHoje}, {"Z1_ENVHR", cAgora}, {"Z1_OSENVCL", "S"}, ;
-                   {"Z1_APVDOR", ""}, {"Z1_APVDATA", ""}, {"Z1_APVHORA", ""}, {"Z1_APVIP", ""}}
+                   {"Z1_APVDOR", AllTrim(Posicione("SA1", 1, xFilial("SA1") + SZ1->Z1_CLI + SZ1->Z1_LOJA, "A1_NOME"))}, ;
+                   {"Z1_APVDATA", ""}, {"Z1_APVHORA", ""}, {"Z1_APVIP", ""}}
         aSZA   := {{"ZA_APROVAD", "N"}, {"ZA_APVTIPO", cNovo}, {"ZA_HASH", cHash}, ;
                    {"ZA_ENVDT", dHoje}, {"ZA_ENVHR", cAgora}, {"ZA_PRAZO", dHoje + SuperGetMV("MV_CNSAPRZ", .F., 2)}, ;
                    {"ZA_VALID", dValid}, {"ZA_EMAIL", cEmail}, {"ZA_POR", aUsu[1]}}
