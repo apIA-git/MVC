@@ -136,11 +136,13 @@ Static Function OS_MONTARMODEL(nOperAtivar)
         NIL,;
         {|oModel| OS_PREVALIDA(oModel) .And. OS_VALIDACOBRAR(oModel)})
 
+    // Sem validacao por campo na tela (igual ao chamado): o OS_VALIDACAMPO recusava campo obrigatorio vazio a
+    // cada acao do campo e a lupa nao pesquisava. Obrigatorios: dicionario + OS_PREVALIDA ao confirmar.
     l_oModel:AddFields(;
         "SZ1MASTER",;
         NIL,;
         l_oStrSZ1,;
-        {|_f,_a,_c,_v| OS_VALIDACAMPO(_f,_a,_c,_v)},;
+        NIL,;
         NIL)
 
     // SZ2 (horas contratadas) e relacionada por CLIENTE, nao por OS.
