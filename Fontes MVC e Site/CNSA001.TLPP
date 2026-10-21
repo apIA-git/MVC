@@ -67,10 +67,10 @@ User Function MenuDef()
 
     ADD OPTION aRotina TITLE "Pesquisar"        ACTION "AxPesqui"                            OPERATION 1 ACCESS 0
     ADD OPTION aRotina TITLE "Visualizar"       ACTION "apia.cnsa001.U_CH_TELA(1)"           OPERATION 2 ACCESS 0
-    ADD OPTION aRotina TITLE "Incluir"          ACTION "apia.cnsa001.U_CH_INCLUIRTELA"       OPERATION 3 ACCESS 0
-    // Admin altera qualquer chamado; quem nao e admin, so os proprios (CH_ALTERARTELA + CH_PREVALIDA).
-    ADD OPTION aRotina TITLE "Alterar"          ACTION "apia.cnsa001.U_CH_ALTERARTELA"       OPERATION 4 ACCESS 0
-    ADD OPTION aRotina TITLE "Excluir"          ACTION "apia.cnsa001.U_CH_EXCLUIRTELA"       OPERATION 0 ACCESS 0
+    ADD OPTION aRotina TITLE "Incluir"          ACTION "apia.cnsa001.U_CH_TELA(3)"           OPERATION 3 ACCESS 0
+    // Admin altera qualquer chamado; quem nao e admin, so os proprios (CH_TELA + CH_PREVALIDA).
+    ADD OPTION aRotina TITLE "Alterar"          ACTION "apia.cnsa001.U_CH_TELA(4)"           OPERATION 4 ACCESS 0
+    ADD OPTION aRotina TITLE "Excluir"          ACTION "apia.cnsa001.U_CH_TELA(5)"           OPERATION 0 ACCESS 0
     ADD OPTION aRotina TITLE "Ver Agendas"      ACTION "apia.cnsa001.U_PROTHEUS_ABREAGENDA"  OPERATION 0 ACCESS 0
     ADD OPTION aRotina TITLE "Agendar"          ACTION "apia.cnsa001.U_CNSA_CRIAAGENDA"      OPERATION 0 ACCESS 0
     ADD OPTION aRotina TITLE "Assumir"          ACTION "apia.cnsa001.U_CH_ASSUMIRTELA"       OPERATION 0 ACCESS 0
@@ -673,39 +673,108 @@ Static Function CH_PERGUNTAEMAIL(cTitulo, lOfereceCli, lOfereceTec)
 
 Return {lOfereceCli .And. lChkCli, lOfereceTec .And. lChkTec}
 
-/*/{Protheus.doc} CH_ALTERARTELA
-Menu Alterar (admin: qualquer chamado; demais: so o proprio).
-/*/
-User Function CH_ALTERARTELA()
-
-    // Admin altera qualquer chamado; quem nao e admin, so o proprio (sem tecnico: assumir antes).
-    If CH_TEMACESSOGRUPO() .Or. ;
-        (!Empty(AllTrim(ZA1->ZA1_CONSUL)) .And. AllTrim(ZA1->ZA1_CONSUL) == AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC")))
-        U_CH_TELA(MODEL_OPERATION_UPDATE)
-        Return
-    EndIf
-
-    If Empty(AllTrim(ZA1->ZA1_CONSUL))
-        MsgAlert("Este chamado ainda nao tem tecnico. Use a opcao Assumir para atende-lo.", "Alterar")
-    Else
-        MsgAlert("Voce so pode alterar os seus chamados.", "Alterar")
-    EndIf
-
-Return
-
 /*/{Protheus.doc} CH_TELA
-Menu Visualizar/Incluir/Alterar (igual ao OS_TELA da OS): monta e ativa o model aqui e abre a View.
-@param  nOper     MODEL_OPERATION_VIEW (1), INSERT (3) ou UPDATE (4)
-@return lGravou   .T. se o usuario confirmou e gravou
+Menu Visualizar/Incluir/Alterar/Excluir (igual ao OS_TELA da OS), cada um com a sua regra no Do Case.
+Visualizar/Incluir/Alterar: monta e ativa o model aqui e abre a View. Excluir: motivo e CH_NUCLEOEXCLUIR.
+@param  nOper  MODEL_OPERATION_VIEW (1), INSERT (3), UPDATE (4) ou DELETE (5)
 /*/
 User Function CH_TELA(nOper)
-    Local lGrava   := nOper == MODEL_OPERATION_INSERT .Or. nOper == MODEL_OPERATION_UPDATE
-    Local lGravou  := .F.
-    Local lNumerou := .F.
-    Local oModel   := Nil
-    Local aCpos    := {}
-    Local cCpo     := ""
-    Local nI       := 0
+    Local lGrava     := nOper == MODEL_OPERATION_INSERT .Or. nOper == MODEL_OPERATION_UPDATE
+    Local lGravou    := .F.
+    Local lNumerou   := .F.
+    Local oModel     := Nil
+    Local aCpos      := {}
+    Local cCpo       := ""
+    Local nI         := 0
+    Local aEnvio     := {}
+    Local cIdCh      := AllTrim(ZA1->ZA1_IDCH)
+    Local cMotivo    := ""
+    Local aResultado := {}
+    Local oDialog    := Nil
+    Local oBtnOk     := Nil
+    Local oBtnCan    := Nil
+    Local oGetMotivo := Nil
+    Local oCombo     := Nil
+    Local lNotificarCliente := .F.
+    Local lNotificarTecnico := .F.
+
+    Do Case
+    Case nOper == MODEL_OPERATION_UPDATE
+        // Admin altera qualquer chamado; quem nao e admin, so o proprio (sem tecnico: assumir antes).
+        If !CH_TEMACESSOGRUPO() .And. ;
+            (Empty(AllTrim(ZA1->ZA1_CONSUL)) .Or. AllTrim(ZA1->ZA1_CONSUL) != AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC")))
+            If Empty(AllTrim(ZA1->ZA1_CONSUL))
+                MsgAlert("Este chamado ainda nao tem tecnico. Use a opcao Assumir para atende-lo.", "Alterar")
+            Else
+                MsgAlert("Voce so pode alterar os seus chamados.", "Alterar")
+            EndIf
+            Return
+        EndIf
+
+    Case nOper == MODEL_OPERATION_DELETE
+        // Excluir: pede o motivo (quando ja tem tecnico) e chama o CH_NUCLEOEXCLUIR.
+        If ZA1->(Eof()) .Or. ZA1->(Bof())
+            MsgAlert("Nenhum chamado selecionado.", "Excluir")
+            Return
+        EndIf
+
+        If !MsgYesNo("Confirma excluir o chamado " + cIdCh + "?", "Excluir")
+            Return
+        EndIf
+
+        aEnvio := CH_PERGUNTAEMAIL("Excluir Chamado " + cIdCh, !Empty(AllTrim(ZA1->ZA1_EMAIL)), !Empty(AllTrim(ZA1->ZA1_CONSUL)))
+        lNotificarCliente := aEnvio[1]
+        lNotificarTecnico := aEnvio[2]
+
+        If Empty(AllTrim(ZA1->ZA1_CONSUL))
+            aResultado := CH_NUCLEOEXCLUIR(cIdCh, "", lNotificarCliente, .F.)
+            If aResultado[1] != 200
+                MsgAlert(aResultado[2], "Excluir")
+            EndIf
+            Return
+        EndIf
+
+        Private aMotivos := {"Encerramento pela Apia", "Encerramento pelo Cliente", "Outro motivo"}
+        Private cMotivoSel := aMotivos[1]
+        Private cOutroMotivo := Space(100)
+        Private lMotConfirm  := .F.
+
+        DEFINE MSDIALOG oDialog TITLE "Motivo da Exclusao" FROM 0,0 TO 300,600 PIXEL
+
+            @ 10,10  SAY "Selecione o motivo do Encerramento:" SIZE 250,12 PIXEL OF oDialog
+            @ 25,10  COMBOBOX oCombo VAR cMotivoSel ITEMS aMotivos SIZE 250,12 PIXEL OF oDialog
+
+            @ 60,10  SAY "Descricao: " SIZE 300,12 PIXEL OF oDialog
+            @ 75,10  MSGET oGetMotivo VAR cOutroMotivo PICTURE "@!" SIZE 240,12 PIXEL OF oDialog
+
+            oBtnOk  := TButton():New(100, 90,  "OK",       oDialog, {|| lMotConfirm:=.T., oDialog:End()}, 50,14,,,.F.,.T.,.F.,,.F.,,,.F.)
+            oBtnCan := TButton():New(100, 145, "Cancelar", oDialog, {|| oDialog:End()},                   50,14,,,.F.,.T.,.F.,,.F.,,,.F.)
+
+        ACTIVATE MSDIALOG oDialog CENTERED
+
+        If !lMotConfirm
+            Return
+        EndIf
+
+        Do Case
+            Case cMotivoSel == "Encerramento pela Apia"
+                cMotivo := If(Empty(AllTrim(cOutroMotivo)), "Encerramento pela Apia", "Encerramento pela Apia - " + AllTrim(cOutroMotivo))
+            Case cMotivoSel == "Encerramento pelo Cliente"
+                cMotivo := If(Empty(AllTrim(cOutroMotivo)), "Encerramento pelo Cliente", "Encerramento pelo Cliente - " + AllTrim(cOutroMotivo))
+            Case cMotivoSel == "Outro motivo"
+                If Empty(AllTrim(cOutroMotivo))
+                    MsgAlert("Informe o motivo para a opcao 'Outro'.", "Motivo")
+                    Return
+                EndIf
+                cMotivo := AllTrim(cOutroMotivo)
+        EndCase
+
+        aResultado := CH_NUCLEOEXCLUIR(cIdCh, cMotivo, lNotificarCliente, lNotificarTecnico)
+        If aResultado[1] != 200
+            MsgAlert(aResultado[2], "Excluir")
+        EndIf
+        Return
+    EndCase
 
     // M->ZA1_* no frame que fica vivo com a tela aberta (lupas/F3). Pelo dicionario (.T.): inclui os campos
     // virtuais (nome do cliente etc.) - sem eles a lupa tentava criar o M-> e dava "owner private environment not found".
@@ -739,16 +808,9 @@ User Function CH_TELA(nOper)
             RollBackSX8()
         EndIf
     EndIf
-Return lGravou
 
-/*/{Protheus.doc} CH_INCLUIRTELA
-Opcao de menu "Incluir" da tela classica: abre a View em modo inclusao (CH_TELA) e oferece os e-mails.
-/*/
-User Function CH_INCLUIRTELA()
-    Local aEnvio := {}
-
-    If U_CH_TELA(MODEL_OPERATION_INSERT)
-        // Mesma escolha do portal: tecnico (designacao) e cliente ("Chamado Aberto").
+    // Incluir gravado: mesma escolha do portal, tecnico (designacao) e cliente ("Chamado Aberto").
+    If lGravou .And. nOper == MODEL_OPERATION_INSERT
         aEnvio := CH_PERGUNTAEMAIL("Inclusao do Chamado " + AllTrim(ZA1->ZA1_IDCH), ;
             !Empty(AllTrim(ZA1->ZA1_EMAIL)), !Empty(AllTrim(ZA1->ZA1_CONSUL)))
         If aEnvio[2]
@@ -1079,87 +1141,6 @@ User Function CH_ASSUMIRTELA()
         MsgInfo("Chamado assumido com sucesso!", "Assumir Chamado")
     Else
         MsgAlert(aResultado[2], "Assumir")
-    EndIf
-
-Return
-
-/*/{Protheus.doc} CH_EXCLUIRTELA
-Menu Excluir: pede o motivo (quando ja tem tecnico) e chama o CH_NUCLEOEXCLUIR.
-/*/
-User Function CH_EXCLUIRTELA()
-    Local oDialog        := Nil
-    Local oBtnOk         := Nil
-    Local oBtnCan        := Nil
-    Local oGetMotivo     := Nil
-    Local oCombo         := Nil
-    Local cIdCh          := ""
-    Local cMotivo        := ""
-    Local aResultado     := {}
-    Local lNotificarCliente := .F.
-    Local lNotificarTecnico := .F.
-    Local aEnvio            := {}
-
-    If ZA1->(Eof()) .Or. ZA1->(Bof())
-        MsgAlert("Nenhum chamado selecionado.", "Excluir")
-        Return
-    EndIf
-
-    cIdCh := AllTrim(ZA1->ZA1_IDCH)
-
-    If !MsgYesNo("Confirma excluir o chamado " + cIdCh + "?", "Excluir")
-        Return
-    EndIf
-
-    aEnvio := CH_PERGUNTAEMAIL("Excluir Chamado " + cIdCh, !Empty(AllTrim(ZA1->ZA1_EMAIL)), !Empty(AllTrim(ZA1->ZA1_CONSUL)))
-    lNotificarCliente := aEnvio[1]
-    lNotificarTecnico := aEnvio[2]
-
-    If Empty(AllTrim(ZA1->ZA1_CONSUL))
-        aResultado := CH_NUCLEOEXCLUIR(cIdCh, "", lNotificarCliente, .F.)
-        If aResultado[1] != 200
-            MsgAlert(aResultado[2], "Excluir")
-        EndIf
-        Return
-    EndIf
-
-    Private aMotivos := {"Encerramento pela Apia", "Encerramento pelo Cliente", "Outro motivo"}
-    Private cMotivoSel := aMotivos[1]
-    Private cOutroMotivo := Space(100)
-    Private lMotConfirm  := .F.
-
-    DEFINE MSDIALOG oDialog TITLE "Motivo da Exclusao" FROM 0,0 TO 300,600 PIXEL
-
-        @ 10,10  SAY "Selecione o motivo do Encerramento:" SIZE 250,12 PIXEL OF oDialog
-        @ 25,10  COMBOBOX oCombo VAR cMotivoSel ITEMS aMotivos SIZE 250,12 PIXEL OF oDialog
-
-        @ 60,10  SAY "Descricao: " SIZE 300,12 PIXEL OF oDialog
-        @ 75,10  MSGET oGetMotivo VAR cOutroMotivo PICTURE "@!" SIZE 240,12 PIXEL OF oDialog
-
-        oBtnOk  := TButton():New(100, 90,  "OK",       oDialog, {|| lMotConfirm:=.T., oDialog:End()}, 50,14,,,.F.,.T.,.F.,,.F.,,,.F.)
-        oBtnCan := TButton():New(100, 145, "Cancelar", oDialog, {|| oDialog:End()},                   50,14,,,.F.,.T.,.F.,,.F.,,,.F.)
-
-    ACTIVATE MSDIALOG oDialog CENTERED
-
-    If !lMotConfirm
-        Return
-    EndIf
-
-    Do Case
-        Case cMotivoSel == "Encerramento pela Apia"
-            cMotivo := If(Empty(AllTrim(cOutroMotivo)), "Encerramento pela Apia", "Encerramento pela Apia - " + AllTrim(cOutroMotivo))
-        Case cMotivoSel == "Encerramento pelo Cliente"
-            cMotivo := If(Empty(AllTrim(cOutroMotivo)), "Encerramento pelo Cliente", "Encerramento pelo Cliente - " + AllTrim(cOutroMotivo))
-        Case cMotivoSel == "Outro motivo"
-            If Empty(AllTrim(cOutroMotivo))
-                MsgAlert("Informe o motivo para a opcao 'Outro'.", "Motivo")
-                Return
-            EndIf
-            cMotivo := AllTrim(cOutroMotivo)
-    EndCase
-
-    aResultado := CH_NUCLEOEXCLUIR(cIdCh, cMotivo, lNotificarCliente, lNotificarTecnico)
-    If aResultado[1] != 200
-        MsgAlert(aResultado[2], "Excluir")
     EndIf
 
 Return
