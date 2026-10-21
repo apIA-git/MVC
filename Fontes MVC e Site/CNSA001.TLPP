@@ -705,8 +705,6 @@ User Function CH_TELA(nOper)
     Local lNotificarCliente := .F.
     Local lNotificarTecnico := .F.
 
-    ConOut("CH_TELA: nOper=" + cValToChar(nOper) + " chamado " + cIdCh + " usuario " + __cUserId)
-
     Do Case
     Case nOper == MODEL_OPERATION_UPDATE
         // Admin altera qualquer chamado; quem nao e admin, so o proprio (sem tecnico: assumir antes).
