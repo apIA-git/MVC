@@ -1,0 +1,64 @@
+// Codigo removido de CNSA004.TLPP na auditoria de 21/10/2026 (copia de seguranca).
+// Fonte completo anterior: git show backup-auditoria-21-10:"Fontes MVC e Site/CNSA004.TLPP"
+
+/*/{Protheus.doc} HA_LEGS
+Legenda do evento da SZA (primeira que casar) - mesmos textos e cores da coluna Aprovacao do portal.
+@return aRet  {{condicao, cor do browse, imagem, texto}}
+/*/
+Static Function HA_LEGS()
+Return {{"!Empty(SZA->ZA_ENVDT)",                                                     "YELLOW", "BR_AMARELO", "Aguardando cliente"}, ;
+        {"SZA->ZA_APROVAD=='S' .And. SZA->ZA_APVTIPO=='W'",                           "GREEN",  "BR_VERDE",   "Aprovada (cliente)"}, ;
+        {"SZA->ZA_APROVAD=='S' .And. SZA->ZA_APVTIPO=='D'",                           "BLUE",   "BR_AZUL",    "Aprovada (prazo)"}, ;
+        {"SZA->ZA_APROVAD=='S'",                                                      "BLUE",   "BR_AZUL",    "Aprovada (manual)"}, ;
+        {"SZA->ZA_APROVAD=='A' .And. SZA->ZA_APVTIPO=='M'",                           "BLUE",   "BR_AZUL",    "Pre-aprovada (sem aprovacao do cliente)"}, ;
+        {"SZA->ZA_APROVAD=='R' .And. SZA->ZA_APVTIPO=='M'",                           "BLACK",  "BR_PRETO",   "Pre-recusada (interna)"}, ;
+        {"SZA->ZA_APROVAD=='R' .And. SZA->ZA_APVTIPO=='W'",                           "PINK",   "BR_PINK",    "Recusada (cliente)"}, ;
+        {"SZA->ZA_APROVAD=='R'",                                                      "PINK",   "BR_PINK",    "Recusada (manual)"}, ;
+        {"SZA->ZA_APROVAD=='P'",                                                      "YELLOW", "BR_AMARELO", "Aguardando pre-aprovacao interna"}, ;
+        {"SZA->ZA_APROVAD=='N' .And. SZA->ZA_APVTIPO=='M'",                           "BLUE",   "BR_AZUL",    "Pre-aprovada, a enviar"}, ;
+        {"SZA->ZA_APROVAD=='A'",                                                      "GRAY",   "BR_CINZA",   "Nao requer aprovacao"}, ;
+        {".T.",                                                                       "BLUE",   "BR_AZUL",    "A enviar ao cliente"}}
+
+// U_CNSAPR - unico ponto de regras da aprovacao (planilha aprovacao-os-transacoes.xlsx).
+// SZ1 guarda o estado; SZA e o livro de eventos (uma linha por evento). SZA (model FCNS004)
+// e SZ1 (model leve da OS, U_OS_APRPUB "GRAVAR") gravam na MESMA transacao.
+// Transacoes (cTrans):
+//   OS   (oModel, "", {fase})        evento do model da OS: VLD / ANT / GRV
+//   PRE  (cOs, "M")                  P -> A (AF9_UM = VB) ou N   - so RESPMAN
+//   PRR  (cOs, "M", {motivo})        P -> R                      - so RESPMAN
+//   APR  (cOs, W|I|D, {ip})          N -> S        (I so RESPMAN; W/D sem checagem)
+//   REC  (cOs, W|I, {motivo, ip})    N -> R        (I so RESPMAN; W sem checagem)
+//   ENV  (cOs)                       so em N: token no link, so o SHA-256 na SZA - qualquer analista;
+//                                    aRet[5] = "E-mail enviado para: ... Falhou para: ..." 
+//   CNS  (cToken)                    link valido? devolve {lOk, cErro, jOs}
+//   INV  (cOs, "", {motivo})         OS enviada (N) mudou (interacao nova/excluida): mata o link e avisa o cliente
+//   LEG  ({aprovad, apvtipo, apvdata, envdt, dtdigit})   {cLegenda, cCor} (aba Legenda)
+//   LEGS ()                                      todas as {cLegenda, cCor} (browse classico)
+//   REG  (cOs ou {proj, rev, tarefa})           {cAprovad, cApvTipo} pela tarefa (AF9_APVMAN S/N, AF9_UM)
+//   HIS  (cOs ou "")                            SZA completa (todas as OS ou so cOs) -> {aItens, aColunas {campo, titulo}}
+
+/*/{Protheus.doc} AP_UTF8
+Acento UTF-8 que chega quebrado em 2 caracteres CP1252 (igual ao CH_DECODESAFE do CNSA001).
+/*/
+Static Function AP_UTF8(cTexto)
+    Local cRet := ""
+    Local nLen := Len(cTexto)
+    Local nI   := 1
+    Local nB1  := 0
+    Local nB2  := 0
+
+    While nI <= nLen
+        nB1 := Asc(SubStr(cTexto, nI, 1))
+        If (nB1 == 195 .Or. nB1 == 194) .And. nI < nLen
+            nB2 := Asc(SubStr(cTexto, nI + 1, 1))
+            If nB2 >= 128 .And. nB2 <= 191
+                cRet += Chr(((nB1 - 192) * 64) + (nB2 - 128))
+                nI   += 2
+                Loop
+            EndIf
+        EndIf
+        cRet += SubStr(cTexto, nI, 1)
+        nI++
+    EndDo
+
+Return cRet
