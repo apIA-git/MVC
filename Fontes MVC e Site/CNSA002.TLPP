@@ -162,7 +162,8 @@ Static Function OS_MONTARMODEL(nOperAtivar)
             cTec := AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC"))
             If !Empty(cTec)
                 l_oModel:GetModel("SZ1MASTER"):LoadValue("Z1_TEC", cTec)
-                l_oModel:GetModel("SZ1MASTER"):LoadValue("Z1_NMTEC", OS_NOMETEC(cTec))
+                // Mesmo nome do dicionario (AA1_NOMRED), no tamanho exato do campo (senao FWNOWIDTH).
+                l_oModel:GetModel("SZ1MASTER"):LoadValue("Z1_NMTEC", PadR(Left(AllTrim(Posicione("AA1", 1, xFilial("AA1") + PadR(cTec, TamSX3("AA1_CODTEC")[1]), "AA1_NOMRED")), TamSX3("Z1_NMTEC")[1]), TamSX3("Z1_NMTEC")[1]))
             EndIf
         EndIf
     EndIf
