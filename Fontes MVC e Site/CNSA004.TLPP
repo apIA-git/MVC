@@ -455,17 +455,20 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
         cToken := Lower(StrTran(FWUUIDV4(), "-", "") + StrTran(FWUUIDV4(), "-", ""))
         cHash  := AP_HASH(cToken)
         aUsu   := AP_USUARIO()
-        // E-mail primeiro: se nenhum sair, nada e gravado. Grava so quem recebeu.
         dValid := dHoje + SuperGetMV("MV_CNSAVLD", .F., 2)
-        aEnv   := AP_ENVIAR(cOs, aPara, cToken, dValid)
-        If Empty(aEnv[1])
+        // So enderecos validos; a OS e gravada ANTES do e-mail (o link so sai se o token ja existe).
+        aEnv := {}
+        For nI := 1 To Len(aPara)
+            If AP_EMAILOK(AllTrim(aPara[nI]))
+                AAdd(aEnv, AllTrim(aPara[nI]))
+            EndIf
+        Next nI
+        If Empty(aEnv)
             AP_DESTRAVAR(cOs)
-            Return {.F., "Nenhum e-mail foi enviado ao cliente (" + AP_JUNTA(aEnv[2], ", ") + "). Confira o e-mail " + ;
+            Return {.F., "Nenhum e-mail valido do cliente (" + AP_JUNTA(aPara, ", ") + "). Confira o e-mail " + ;
                 "do chamado da OS ou do cadastro do cliente. A OS nao foi marcada como enviada.", "", ""}
         EndIf
-        cEmail := AP_JUNTA(aEnv[1], ";")
-        cMsgEnv := "E-mail enviado para: " + AP_JUNTA(aEnv[1], ", ") + ;
-            If(Empty(aEnv[2]), "", ". Falhou para: " + AP_JUNTA(aEnv[2], ", ")) + "."
+        cEmail := AP_JUNTA(aEnv, ";")
         aSZ1   := {{"Z1_APVMAIL", cEmail}, {"Z1_ENVDT", dHoje}, {"Z1_ENVHR", cAgora}, {"Z1_OSENVCL", "S"}, ;
                    {"Z1_APVDOR", AllTrim(Posicione("SA1", 1, xFilial("SA1") + SZ1->Z1_CLI + SZ1->Z1_LOJA, "A1_NOME"))}, ;
                    {"Z1_APVDATA", ""}, {"Z1_APVHORA", ""}, {"Z1_APVIP", ""}}
@@ -473,12 +476,24 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
                    {"ZA_ENVDT", dHoje}, {"ZA_ENVHR", cAgora}, {"ZA_PRAZO", dHoje + SuperGetMV("MV_CNSAPRZ", .F., 2)}, ;
                    {"ZA_VALID", dValid}, {"ZA_EMAIL", cEmail}, {"ZA_POR", aUsu[1]}}
         aRet := AP_GRAVAR(cOs, aSZ1, aSZA)
-        AP_DESTRAVAR(cOs)
-        If aRet[1]
-            aRet := {.T., "", "N", cNovo, cMsgEnv}
-        Else
-            aRet[2] := cMsgEnv + " Mas a OS nao foi gravada (o link nao vai funcionar - envie de novo): " + aRet[2]
+        If !aRet[1]
+            AP_DESTRAVAR(cOs)
+            Return {.F., "A OS nao foi enviada (nada saiu para o cliente): " + aRet[2], "", ""}
         EndIf
+        aEnv := AP_ENVIAR(cOs, aEnv, cToken, dValid)
+        If Empty(aEnv[1])
+            // Nenhum e-mail saiu: o envio e desfeito (linha na SZA mata o token) e a OS volta a "a enviar".
+            AP_GRAVAR(cOs, {{"Z1_ENVDT", ""}, {"Z1_ENVHR", ""}, {"Z1_OSENVCL", "N"}, {"Z1_APVDOR", ""}, {"Z1_APVMAIL", ""}}, ;
+                {{"ZA_APROVAD", "N"}, {"ZA_APVTIPO", ""}, {"ZA_POR", aUsu[1]}, {"ZA_EMAIL", aUsu[2]}, ;
+                 {"ZA_DTREC", dHoje}, {"ZA_HRREC", cAgora}, {"ZA_DESCRI", "Envio cancelado: nenhum e-mail saiu"}})
+            AP_DESTRAVAR(cOs)
+            Return {.F., "Nenhum e-mail foi enviado ao cliente (" + AP_JUNTA(aEnv[2], ", ") + "). " + ;
+                "A OS continua a enviar - confira o e-mail e envie de novo.", "", ""}
+        EndIf
+        AP_DESTRAVAR(cOs)
+        cMsgEnv := "E-mail enviado para: " + AP_JUNTA(aEnv[1], ", ") + ;
+            If(Empty(aEnv[2]), "", ". Falhou para: " + AP_JUNTA(aEnv[2], ", ")) + "."
+        aRet := {.T., "", "N", cNovo, cMsgEnv}
 
     //--- Invalida o link: OS enviada e sem resposta mudou (interacao nova/excluida) - volta a "a enviar"
     Case cTrans == "INV"
