@@ -2,7 +2,7 @@
 
 Desde 20/10/2026 a página em que o cliente aprova ou recusa a OS é a **rota pública
 do portal Angular**: `https://www.apia.com.br/apia_cs/aprovacao/<token>`
-(projeto `apia-po-cnshub`, pasta `src/app/aprovacao`), conforme a nota do Luis
+(projeto `apia-po-cnshub`, pasta `src/app/cns004`), conforme a nota do Luis
 ("Como fazer a tela de aprovação dentro do app Angular", 15/10/2026).
 
 Esta pasta ficou só com um **redirecionamento** em HTML estático (sem ASP.NET nem PHP),

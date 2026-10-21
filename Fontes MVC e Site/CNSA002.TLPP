@@ -1825,7 +1825,8 @@ User Function OS_APILISTAINTERACOES() As Logical
 Return OS_ERRO(500, "Erro desconhecido.")
 
 /*/{Protheus.doc} OS_APINOVAINTERACAO
-POST /CNSAOSINTERACOESINCLUIR - OS sem chamado: o texto substitui a descricao (Z1_SERV).
+POST /CNSAOSINTERACOESINCLUIR - OS sem chamado: o texto substitui a descricao (Z1_SERV), gravada pelo model
+(regra da aprovacao do CNS002APR: OS aprovada/recusada so o admin altera, e reabre).
 @return Logical - resposta HTTP com o resultado da inclusao
 /*/
 @Post(endpoint="/CNSAOSINTERACOESINCLUIR")
@@ -1838,6 +1839,10 @@ User Function OS_APINOVAINTERACAO() As Logical
     Local lMudou     := .F.
     Local jMot       := JsonObject():New()
     Local bErro      := Nil
+    Local oModel     := Nil
+    Local lOk        := .F.
+    Local cErro      := ""
+    Local jFase      := JsonObject():New()
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -1871,10 +1876,28 @@ User Function OS_APINOVAINTERACAO() As Logical
             Return OS_ERRO(400, "OS vinculada ao chamado " + AllTrim(SZ1->Z1_IDCH) + " - a interacao deve ser gravada no chamado.")
         EndIf
 
-        lMudou := AllTrim(SZ1->Z1_SERV) != AllTrim(cTexto)
-        RecLock("SZ1", .F.)
-            SZ1->Z1_SERV := cTexto
-        SZ1->(MsUnlock())
+        // Pelo model (como o Alterar): o evento CNS002APR aplica a regra da aprovacao - OS aprovada/recusada
+        // so o admin altera, e a alteracao reabre (volta a aguardar, com linha na SZA). Os blocos
+        // "=== INTERACAO" de OS antiga ficam no fim do Memo.
+        lMudou := AllTrim(OS_SEPARAINTERACOES(SZ1->Z1_SERV)[1]) != AllTrim(cTexto)
+        oModel := OS_MODELLEVE(MODEL_OPERATION_UPDATE)
+        oModel:GetModel("SZ1MASTER"):SetValue("Z1_SERV", cTexto + OS_BLOCOSINTERACAO(SZ1->Z1_SERV))
+        If oModel:VldData()
+            lOk := oModel:CommitData()
+        EndIf
+        If !lOk
+            cErro := OS_ERROMODEL(oModel, "Falha ao gravar a interacao.")
+            // Commit nao gravou (o AfterTTS nao roda): solta a trava da aprovacao e descarta o aviso.
+            jFase["fase"]   := "DEP"
+            jFase["falhou"] := "S"
+            apia.cnsa004.U_CNSAPR("OS", oModel, "", jFase)
+        EndIf
+        oModel:DeActivate(lOk)
+        oModel := Nil
+        If !lOk
+            ErrorBlock(bErro)
+            Return OS_ERRO(400, cErro)
+        EndIf
         // OS enviada e sem resposta: descricao nova mata o link (o cliente recebe outro).
         If lMudou
             jMot["motivo"] := "descricao alterada"
@@ -1891,6 +1914,11 @@ User Function OS_APINOVAINTERACAO() As Logical
 
     Recover Using oErro
         ErrorBlock(bErro)
+        If oModel <> Nil
+            jFase["fase"]   := "DEP"
+            jFase["falhou"] := "S"
+            apia.cnsa004.U_CNSAPR("OS", oModel, "", jFase)
+        EndIf
         Return OS_ERRO(500, oErro:Description)
     End Sequence
     ErrorBlock(bErro)
