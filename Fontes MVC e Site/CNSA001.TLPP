@@ -2287,7 +2287,7 @@ Static Function CH_GRAVARINTERACAO(cIdCh, cConsultor, cTexto, cOs, cErro)
     ErrorBlock(bErro)
     UnLockByName(cTrava, .T., .F.)
 
-    // Interacao da OS: OS enviada e sem resposta perde o link (o cliente recebe outro).
+    // Interacao da OS: OS enviada e sem resposta perde o link (o cliente recebe outro); aprovada/recusada (admin) reabre.
     If lOk .And. !Empty(cOs)
         jMot["motivo"] := "interacao nova"
         apia.cnsa004.U_CNSAPR("INV", cOs, "", jMot)
@@ -2406,6 +2406,8 @@ Static Function CH_INCLUIRINTERACAO(cIdCh, cTexto, lNotificarCliente, cOs, lNoti
     Local cConsulCh  := ""
     Local aRet       := {500, CH_ERRO("Erro desconhecido.")}
     Local bErro      := Nil
+    Local jChk       := JsonObject():New()
+    Local aChk       := {}
 
     Default lNotificarCliente := .F.
     Default cOs               := ""
@@ -2430,6 +2432,14 @@ Static Function CH_INCLUIRINTERACAO(cIdCh, cTexto, lNotificarCliente, cOs, lNoti
     EndIf
     If AllTrim(ZA1->ZA1_CONSUL) <> AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC")) .And. !CH_TEMACESSOGRUPO()
         Return {403, CH_ERRO("Voce nao tem permissao para interagir neste chamado.")}
+    EndIf
+    // Interacao da OS aprovada/recusada: so o admin (a OS reabre no INV do CH_GRAVARINTERACAO).
+    If !Empty(cOs)
+        jChk["etapa"] := "CHECAR"
+        aChk := apia.cnsa004.U_CNSAPR("INV", cOs, "", jChk)
+        If !aChk[1]
+            Return {403, CH_ERRO(aChk[2])}
+        EndIf
     EndIf
 
     cEmailCli := AllTrim(ZA1->ZA1_EMAIL)
@@ -2513,6 +2523,8 @@ Static Function CH_NUCLEOEXCLUIRINTERACAO(cIdCh, cSeq, lNotificarCliente, lNotif
     Local jMot       := JsonObject():New()
     Local aRet       := {500, "Erro desconhecido."}
     Local bErro      := Nil
+    Local jChk       := JsonObject():New()
+    Local aChk       := {.T.}
 
     Default lNotificarCliente := .F.
     Default lNotificarTecnico := .F.
@@ -2551,11 +2563,19 @@ Static Function CH_NUCLEOEXCLUIRINTERACAO(cIdCh, cSeq, lNotificarCliente, lNotif
 
         cConsultor := AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC"))
 
+        // Interacao da OS aprovada/recusada: so o admin exclui (a OS reabre no INV depois).
+        If nRecno > 0 .And. !Empty(cOsInt)
+            jChk["etapa"] := "CHECAR"
+            aChk := apia.cnsa004.U_CNSAPR("INV", cOsInt, "", jChk)
+        EndIf
+
         Do Case
         Case nRecno == 0
             aRet := {404, "Interacao nao encontrada."}
         Case cAutorInteracao <> cConsultor .And. !CH_TEMACESSOGRUPO()
             aRet := {403, "Voce nao tem permissao para excluir esta interacao."}
+        Case !aChk[1]
+            aRet := {403, aChk[2]}
         OtherWise
             dbSelectArea("ZA2")
             ZA2->(DbGoTo(nRecno))

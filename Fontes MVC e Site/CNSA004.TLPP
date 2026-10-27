@@ -203,7 +203,8 @@ Return {"GRAY", "BR_CINZA"}
 //                                    aRet[5] = "E-mail enviado para: ... Falhou para: ..." 
 //   CNS  (cToken[, "T"])             link valido? devolve {lOk, cErro, jOs}; "T" = so confere -> {lOk, cErro, cOs}
 //   INV  (cOs, "", {motivo})         OS enviada (N) mudou (interacao nova/excluida): mata o link e avisa o cliente
-//                                    (OS em uso por outra aprovacao: {.F., cErro})
+//                                    (OS em uso por outra aprovacao: {.F., cErro}); OS S/R e admin: reabre
+//                                    {etapa: "CHECAR"} antes de gravar: S/R e nao admin -> {.F., cErro}
 //   LEG  ({aprovad, apvtipo, apvdata, envdt, dtdigit} ou "SZA")   {cLegenda, cCor} (aba Legenda); "SZA" = linha
 //                                    posicionada da SZA (mesma regra da SZ1 em cada evento)
 //   LEGS ()                                      todas as {cLegenda, cCor} (browse classico)
@@ -215,7 +216,7 @@ Aprovacao de OS - todas as transacoes (ver tabela acima).
 @param  cTrans   Transacao
 @param  xAlvo    oModel (OS), cOs, cToken (CNS) ou array (LEG/REG)
 @param  cOrigem  Z1_APVTIPO resultante (W link, I manual, D prazo, M pre-aprovacao)
-@param  jDados   JsonObject: motivo, ip, token (APR/REC W), fase (OS), reabriu (OS/GRV), falhou (OS/DEP)
+@param  jDados   JsonObject: motivo, ip, token (APR/REC W), fase (OS), reabriu (OS/GRV), falhou (OS/DEP), etapa (INV)
 @return aRet     {lOk, cErro, cAprovad, cApvTipo} - CNS: {lOk, cErro, jOs} - LEG/REG: ver tabela
 /*/
 User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
@@ -566,11 +567,50 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
             If(Empty(aEnv[2]), "", ". Falhou para: " + AP_JUNTA(aEnv[2], ", ")) + "."
         aRet := {.T., "", "N", cNovo, cMsgEnv}
 
-    //--- Invalida o link: OS enviada e sem resposta mudou (interacao nova/excluida) - volta a "a enviar"
+    //--- Interacao nova/excluida na OS: enviada e sem resposta perde o link (volta a "a enviar"); S/R so admin (reabre)
     Case cTrans == "INV"
         cOs  := xAlvo
         aRet := {.T., "", "", ""}
-        If !AP_SZ1(cOs) .Or. Empty(SZ1->Z1_ENVDT)
+        If !AP_SZ1(cOs)
+            Return aRet
+        EndIf
+        cAntes := AllTrim(SZ1->Z1_APROVAD)
+        // CHECAR (antes de gravar a interacao): OS aprovada/recusada so o admin mexe. Nao grava nada.
+        If AP_TXT(jDados, "etapa") == "CHECAR"
+            If (cAntes == "S" .Or. cAntes == "R") .And. !AP_RESPMAN()
+                Return {.F., "OS " + If(cAntes == "S", "aprovada", "recusada") + ;
+                    ": somente o administrador pode alterar (a OS volta a aguardar aprovacao).", cAntes, ""}
+            EndIf
+            Return aRet
+        EndIf
+        // Admin interagiu em OS aprovada/recusada: reabre pela regra da tarefa (linha na SZA).
+        If (cAntes == "S" .Or. cAntes == "R") .And. AP_RESPMAN()
+            cErro := AP_PEGAR(cOs, "", "OS nao encontrada.")
+            If !Empty(cErro)
+                Return {.F., cErro, "", ""}
+            EndIf
+            // Relida sob a trava: outro ja reabriu.
+            If !(AllTrim(SZ1->Z1_APROVAD) $ "S|R")
+                AP_DESTRAVAR(cOs)
+                Return aRet
+            EndIf
+            aReg := U_CNSAPR("REG", {SZ1->Z1_PROJET, SZ1->Z1_REVISA, SZ1->Z1_TAREFA})
+            aSZ1 := {{"Z1_APROVAD", aReg[1]}, {"Z1_APVTIPO", aReg[2]}, {"Z1_OSENVCL", "N"}}
+            aCampos := AP_ZERAR()
+            For nI := 1 To Len(aCampos)
+                AAdd(aSZ1, {aCampos[nI], ""})
+            Next nI
+            aUsu := AP_USUARIO()
+            aRet := AP_GRAVAR(SZ1->Z1_OS, aSZ1, ;
+                {{"ZA_APROVAD", aReg[1]}, {"ZA_APVTIPO", aReg[2]}, {"ZA_POR", aUsu[1]}, {"ZA_EMAIL", aUsu[2]}, ;
+                 {"ZA_DTREC", dHoje}, {"ZA_HRREC", cAgora}, {"ZA_DESCRI", "Reaberta: interacao na OS"}})
+            AP_DESTRAVAR(cOs)
+            If aRet[1]
+                aRet := {.T., "", aReg[1], aReg[2]}
+            EndIf
+            Return aRet
+        EndIf
+        If Empty(SZ1->Z1_ENVDT)
             Return aRet
         EndIf
         // "x" = nao esta em N (nada a invalidar); trava ocupada = erro (o link NAO foi invalidado).
@@ -648,7 +688,7 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
         jOs["analista"]  := AllTrim(Posicione("AA1", 1, xFilial("AA1") + SZ1->Z1_TEC, "AA1_NOMTEC"))
         jOs["projeto"]   := If(Empty(SZ1->Z1_PROJET), "", AllTrim(SZ1->Z1_PROJET) + " - " + AllTrim(Posicione("AF8", 1, xFilial("AF8") + SZ1->Z1_PROJET, "AF8_DESCRI")))
         jOs["tarefa"]    := apia.cnsa002.U_OS_APRPUB("TAREFA", SZ1->Z1_OS)
-        jOs["chamadoCliente"] := AllTrim(SZ1->Z1_CHCLI)
+        jOs["chamadoCliente"] := AllTrim(SZ1->Z1_CHPSD)
         jOs["chamados"]  := apia.cnsa002.U_OS_APRPUB("CHAMADOS", SZ1->Z1_OS)
         jOs["descricao"] := apia.cnsa002.U_OS_APRPUB("DESCRICAO", SZ1->Z1_OS)
         // Interacoes desta OS (mais antiga primeiro).
@@ -852,7 +892,7 @@ Campo que o cliente ve (e-mail e tela de aprovacao) e que o model mudou em relac
 /*/
 Static Function AP_MUDOU(oSZ1)
     Local aCampos := {"Z1_SERV", "Z1_DTOS", "Z1_HRINI", "Z1_HRFIM", "Z1_HRTOT", "Z1_TOTAL", "Z1_TRANS", "Z1_ALMOCO", ;
-                      "Z1_CLI", "Z1_LOJA", "Z1_IDCH", "Z1_CHCLI", "Z1_TEC"}
+                      "Z1_CLI", "Z1_LOJA", "Z1_IDCH", "Z1_CHPSD", "Z1_TEC"}
     Local xNovo   := Nil
     Local xAntes  := Nil
     Local nI      := 0
