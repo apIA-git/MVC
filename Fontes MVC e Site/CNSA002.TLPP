@@ -203,7 +203,8 @@ Static Function OS_VALIDACAMPO(p_oField, p_sAcao, p_sCampo, p_vValor)
 Return l_bOk
 
 /*/{Protheus.doc} OS_PREVALIDA
-Inclusao: confere os obrigatorios. Alterar: OS sem chamado nao ganha chamado (SetErrorMessage).
+Inclusao: confere os obrigatorios. Alterar: OS sem chamado nao ganha chamado. Chamado TOTVS exige
+Chamado Cliente ou Chamado Apia (incluir e alterar).
 @param  p_oModel   Objeto do Model (FormModel) sendo validado
 @return lOk        .T. se valido
 /*/
@@ -216,6 +217,13 @@ Static Function OS_PREVALIDA(p_oModel)
     // Alterar: OS sem chamado nao passa a ter chamado (SZ1 ainda tem o valor gravado).
     If p_oModel:GetOperation() == 4 .And. Empty(SZ1->Z1_IDCH) .And. !Empty(oModelSZ1:GetValue("Z1_IDCH"))
         p_oModel:SetErrorMessage("SZ1MASTER", "Z1_IDCH", "SZ1", "Z1_IDCH", "CNSA002", "OS sem chamado nao pode passar a ter chamado.")
+        Return .F.
+    EndIf
+    // Chamado TOTVS so com Chamado Cliente ou Chamado Apia (gravacao da aprovacao nao barra).
+    If (p_oModel:GetOperation() == 3 .Or. p_oModel:GetOperation() == 4) .And. ;
+            !(Type("__lA02Interno") == "L" .And. __lA02Interno) .And. !Empty(oModelSZ1:GetValue("Z1_CHTOTVS")) .And. ;
+            Empty(oModelSZ1:GetValue("Z1_IDCH")) .And. Empty(oModelSZ1:GetValue("Z1_CHPSD"))
+        p_oModel:SetErrorMessage("SZ1MASTER", "Z1_CHTOTVS", "SZ1", "Z1_CHTOTVS", "CNSA002", "Chamado TOTVS exige Chamado Cliente ou Chamado Apia.")
         Return .F.
     EndIf
     If p_oModel:GetOperation() != 3
@@ -348,6 +356,7 @@ Static Function OS_NUCLEOCOPIAR(cOsOrigem)
     Local oErroExcpt := Nil
     Local bErro      := Nil
     Local jFase      := JsonObject():New()
+    Local cIdCh      := ""
 
     If Empty(cOsOrigem)
         Return {.F., "Informe o numero da OS a copiar.", ""}
@@ -358,6 +367,7 @@ Static Function OS_NUCLEOCOPIAR(cOsOrigem)
     If !SZ1->(DbSeek(cFilAnt + PadR(cOsOrigem, TamSX3("Z1_OS")[1])))
         Return {.F., "OS nao encontrada.", ""}
     EndIf
+    cIdCh := AllTrim(SZ1->Z1_IDCH)
 
     For nI := 1 To SZ1->(FCount())
         If AScan(aFixos, SZ1->(FieldName(nI))) == 0
@@ -387,8 +397,8 @@ Static Function OS_NUCLEOCOPIAR(cOsOrigem)
         oModelSZ1:SetValue("Z1_APVDOR",  "")
         oModelSZ1:SetValue("Z1_APVMAIL", "")
         oModelSZ1:SetValue("Z1_APVIP",   "")
-        // Copia nasce sem chamados (ZA3 nao e copiada).
-        oModelSZ1:LoadValue("Z1_IDCH",   "")
+        // Copia leva os 3 chamados (Apia, Cliente e TOTVS); na ZA3 so o chamado atual.
+        oModelSZ1:LoadValue("Z1_IDCH",   cIdCh)
         oModelSZ1:SetValue("Z1_APVDATA", CtoD(""))
         oModelSZ1:SetValue("Z1_APVHORA", "")
 
@@ -405,6 +415,12 @@ Static Function OS_NUCLEOCOPIAR(cOsOrigem)
         EndIf
 
         oModel:DeActivate(lOk)
+
+        // Como o OS_NUCLEOINCLUIR: chamado na ZA3 da OS nova.
+        If lOk .And. !Empty(cIdCh)
+            OS_ZA3("GRAVAR", cOsNova, {cIdCh})
+            OS_ZA3("DESCRICAO", cOsNova)
+        EndIf
 
     Recover Using oErroExcpt
         lOk   := .F.
@@ -607,7 +623,7 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
         // Opcionais: so se vierem preenchidos.
         OS_SETOPC(oModelSZ1, jQuery, {{"local", "Z1_LOCAL"}, {"horasTranDec", "Z1_TRANS", .T.}, {"prevPmt", "Z1_PREVIST"}, ;
             {"numProposta", "Z1_NUMPRO"}, {"pedVenda", "Z1_PV"}, {"hrAlmoco", "Z1_ALMOCO", .T.}, {"projeto", "Z1_PROJET"}, ;
-            {"revisao", "Z1_REVISA"}, {"tarefa", "Z1_TAREFA"}, {"chamadoHpsd", "Z1_CHPSD"}})
+            {"revisao", "Z1_REVISA"}, {"tarefa", "Z1_TAREFA"}, {"chamadoHpsd", "Z1_CHPSD"}, {"chamadoTotvs", "Z1_CHTOTVS"}})
         // Z1_IDCH = o chamado da OS; a ZA3 guarda os chamados por onde ela passou.
         If Len(aParCh[2]) > 0
             oModelSZ1:LoadValue("Z1_IDCH", aParCh[2][1])
@@ -758,7 +774,14 @@ Static Function OS_NUCLEOALTERAR(jQuery)
         OS_SETOPC(oModelSZ1, jQuery, {{"horasTranDec", "Z1_TRANS", .T.}, {"horasTiDec", "Z1_TOTAL", .T.}, ;
             {"codAnalista", "Z1_TEC"}, {"osInterna", "Z1_INTERNO"}, {"local", "Z1_LOCAL"}, {"prevPmt", "Z1_PREVIST"}, ;
             {"numProposta", "Z1_NUMPRO"}, {"pedVenda", "Z1_PV"}, {"hrAlmoco", "Z1_ALMOCO", .T.}, {"projeto", "Z1_PROJET"}, ;
-            {"revisao", "Z1_REVISA"}, {"tarefa", "Z1_TAREFA"}, {"chamadoHpsd", "Z1_CHPSD"}})
+            {"revisao", "Z1_REVISA"}, {"tarefa", "Z1_TAREFA"}})
+        // Chamado Cliente/TOTVS: chave presente (mesmo vazia) grava - permite limpar.
+        If jQuery["chamadoHpsd"] != Nil
+            oModelSZ1:SetValue("Z1_CHPSD", AllTrim(OS_LERJSONTXT(jQuery, "chamadoHpsd")))
+        EndIf
+        If jQuery["chamadoTotvs"] != Nil
+            oModelSZ1:SetValue("Z1_CHTOTVS", AllTrim(OS_LERJSONTXT(jQuery, "chamadoTotvs")))
+        EndIf
         // Z1_IDCH = o chamado atual (trocar tira o anterior); a ZA3 guarda os chamados por onde ela passou.
         If aParCh[1]
             oModelSZ1:LoadValue("Z1_IDCH", If(Len(aParCh[2]) > 0, aParCh[2][1], ""))
@@ -927,6 +950,9 @@ Static Function OS_ERROMODEL(oModel, cPadrao)
             Return xErro
         Case ValType(xErro) == "O"
             Return xErro:GetMessage()
+        // Array do MVC: [6] = mensagem do SetErrorMessage.
+        Case ValType(xErro) == "A" .And. Len(xErro) >= 6 .And. !Empty(xErro[6])
+            Return AllTrim(cValToChar(xErro[6]))
         Case ValType(xErro) == "A"
             Return FwJsonSerialize(xErro)
     EndCase
@@ -1257,7 +1283,7 @@ User Function OS_APILISTAR() As Logical
         nMinRow   := (nPagina - 1) * nTamanho
         nMaxRow   := nMinRow + nTamanho
 
-        // Busca livre (numero, cliente ou tecnico) e Busca avancada ficam no SQL: a lista e paginada.
+        // Busca livre (numero, cliente, tecnico, Chamado Cliente ou TOTVS) e Busca avancada ficam no SQL: a lista e paginada.
         cTextoUp := Upper(AllTrim(OS_LERJSONTXT(jQuery, "texto")))
 
         cFTec     := AllTrim(OS_LERJSONTXT(jQuery, "tecnico"))
@@ -1281,7 +1307,7 @@ User Function OS_APILISTAR() As Logical
                     SELECT Z1_OS, Z1_DTDIGIT, Z1_CLI, Z1_LOJA, Z1_USR, Z1_MODULO, Z1_MOTIV, Z1_TIPO, ;
                         Z1_DTOS, Z1_INTERNO, Z1_LOCAL, Z1_HRINI, Z1_INI, Z1_HRFIM, Z1_FIM, Z1_TRANS, Z1_PREVIST, ;
                         Z1_HRTOT, Z1_TOTAL, Z1_TEC, Z1_NUMPRO, Z1_PV, Z1_ALMOCO, Z1_PROJET, Z1_REVISA, ;
-                        Z1_TAREFA, Z1_CHPSD, Z1_CHHDK, Z1_IDCH, Z1_OSDESE, Z1_OSENVCL, Z1_LIN, Z1_VLRHR, Z1_APROVAD, Z1_FATURAR, ;
+                        Z1_TAREFA, Z1_CHPSD, Z1_CHTOTVS, Z1_CHHDK, Z1_IDCH, Z1_OSDESE, Z1_OSENVCL, Z1_LIN, Z1_VLRHR, Z1_APROVAD, Z1_FATURAR, ;
                         Z1_APVTIPO, Z1_APVDATA, Z1_ENVDT, ;
                         COUNT(*) OVER() AS SZ1_TOTAL
                     FROM %Table:SZ1% SZ1
@@ -1295,6 +1321,8 @@ User Function OS_APILISTAR() As Logical
                       AND (
                             %Exp:cTextoUp% = ''
                             OR UPPER(Z1_OS) LIKE '%'||%Exp:cTextoUp%||'%'
+                            OR UPPER(Z1_CHPSD) LIKE '%'||%Exp:cTextoUp%||'%'
+                            OR UPPER(Z1_CHTOTVS) LIKE '%'||%Exp:cTextoUp%||'%'
                             OR EXISTS (
                                 SELECT 1 FROM %Table:SA1% SA1
                                 WHERE SA1.A1_FILIAL = %xFilial:SA1% AND SA1.A1_COD = Z1_CLI AND SA1.A1_LOJA = Z1_LOJA
@@ -1361,6 +1389,7 @@ User Function OS_APILISTAR() As Logical
             oLinha['tarefa']         := AllTrim((cAlias)->Z1_TAREFA)
             oLinha['nomeTarefa']     := OS_NOMETAREFA(cProjAtual, AllTrim((cAlias)->Z1_TAREFA), AllTrim((cAlias)->Z1_REVISA))
             oLinha['chamadoHpsd']    := AllTrim((cAlias)->Z1_CHPSD)
+            oLinha['chamadoTotvs']   := AllTrim((cAlias)->Z1_CHTOTVS)
             oLinha['chamado']        := AllTrim((cAlias)->Z1_IDCH)
             oLinha['chamados']       := OS_ZA3("LER", cOsAtual, (cAlias)->Z1_IDCH)
             oLinha['qtdChamados']    := Len(oLinha['chamados'])
@@ -1700,6 +1729,8 @@ User Function OS_APILISTAINTERACOES() As Logical
     Local cData   := ""
     Local aCh     := {}
     Local cChCli  := ""
+    Local aDesc   := {}
+    Local lZA2Os  := .F.
     Local bErro   := Nil
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
@@ -1743,7 +1774,8 @@ User Function OS_APILISTAINTERACOES() As Logical
                 oLinha['chamadoCliente'] := cChCli
                 oLinha['idCh']      := ""
                 oLinha['descricao'] := .T.
-                AAdd(aOrdem, {cData, oLinha})
+                // So entra se a OS nao tiver interacao propria na ZA2 (a 1a vira a descricao).
+                aDesc := {cData, oLinha}
             EndIf
         Else
             // Com chamado: blocos do Memo ainda nao migrados pra ZA2.
@@ -1777,7 +1809,8 @@ User Function OS_APILISTAINTERACOES() As Logical
             cData := OS_DATAISO((cAlias)->ZA2_DATA)
 
             oLinha := JsonObject():New()
-            oLinha['seq']       := AllTrim((cAlias)->ZA2_IDCH) + "-" + AllTrim((cAlias)->ZA2_IDGRID)
+            // Interacao da OS sem chamado (ZA2_IDCH vazio): seq = so a ZA2_IDGRID.
+            oLinha['seq']       := If(Empty(AllTrim((cAlias)->ZA2_IDCH)), "", AllTrim((cAlias)->ZA2_IDCH) + "-") + AllTrim((cAlias)->ZA2_IDGRID)
             oLinha['consultor'] := OS_NOMETEC(AllTrim((cAlias)->ZA2_CONSUL))
             oLinha['data']      := cData
             oLinha['hora']      := AllTrim((cAlias)->ZA2_HORA)
@@ -1785,12 +1818,20 @@ User Function OS_APILISTAINTERACOES() As Logical
             oLinha['os']        := cOs
             oLinha['chamadoCliente'] := cChCli
             oLinha['idCh']      := AllTrim((cAlias)->ZA2_IDCH)
-            oLinha['assunto']   := U_CNSOUTL("UTF8", AllTrim(Posicione("ZA1", 1, xFilial("ZA1") + AllTrim((cAlias)->ZA2_IDCH), "ZA1_ASSUNT")))
+            // Chave vazia no Posicione traria o assunto do 1o chamado.
+            oLinha['assunto']   := If(Empty(AllTrim((cAlias)->ZA2_IDCH)), "", ;
+                U_CNSOUTL("UTF8", AllTrim(Posicione("ZA1", 1, xFilial("ZA1") + AllTrim((cAlias)->ZA2_IDCH), "ZA1_ASSUNT"))))
             AAdd(aOrdem, {cData + AllTrim((cAlias)->ZA2_HORA), oLinha})
+            If Empty(AllTrim((cAlias)->ZA2_IDCH))
+                lZA2Os := .T.
+            EndIf
 
             (cAlias)->(DbSkip())
         EndDo
         (cAlias)->(DbCloseArea())
+        If !Empty(aDesc) .And. !lZA2Os
+            AAdd(aOrdem, aDesc)
+        EndIf
 
         ASort(aOrdem, , , {|x, y| x[1] > y[1]})
         For nI := 1 To Len(aOrdem)
@@ -1799,6 +1840,8 @@ User Function OS_APILISTAINTERACOES() As Logical
 
         oJson['os']    := cOs
         oJson['items'] := aItens
+        // So no portal interno (nao vai pro e-mail nem pra pagina do cliente).
+        oJson['chamadoTotvs'] := AllTrim(SZ1->Z1_CHTOTVS)
 
         aCh := OS_ZA3("LER", cOs, SZ1->Z1_IDCH)
         ZA1->(DbSetOrder(1))
@@ -1825,8 +1868,8 @@ User Function OS_APILISTAINTERACOES() As Logical
 Return OS_ERRO(500, "Erro desconhecido.")
 
 /*/{Protheus.doc} OS_APINOVAINTERACAO
-POST /CNSAOSINTERACOESINCLUIR - OS sem chamado: o texto substitui a descricao (Z1_SERV), gravada pelo model
-(regra da aprovacao do CNS002APR: OS aprovada/recusada so o admin altera, e reabre).
+POST /CNSAOSINTERACOESINCLUIR - OS sem chamado: interacao nova na ZA2 (ZA2_IDCH vazio, ZA2_OS = a OS).
+A 1a interacao vira a descricao (Z1_SERV vazio). OS aprovada/recusada: so o admin interage, e ela reabre.
 @return Logical - resposta HTTP com o resultado da inclusao
 /*/
 @Post(endpoint="/CNSAOSINTERACOESINCLUIR")
@@ -1836,13 +1879,13 @@ User Function OS_APINOVAINTERACAO() As Logical
     Local cTexto     := U_CNSOUTL("TEXTOPURO", OS_LERJSONTXT(jQuery,"texto"))
     Local oJson      := JsonObject():New()
     Local oErro      := Nil
-    Local lMudou     := .F.
     Local jMot       := JsonObject():New()
+    Local aInv       := {}
+    Local cAlias     := ""
+    Local cSeq       := ""
+    Local lTrava     := .F.
+    Local nI         := 0
     Local bErro      := Nil
-    Local oModel     := Nil
-    Local lOk        := .F.
-    Local cErro      := ""
-    Local jFase      := JsonObject():New()
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -1876,49 +1919,177 @@ User Function OS_APINOVAINTERACAO() As Logical
             Return OS_ERRO(400, "OS vinculada ao chamado " + AllTrim(SZ1->Z1_IDCH) + " - a interacao deve ser gravada no chamado.")
         EndIf
 
-        // Pelo model (como o Alterar): o evento CNS002APR aplica a regra da aprovacao - OS aprovada/recusada
-        // so o admin altera, e a alteracao reabre (volta a aguardar, com linha na SZA). Os blocos
-        // "=== INTERACAO" de OS antiga ficam no fim do Memo.
-        lMudou := AllTrim(OS_SEPARAINTERACOES(SZ1->Z1_SERV)[1]) != AllTrim(cTexto)
-        oModel := OS_MODELLEVE(MODEL_OPERATION_UPDATE)
-        oModel:GetModel("SZ1MASTER"):SetValue("Z1_SERV", cTexto + OS_BLOCOSINTERACAO(SZ1->Z1_SERV))
-        If oModel:VldData()
-            lOk := oModel:CommitData()
-        EndIf
-        If !lOk
-            cErro := OS_ERROMODEL(oModel, "Falha ao gravar a interacao.")
-            // Commit nao gravou (o AfterTTS nao roda): solta a trava da aprovacao e descarta o aviso.
-            jFase["fase"]   := "DEP"
-            jFase["falhou"] := "S"
-            apia.cnsa004.U_CNSAPR("OS", oModel, "", jFase)
-        EndIf
-        oModel:DeActivate(lOk)
-        oModel := Nil
-        If !lOk
+        // OS aprovada/recusada: so o admin interage (reabre no INV depois de gravar).
+        jMot["etapa"] := "CHECAR"
+        aInv := apia.cnsa004.U_CNSAPR("INV", cOs, "", jMot)
+        If !aInv[1]
             ErrorBlock(bErro)
-            Return OS_ERRO(400, cErro)
-        EndIf
-        // OS enviada e sem resposta: descricao nova mata o link (o cliente recebe outro).
-        If lMudou
-            jMot["motivo"] := "descricao alterada"
-            apia.cnsa004.U_CNSAPR("INV", cOs, "", jMot)
+            Return OS_ERRO(403, aInv[2])
         EndIf
 
-        oJson['sucesso']   := .T.
-        oJson['os']        := cOs
-        oJson['descricao'] := cTexto
-        oJson['mensagem'] := "Interacao adicionada com sucesso."
+        // ZA2_IDGRID unica entre as interacoes sem chamado (chave FILIAL+IDCH+IDGRID): MAX+1 sob trava (ate ~5 s).
+        For nI := 1 To 25
+            If LockByName("CNSAZA2_OS", .T., .F.)
+                lTrava := .T.
+                Exit
+            EndIf
+            Sleep(200)
+        Next nI
+        If !lTrava
+            ErrorBlock(bErro)
+            Return OS_ERRO(400, "Interacao em uso por outro usuario. Tente novamente.")
+        EndIf
+
+        cAlias := GetNextAlias()
+        BeginSql Alias cAlias
+            SELECT MAX(ZA2_IDGRID) MAXGRID
+            FROM %Table:ZA2% ZA2
+            WHERE ZA2_FILIAL = %xFilial:ZA2%
+              AND TRIM(ZA2_IDCH) IS NULL
+              AND %NotDel%
+        EndSql
+        cSeq := AllTrim((cAlias)->MAXGRID)
+        (cAlias)->(DbCloseArea())
+        // Soma1: 999 -> A00.
+        cSeq := If(Empty(cSeq), StrZero(1, 3), Soma1(PadL(cSeq, 3, "0")))
+
+        DbSelectArea("ZA2")
+        RecLock("ZA2", .T.)
+            ZA2->ZA2_FILIAL := xFilial("ZA2")
+            ZA2->ZA2_IDCH   := ""
+            ZA2->ZA2_IDGRID := cSeq
+            ZA2->ZA2_OS     := cOs
+            ZA2->ZA2_CONSUL := Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC")
+            ZA2->ZA2_DATA   := Date()
+            ZA2->ZA2_HORA   := Left(Time(), 5)
+            ZA2->ZA2_DESCRI := cTexto
+        ZA2->(MsUnlock())
+        UnLockByName("CNSAZA2_OS", .T., .F.)
+        lTrava := .F.
+
+        // Descricao vazia: a 1a interacao vira a descricao (blocos "=== INTERACAO" antigos ficam).
+        If Empty(OS_SEPARAINTERACOES(SZ1->Z1_SERV)[1]) .And. RecLock("SZ1", .F.)
+            SZ1->Z1_SERV := cTexto + OS_BLOCOSINTERACAO(SZ1->Z1_SERV)
+            SZ1->(MsUnlock())
+        EndIf
+
+        // OS enviada e sem resposta perde o link; aprovada/recusada (admin) reabre.
+        jMot := JsonObject():New()
+        jMot["motivo"] := "interacao nova"
+        aInv := apia.cnsa004.U_CNSAPR("INV", cOs, "", jMot)
+
+        oJson['sucesso']  := .T.
+        oJson['os']       := cOs
+        oJson['seq']      := cSeq
+        oJson['mensagem'] := If(aInv[1], "Interacao adicionada com sucesso.", "Interacao adicionada, mas a aprovacao nao foi atualizada: " + aInv[2])
 
         ErrorBlock(bErro)
         Return oRest:setStatusResponse(200, oJson:ToJson())
 
     Recover Using oErro
         ErrorBlock(bErro)
-        If oModel <> Nil
-            jFase["fase"]   := "DEP"
-            jFase["falhou"] := "S"
-            apia.cnsa004.U_CNSAPR("OS", oModel, "", jFase)
+        If lTrava
+            UnLockByName("CNSAZA2_OS", .T., .F.)
         EndIf
+        Return OS_ERRO(500, oErro:Description)
+    End Sequence
+    ErrorBlock(bErro)
+
+Return OS_ERRO(500, "Erro desconhecido.")
+
+/*/{Protheus.doc} OS_APIEXCLUIRINTERACAO
+POST /CNSAOSINTERACOESEXCLUIR - exclui interacao da OS sem chamado (ZA2_IDCH vazio): so o autor ou o admin
+(mesma regra do CH_NUCLEOEXCLUIRINTERACAO). OS aprovada/recusada: so o admin, e ela reabre.
+@return Logical - resposta HTTP com o resultado da exclusao
+/*/
+@Post(endpoint="/CNSAOSINTERACOESEXCLUIR")
+User Function OS_APIEXCLUIRINTERACAO() As Logical
+    Local jQuery     := OS_PARAMS() As Json
+    Local cOs        := AllTrim(OS_LERJSONTXT(jQuery,"os"))
+    Local cSeq       := AllTrim(OS_LERJSONTXT(jQuery,"seq"))
+    Local oJson      := JsonObject():New()
+    Local oErro      := Nil
+    Local jMot       := JsonObject():New()
+    Local aInv       := {}
+    Local cAlias     := ""
+    Local nRecno     := 0
+    Local cAutor     := ""
+    Local bErro      := Nil
+
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
+
+    // Usuario de servico (pagina do cliente) so acessa /CNSAAPROVA.
+    If U_CNSSERVICO()
+        Return OS_ERRO(403, "Usuario sem acesso a este recurso.")
+    EndIf
+
+    // Sem o ErrorBlock o erro nao cai no Recover. Restaurado em toda saida.
+    bErro := ErrorBlock({|e| Break(e)})
+    Begin Sequence
+
+        If Empty(cOs) .Or. Empty(cSeq)
+            ErrorBlock(bErro)
+            Return OS_ERRO(400, "Informe a OS e a sequencia da interacao.")
+        EndIf
+
+        cAlias := GetNextAlias()
+        BeginSql Alias cAlias
+            SELECT ZA2.R_E_C_N_O_ RECNO, ZA2_CONSUL
+            FROM %Table:ZA2% ZA2
+            WHERE ZA2_FILIAL = %xFilial:ZA2%
+              AND ZA2_OS     = %Exp:cOs%
+              AND TRIM(ZA2_IDCH) IS NULL
+              AND ZA2_IDGRID = %Exp:cSeq%
+              AND %NotDel%
+        EndSql
+        If !(cAlias)->(Eof())
+            nRecno := (cAlias)->RECNO
+            cAutor := AllTrim((cAlias)->ZA2_CONSUL)
+        EndIf
+        (cAlias)->(DbCloseArea())
+
+        If nRecno == 0
+            ErrorBlock(bErro)
+            Return OS_ERRO(404, "Interacao nao encontrada.")
+        EndIf
+        // Autor ou admin (AA1_RSPMNT = 1).
+        If cAutor <> AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC")) .And. ;
+                AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_RSPMNT")) != "1"
+            ErrorBlock(bErro)
+            Return OS_ERRO(403, "Voce nao tem permissao para excluir esta interacao.")
+        EndIf
+
+        // OS aprovada/recusada: so o admin exclui (reabre no INV depois).
+        jMot["etapa"] := "CHECAR"
+        aInv := apia.cnsa004.U_CNSAPR("INV", cOs, "", jMot)
+        If !aInv[1]
+            ErrorBlock(bErro)
+            Return OS_ERRO(403, aInv[2])
+        EndIf
+
+        DbSelectArea("ZA2")
+        ZA2->(DbGoTo(nRecno))
+        If !RecLock("ZA2", .F.)
+            ErrorBlock(bErro)
+            Return OS_ERRO(409, "Interacao em uso por outro usuario. Tente novamente.")
+        EndIf
+        ZA2->(DbDelete())
+        ZA2->(MsUnlock())
+
+        // OS enviada e sem resposta perde o link; aprovada/recusada (admin) reabre.
+        jMot := JsonObject():New()
+        jMot["motivo"] := "interacao excluida"
+        apia.cnsa004.U_CNSAPR("INV", cOs, "", jMot)
+
+        oJson['sucesso']  := .T.
+        oJson['os']       := cOs
+        oJson['mensagem'] := "Interacao excluida com sucesso."
+
+        ErrorBlock(bErro)
+        Return oRest:setStatusResponse(200, oJson:ToJson())
+
+    Recover Using oErro
+        ErrorBlock(bErro)
         Return OS_ERRO(500, oErro:Description)
     End Sequence
     ErrorBlock(bErro)
@@ -2110,7 +2281,7 @@ Static Function OS_EMAIL(cAcao, x1)
                 cTexto += If(nI > 1, "<br>", "") + "#" + aCh[nI] + " - " + ;
                     U_CNSOUTL("TEXTO", Posicione("ZA1", 1, xFilial("ZA1") + aCh[nI], "ZA1_ASSUNT"))
             Next nI
-            AAdd(xRet, {"Chamados", cTexto})
+            AAdd(xRet, {"Chamados &Aacute;pia", cTexto})
         EndIf
 
     Case cAcao == "HORARIO"
