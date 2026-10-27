@@ -203,7 +203,7 @@ Static Function OS_VALIDACAMPO(p_oField, p_sAcao, p_sCampo, p_vValor)
 Return l_bOk
 
 /*/{Protheus.doc} OS_PREVALIDA
-Inclusao: confere os obrigatorios. Alterar: OS sem chamado nao ganha chamado. Chamado TOTVS exige
+Inclusao: confere os obrigatorios. Chamado TOTVS exige
 Chamado Cliente ou Chamado Apia (incluir e alterar).
 @param  p_oModel   Objeto do Model (FormModel) sendo validado
 @return lOk        .T. se valido
@@ -214,11 +214,6 @@ Static Function OS_PREVALIDA(p_oModel)
                         {"Z1_TIPO", "Informe o codigo do servico."}, {"Z1_DTOS", "Informe a data da OS."}}
     Local nI        := 0
 
-    // Alterar: OS sem chamado nao passa a ter chamado (SZ1 ainda tem o valor gravado).
-    If p_oModel:GetOperation() == 4 .And. Empty(SZ1->Z1_IDCH) .And. !Empty(oModelSZ1:GetValue("Z1_IDCH"))
-        p_oModel:SetErrorMessage("SZ1MASTER", "Z1_IDCH", "SZ1", "Z1_IDCH", "CNSA002", "OS sem chamado nao pode passar a ter chamado.")
-        Return .F.
-    EndIf
     // Chamado TOTVS so com Chamado Cliente ou Chamado Apia (gravacao da aprovacao nao barra).
     If (p_oModel:GetOperation() == 3 .Or. p_oModel:GetOperation() == 4) .And. ;
             !(Type("__lA02Interno") == "L" .And. __lA02Interno) .And. !Empty(oModelSZ1:GetValue("Z1_CHTOTVS")) .And. ;
@@ -1640,7 +1635,7 @@ Return Chr(13) + Chr(10) + Chr(13) + Chr(10) + SubStr(cMemo, nPos)
 
 /*/{Protheus.doc} OS_MIGRARINTERACOES
 OS legada (de antes do chamado na OS) com blocos de interacao no Memo e chamado: os blocos vao para
-a ZA2 do chamado e o Memo fica so com a descricao. OS sem chamado nao ganha chamado (OS_PREVALIDA).
+a ZA2 do chamado e o Memo fica so com a descricao.
 @param  cOs   Numero da OS (Z1_OS)
 /*/
 Static Function OS_MIGRARINTERACOES(cOs)
