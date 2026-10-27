@@ -648,7 +648,7 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
         jOs["analista"]  := AllTrim(Posicione("AA1", 1, xFilial("AA1") + SZ1->Z1_TEC, "AA1_NOMTEC"))
         jOs["projeto"]   := If(Empty(SZ1->Z1_PROJET), "", AllTrim(SZ1->Z1_PROJET) + " - " + AllTrim(Posicione("AF8", 1, xFilial("AF8") + SZ1->Z1_PROJET, "AF8_DESCRI")))
         jOs["tarefa"]    := apia.cnsa002.U_OS_APRPUB("TAREFA", SZ1->Z1_OS)
-        jOs["chamadoCliente"] := AllTrim(SZ1->Z1_CHCLI)
+        jOs["chamadoCliente"] := AllTrim(SZ1->Z1_CHPSD)
         jOs["chamados"]  := apia.cnsa002.U_OS_APRPUB("CHAMADOS", SZ1->Z1_OS)
         jOs["descricao"] := apia.cnsa002.U_OS_APRPUB("DESCRICAO", SZ1->Z1_OS)
         // Interacoes desta OS (mais antiga primeiro).
@@ -852,7 +852,7 @@ Campo que o cliente ve (e-mail e tela de aprovacao) e que o model mudou em relac
 /*/
 Static Function AP_MUDOU(oSZ1)
     Local aCampos := {"Z1_SERV", "Z1_DTOS", "Z1_HRINI", "Z1_HRFIM", "Z1_HRTOT", "Z1_TOTAL", "Z1_TRANS", "Z1_ALMOCO", ;
-                      "Z1_CLI", "Z1_LOJA", "Z1_IDCH", "Z1_CHCLI", "Z1_TEC"}
+                      "Z1_CLI", "Z1_LOJA", "Z1_IDCH", "Z1_CHPSD", "Z1_TEC"}
     Local xNovo   := Nil
     Local xAntes  := Nil
     Local nI      := 0
