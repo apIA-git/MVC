@@ -285,10 +285,10 @@ Return aRet
 // tarefas do projeto independente da versao.
 //
 // tipoGrupo (campo "Tipo Grupo" do portal, so exibicao): produto da tarefa
-// (AF9_PRODFA) -> grupo do produto (B1_GRUPO) -> tipo do grupo (BM_TIPGRUP)
+// (AF9_PRODFA) -> grupo do produto (B1_GRUPO) -> tipo do grupo (BM_TIPGRU)
 // -> descricao na SX5 tabela V0. LEFT JOIN: tarefa sem produto/grupo/tipo
 // continua na lupa, so com o tipoGrupo vazio. TRIM no X5_CHAVE: a chave da
-// SX5 tem tamanho maior que o BM_TIPGRUP (completada com espacos).
+// SX5 tem tamanho maior que o BM_TIPGRU (completada com espacos).
 ////////////////////////////////////////////////////////////////////////////////
 Static Function CNS001_TARLUPA(cFiltro, cProjeto)
     Local aRet    := {}
@@ -313,7 +313,7 @@ Static Function CNS001_TARLUPA(cFiltro, cProjeto)
         LEFT JOIN %Table:SX5% SX5
             ON X5_FILIAL = %xFilial:SX5%
             AND X5_TABELA = 'V0'
-            AND TRIM(X5_CHAVE) = TRIM(BM_TIPGRUP)
+            AND TRIM(X5_CHAVE) = TRIM(BM_TIPGRU)
             AND SX5.%NotDel%
         WHERE AF9_FILIAL = %xFilial:AF9%
           AND AF9.%NotDel%
