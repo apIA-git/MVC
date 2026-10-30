@@ -283,6 +283,12 @@ Return aRet
 // (o projeto pode ter mais de uma revisao/versao, cada uma com seu proprio
 // conjunto de tarefas) - aqui NAO filtramos por revisao, trazemos todas as
 // tarefas do projeto independente da versao.
+//
+// tipoGrupo (campo "Tipo Grupo" do portal, so exibicao): produto da tarefa
+// (AF9_PRODFA) -> grupo do produto (B1_GRUPO) -> tipo do grupo (BM_TIPGRUP)
+// -> descricao na SX5 tabela V0. LEFT JOIN: tarefa sem produto/grupo/tipo
+// continua na lupa, so com o tipoGrupo vazio. TRIM no X5_CHAVE: a chave da
+// SX5 tem tamanho maior que o BM_TIPGRUP (completada com espacos).
 ////////////////////////////////////////////////////////////////////////////////
 Static Function CNS001_TARLUPA(cFiltro, cProjeto)
     Local aRet    := {}
@@ -294,10 +300,23 @@ Static Function CNS001_TARLUPA(cFiltro, cProjeto)
     Local cFiltroUp2 := cFiltroUp
 
     BeginSql Alias cAlias
-        SELECT AF9_TAREFA, AF9_DESCRI
+        SELECT AF9_TAREFA, AF9_DESCRI, X5_DESCRI
         FROM %Table:AF9% AF9
+        LEFT JOIN %Table:SB1% SB1
+            ON B1_FILIAL = %xFilial:SB1%
+            AND B1_COD = AF9_PRODFA
+            AND SB1.%NotDel%
+        LEFT JOIN %Table:SBM% SBM
+            ON BM_FILIAL = %xFilial:SBM%
+            AND BM_GRUPO = B1_GRUPO
+            AND SBM.%NotDel%
+        LEFT JOIN %Table:SX5% SX5
+            ON X5_FILIAL = %xFilial:SX5%
+            AND X5_TABELA = 'V0'
+            AND TRIM(X5_CHAVE) = TRIM(BM_TIPGRUP)
+            AND SX5.%NotDel%
         WHERE AF9_FILIAL = %xFilial:AF9%
-          AND %NotDel%
+          AND AF9.%NotDel%
           AND AF9_PROJET = %Exp:cProjeto%
           AND (UPPER(AF9_TAREFA) LIKE '%' || %Exp:cFiltroUp% || '%' OR UPPER(AF9_DESCRI) LIKE '%' || %Exp:cFiltroUp2% || '%')
         ORDER BY AF9_TAREFA
@@ -308,6 +327,7 @@ Static Function CNS001_TARLUPA(cFiltro, cProjeto)
         oLinha['codigo']      := CNS001_LUPA_COMPSTR((cAlias)->AF9_TAREFA)
         oLinha['complemento'] := ""
         oLinha['descricao']   := CNS001_LUPA_COMPSTR((cAlias)->AF9_DESCRI)
+        oLinha['tipoGrupo']   := CNS001_LUPA_COMPSTR((cAlias)->X5_DESCRI)
         AAdd(aRet, oLinha)
         (cAlias)->(DbSkip())
     EndDo
