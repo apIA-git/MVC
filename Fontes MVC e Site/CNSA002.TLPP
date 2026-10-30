@@ -392,7 +392,7 @@ Static Function OS_NUCLEOCOPIAR(cOsOrigem)
         oModelSZ1:SetValue("Z1_APVDOR",  "")
         oModelSZ1:SetValue("Z1_APVMAIL", "")
         oModelSZ1:SetValue("Z1_APVIP",   "")
-        // Copia leva os 3 chamados (Apia, Cliente e TOTVS); na ZA3 so o chamado atual.
+        // Copia leva os 3 chamados (Apia, Cliente e TOTVS).
         oModelSZ1:LoadValue("Z1_IDCH",   cIdCh)
         oModelSZ1:SetValue("Z1_APVDATA", CtoD(""))
         oModelSZ1:SetValue("Z1_APVHORA", "")
@@ -411,9 +411,8 @@ Static Function OS_NUCLEOCOPIAR(cOsOrigem)
 
         oModel:DeActivate(lOk)
 
-        // Como o OS_NUCLEOINCLUIR: chamado na ZA3 da OS nova.
+        // Como o OS_NUCLEOINCLUIR: descricao com o chamado da OS nova.
         If lOk .And. !Empty(cIdCh)
-            OS_ZA3("GRAVAR", cOsNova, {cIdCh})
             OS_ZA3("DESCRICAO", cOsNova)
         EndIf
 
@@ -485,9 +484,6 @@ User Function OS_TELA(nOper)
     Case lGravou .And. lGrava
         OS_ZA3("DESCRICAO", cOs)
         OS_EMAIL("TELA", cOs)
-    Case lGravou .And. nOper == MODEL_OPERATION_DELETE
-        // Mesmo do REST (OS_APIEXCLUIR): apaga a ZA3 da OS.
-        OS_ZA3("APAGAR", cOs)
     EndCase
 Return
 
@@ -619,7 +615,7 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
         OS_SETOPC(oModelSZ1, jQuery, {{"local", "Z1_LOCAL"}, {"horasTranDec", "Z1_TRANS", .T.}, {"prevPmt", "Z1_PREVIST"}, ;
             {"numProposta", "Z1_NUMPRO"}, {"pedVenda", "Z1_PV"}, {"hrAlmoco", "Z1_ALMOCO", .T.}, {"projeto", "Z1_PROJET"}, ;
             {"revisao", "Z1_REVISA"}, {"tarefa", "Z1_TAREFA"}, {"chamadoHpsd", "Z1_CHPSD"}, {"chamadoTotvs", "Z1_CHTOTVS"}})
-        // Z1_IDCH = o chamado da OS; a ZA3 guarda os chamados por onde ela passou.
+        // Z1_IDCH = o chamado da OS.
         If Len(aParCh[2]) > 0
             oModelSZ1:LoadValue("Z1_IDCH", aParCh[2][1])
         EndIf
@@ -644,7 +640,6 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
         oModel:DeActivate(lOk)
 
         If lOk
-            OS_ZA3("GRAVAR", cOs, aParCh[2])
             OS_ZA3("DESCRICAO", cOs)
         EndIf
 
@@ -709,7 +704,6 @@ Static Function OS_NUCLEOALTERAR(jQuery)
     Local aHrFim     := OS_LERHORA(jQuery, "horaFinal", "horaFinalDec")
     Local aParCh     := OS_ZA3("PARAM", jQuery)
     Local cMsgCh     := ""
-    Local cIdChAnt   := ""
     Local bErro      := Nil
     Local jFase      := JsonObject():New()
 
@@ -722,7 +716,6 @@ Static Function OS_NUCLEOALTERAR(jQuery)
     If !SZ1->(DbSeek(cFilAnt + PadR(cOs, TamSX3("Z1_OS")[1])))
         Return {.F., "OS nao encontrada.", cOs}
     EndIf
-    cIdChAnt := AllTrim(SZ1->Z1_IDCH)
 
     // Chamado (so se veio): um so, do mesmo cliente/loja.
     If aParCh[1]
@@ -777,7 +770,7 @@ Static Function OS_NUCLEOALTERAR(jQuery)
         If jQuery["chamadoTotvs"] != Nil
             oModelSZ1:SetValue("Z1_CHTOTVS", AllTrim(OS_LERJSONTXT(jQuery, "chamadoTotvs")))
         EndIf
-        // Z1_IDCH = o chamado atual (trocar tira o anterior); a ZA3 guarda os chamados por onde ela passou.
+        // Z1_IDCH = o chamado atual (trocar tira o anterior; as interacoes dele pela OS ficam na ZA2).
         If aParCh[1]
             oModelSZ1:LoadValue("Z1_IDCH", If(Len(aParCh[2]) > 0, aParCh[2][1], ""))
         EndIf
@@ -807,13 +800,6 @@ Static Function OS_NUCLEOALTERAR(jQuery)
 
         // OS legada com blocos de interacao no Memo e chamado: os blocos passam pra ZA2.
         If lOk
-            If aParCh[1]
-                // O chamado anterior fica na ZA3 (OS antiga podia ter so o Z1_IDCH).
-                If !Empty(cIdChAnt)
-                    OS_ZA3("GRAVAR", cOs, {cIdChAnt})
-                EndIf
-                OS_ZA3("GRAVAR", cOs, aParCh[2])
-            EndIf
             OS_MIGRARINTERACOES(cOs)
             OS_ZA3("DESCRICAO", cOs)
         EndIf
@@ -1423,7 +1409,7 @@ User Function OS_APILISTAR() As Logical
 Return OS_ERRO(500, "Erro desconhecido.")
 
 /*/{Protheus.doc} OS_APIEXCLUIR
-POST /CNSAOSEXCLUIR - exclui a OS e os chamados ligados (ZA3).
+POST /CNSAOSEXCLUIR - exclui a OS.
 @return lOk   JSON via oRest:setStatusResponse (200 se excluiu, 404 se a OS nao existir, 400/500 em erro)
 /*/
 @Post(endpoint="/CNSAOSEXCLUIR")
@@ -1475,10 +1461,6 @@ User Function OS_APIEXCLUIR() As Logical
         EndIf
 
         oModel:DeActivate(lOk)
-
-        If lOk
-            OS_ZA3("APAGAR", cOs)
-        EndIf
 
         If !lOk
             ErrorBlock(bErro)
@@ -2092,12 +2074,10 @@ User Function OS_APIEXCLUIRINTERACAO() As Logical
 Return OS_ERRO(500, "Erro desconhecido.")
 
 /*/{Protheus.doc} OS_ZA3
-Chamados da OS - um por vez (Z1_IDCH = o atual); a ZA3 guarda todos por onde a OS passou:
-  LER     (cOs, cIdChAtual)        atual + ZA3 -> array (todos os chamados da OS)
+Chamados da OS - um por vez (Z1_IDCH = o atual); os anteriores saem das interacoes da OS (ZA2_OS):
+  LER     (cOs, cIdChAtual)        atual + chamados das interacoes da OS -> array (todos os chamados da OS)
   PARAM   (jQuery)                 "chamados" (CSV) ou "chamado" -> {lVeio, aCodigos}
   VALIDAR (cOs, aCh, cCli, cLoja)  "" ou a mensagem (um chamado so, do mesmo cliente/loja)
-  GRAVAR  (cOs, aCh)               acrescenta na ZA3 (nao apaga: trocar de chamado mantem o historico)
-  APAGAR  (cOs)                    apaga a ZA3 da OS (exclusao da OS)
   DESCRICAO (cOs)                  OS com chamado e descricao vazia (ou a automatica): grava
                                    "Referente ao(s) chamado(s) #..." com todos os chamados da OS
 /*/
@@ -2120,16 +2100,17 @@ Static Function OS_ZA3(cAcao, x1, x2, x3, x4)
         EndIf
         cAlias := GetNextAlias()
         BeginSql Alias cAlias
-            SELECT ZA3_IDCH
-            FROM %Table:ZA3% ZA3
-            WHERE ZA3_FILIAL = %xFilial:ZA3%
-              AND ZA3_OS     = %Exp:cOs%
+            SELECT DISTINCT ZA2_IDCH
+            FROM %Table:ZA2% ZA2
+            WHERE ZA2_FILIAL = %xFilial:ZA2%
+              AND ZA2_OS     = %Exp:cOs%
+              AND ZA2_IDCH  <> ' '
               AND %NotDel%
-            ORDER BY ZA3_IDCH
+            ORDER BY ZA2_IDCH
         EndSql
         While !(cAlias)->(Eof())
-            If AScan(aCh, AllTrim((cAlias)->ZA3_IDCH)) == 0
-                AAdd(aCh, AllTrim((cAlias)->ZA3_IDCH))
+            If AScan(aCh, AllTrim((cAlias)->ZA2_IDCH)) == 0
+                AAdd(aCh, AllTrim((cAlias)->ZA2_IDCH))
             EndIf
             (cAlias)->(DbSkip())
         EndDo
@@ -2162,19 +2143,6 @@ Static Function OS_ZA3(cAcao, x1, x2, x3, x4)
             EndIf
         Next nI
 
-    Case cAcao == "GRAVAR"
-        cOs := PadR(AllTrim(x1), TamSX3("ZA3_OS")[1])
-        aCh := OS_ZA3("LER", cOs, "")
-        For nI := 1 To Len(x2)
-            If AScan(aCh, AllTrim(x2[nI])) == 0
-                RecLock("ZA3", .T.)
-                    ZA3->ZA3_FILIAL := xFilial("ZA3")
-                    ZA3->ZA3_OS     := cOs
-                    ZA3->ZA3_IDCH   := x2[nI]
-                ZA3->(MsUnlock())
-            EndIf
-        Next nI
-
     Case cAcao == "DESCRICAO"
         cOs := PadR(AllTrim(x1), TamSX3("Z1_OS")[1])
         SZ1->(DbSetOrder(1))
@@ -2194,15 +2162,6 @@ Static Function OS_ZA3(cAcao, x1, x2, x3, x4)
                 SZ1->(MsUnlock())
             EndIf
         EndIf
-
-    Case cAcao == "APAGAR"
-        cOs := PadR(AllTrim(x1), TamSX3("ZA3_OS")[1])
-        ZA3->(DbSetOrder(1))
-        While ZA3->(DbSeek(xFilial("ZA3") + cOs))
-            RecLock("ZA3", .F.)
-                ZA3->(DbDelete())
-            ZA3->(MsUnlock())
-        EndDo
 
     EndCase
 
