@@ -572,6 +572,7 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
     Local aParCh     := OS_ZA3("PARAM", jQuery)
     Local cMsgCh     := OS_ZA3("VALIDAR", "", aParCh[2], cCli, If(Empty(cLoja), "01", cLoja))
     Local bErro      := Nil
+    Local cErroBlk   := ""
     Local jFase      := JsonObject():New()
 
     If !Empty(cMsgCh)
@@ -579,7 +580,8 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
     EndIf
 
     // Sem o ErrorBlock o erro nao cai no Recover.
-    bErro := ErrorBlock({|e| Break(e)})
+    // Guarda a descricao: erro dentro do framework (ex: inicializador do SX3) nao chega ao Recover.
+    bErro := ErrorBlock({|e| cErroBlk := cValToChar(e:Description) + " | " + OS_PILHA(cValToChar(e:ErrorStack)), ConOut("CNSA002 erro: " + cErroBlk), Break(e)})
     Begin Sequence
 
         oModel    := OS_MODELLEVE(MODEL_OPERATION_INSERT)
@@ -645,7 +647,7 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
 
     Recover Using oErroExcpt
         lOk   := .F.
-        cErro := "Erro interno: " + oErroExcpt:Description
+        cErro := "Erro interno: " + If(ValType(oErroExcpt) == "O", cValToChar(oErroExcpt:Description), cErroBlk)
         If oModel <> Nil
             // Erro no meio do commit nao passa pelo AfterTTS: solta a trava da aprovacao e descarta o aviso.
             jFase["fase"]   := "DEP"
@@ -655,6 +657,10 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
         EndIf
     End Sequence
     ErrorBlock(bErro)
+    // Nunca devolve erro vazio.
+    If !lOk .And. Empty(cErro)
+        cErro := "Falha ao incluir a OS" + If(Empty(cErroBlk), ".", ": " + cErroBlk)
+    EndIf
 
     // Solta a reserva do numero (OS_PROXIMONUM): gravada ou nao, nao precisa mais.
     If !Empty(cOs)
@@ -705,6 +711,7 @@ Static Function OS_NUCLEOALTERAR(jQuery)
     Local aParCh     := OS_ZA3("PARAM", jQuery)
     Local cMsgCh     := ""
     Local bErro      := Nil
+    Local cErroBlk   := ""
     Local jFase      := JsonObject():New()
 
     If Empty(cOs)
@@ -729,7 +736,8 @@ Static Function OS_NUCLEOALTERAR(jQuery)
     EndIf
 
     // Sem o ErrorBlock o erro nao cai no Recover.
-    bErro := ErrorBlock({|e| Break(e)})
+    // Guarda a descricao: erro dentro do framework (ex: inicializador do SX3) nao chega ao Recover.
+    bErro := ErrorBlock({|e| cErroBlk := cValToChar(e:Description) + " | " + OS_PILHA(cValToChar(e:ErrorStack)), ConOut("CNSA002 erro: " + cErroBlk), Break(e)})
     Begin Sequence
 
         oModel    := OS_MODELLEVE(MODEL_OPERATION_UPDATE)
@@ -806,7 +814,7 @@ Static Function OS_NUCLEOALTERAR(jQuery)
 
     Recover Using oErroExcpt
         lOk   := .F.
-        cErro := "Erro interno: " + oErroExcpt:Description
+        cErro := "Erro interno: " + If(ValType(oErroExcpt) == "O", cValToChar(oErroExcpt:Description), cErroBlk)
         If oModel <> Nil
             // Erro no meio do commit nao passa pelo AfterTTS: solta a trava da aprovacao e descarta o aviso.
             jFase["fase"]   := "DEP"
@@ -816,6 +824,10 @@ Static Function OS_NUCLEOALTERAR(jQuery)
         EndIf
     End Sequence
     ErrorBlock(bErro)
+    // Nunca devolve erro vazio.
+    If !lOk .And. Empty(cErro)
+        cErro := "Falha ao alterar a OS" + If(Empty(cErroBlk), ".", ": " + cErroBlk)
+    EndIf
 
 Return {lOk, cErro, cOs}
 
@@ -907,6 +919,20 @@ Static Function OS_HHMM(cHora)
 Return cRet
 
 // "HH:MM" no tamanho do campo (sem ":" se couber menos de 5) - senao FWNOWIDTH.
+// Linhas "on FUNCAO(FONTE) line : N" da pilha de erro, para a mensagem.
+Static Function OS_PILHA(cStack)
+    Local aLin := StrTokArr2(StrTran(cStack, Chr(13), ""), Chr(10), .F.)
+    Local cRet := ""
+    Local nI   := 0
+
+    For nI := 1 To Len(aLin)
+        If " line : " $ aLin[nI] .And. Len(cRet) < 700
+            cRet += AllTrim(aLin[nI]) + " ; "
+        EndIf
+    Next nI
+
+Return cRet
+
 Static Function OS_HORACAMPO(cHora, cCampo)
     Local nTam := TamSX3(cCampo)[1]
     Local cRet := cHora
