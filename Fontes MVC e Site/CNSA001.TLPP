@@ -3386,10 +3386,10 @@ Static Function CH_CRIARCHAMADOEMAIL()
             Loop
         EndIf
 
-        // Mesmo nucleo do Incluir; nasce sem tipo/projeto/tarefa e sem tecnico.
+        // Mesmo nucleo do Incluir; nasce sem tipo/projeto/tarefa e sem tecnico. Corpo do e-mail = Descricao (ZA1_ANOT).
         aResultado := CH_NUCLEOINCLUIR(cAssunto, DTOS(Date()), "", ;
             cCodCli, cLojaCli, ;
-            cEmail, "", "", "", cId, .F.)
+            cEmail, "", "", "", cId, .F., .T., cCorpo)
 
         If aResultado[1] != 200
             ConOut("CH_CRIARCHAMADOEMAIL: falha ao criar chamado do e-mail " + cId + ": " + aResultado[2])
