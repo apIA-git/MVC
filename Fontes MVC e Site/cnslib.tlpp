@@ -161,7 +161,7 @@ Static Function CNS001_TECLUPA(cFiltro, lTodos)
 
     BeginSql Alias cAlias
         SELECT AA1_CODTEC,
-            AA1_NOMTEC,
+            AA1_NOMRED,
             AA1_RSPMNT,
             USR_CODIGO
         FROM %Table:AA1% AA1
@@ -172,15 +172,15 @@ Static Function CNS001_TECLUPA(cFiltro, lTodos)
         AND AA1.%NotDel%
         AND (AA1_ALOCA = '1' OR UPPER(TRIM(AA1_CODTEC)) = %Exp:cCodExato% OR %Exp:cTodos% = '1')
         AND (UPPER(AA1_CODTEC) LIKE '%' || %Exp:cFiltroUp% || '%'
-        OR UPPER(AA1_NOMTEC) LIKE '%' || %Exp:cFiltroUp2% || '%')
-        ORDER BY AA1_NOMTEC
+        OR UPPER(AA1_NOMRED) LIKE '%' || %Exp:cFiltroUp2% || '%')
+        ORDER BY AA1_NOMRED
     EndSql
 
     While !(cAlias)->(Eof())
         oLinha := JsonObject():New()
         oLinha['codigo']     := CNS001_LUPA_COMPSTR((cAlias)->AA1_CODTEC)
         oLinha['complemento'] := ""
-        oLinha['descricao']  := CNS001_LUPA_COMPSTR((cAlias)->AA1_NOMTEC)
+        oLinha['descricao']  := CNS001_LUPA_COMPSTR((cAlias)->AA1_NOMRED)
         oLinha['rspmnt']     := CNS001_LUPA_COMPSTR((cAlias)->AA1_RSPMNT)
         oLinha['usrCodigo']  := CNS001_LUPA_COMPSTR((cAlias)->USR_CODIGO)
 
@@ -1341,6 +1341,30 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4, x5, x6)
         While Len(xRet) > 0 .And. Right(xRet, 1) $ " " + Chr(9) + Chr(10) + Chr(13)
             xRet := Left(xRet, Len(xRet) - 1)
         EndDo
+
+    //--- Texto do e-mail sem a assinatura nem a resposta citada --------------
+    // Corta na 1a linha de assinatura ("--", "Atenciosamente", "Att"...) ou de resposta
+    // ("De:", "From:", "Em ... escreveu:"). Saudacao so conta em linha curta (fecho).
+    Case cAcao == "SEMASSINATURA"
+        aLin := StrTokArr2(StrTran(cValToChar(x1), Chr(13), ""), Chr(10), .T.)
+        xRet := ""
+        For nI := 1 To Len(aLin)
+            cValor := Upper(AllTrim(FwNoAccent(aLin[nI])))
+            lMarca := Left(cValor, 2) == "--" .Or. Left(cValor, 2) == "__" .Or. ;
+                Left(cValor, 3) == "DE:" .Or. Left(cValor, 5) == "FROM:" .Or. "ESCREVEU:" $ cValor .Or. ;
+                Left(cValor, 14) == "ENVIADO DO MEU" .Or. Left(cValor, 9) == "SENT FROM" .Or. ;
+                (Len(cValor) <= 40 .And. (Left(cValor, 14) == "ATENCIOSAMENTE" .Or. Left(cValor, 12) == "CORDIALMENTE" .Or. ;
+                Left(cValor, 6) == "ABRACO" .Or. Left(cValor, 7) == "OBRIGAD" .Or. ;
+                (Left(cValor, 3) == "ATT" .And. (Len(cValor) == 3 .Or. !IsAlpha(SubStr(cValor, 4, 1))))))
+            If lMarca .And. !Empty(AllTrim(xRet))
+                Exit
+            EndIf
+            xRet += If(nI > 1, CRLF, "") + aLin[nI]
+        Next nI
+        xRet := AllTrim(xRet)
+        If Empty(xRet)
+            xRet := AllTrim(cValToChar(x1))
+        EndIf
 
     //--- Agendamento (SZ6) da OS marcado "Nao Cobrar"? ------------------------
     Case cAcao == "NAOCOBRA"
