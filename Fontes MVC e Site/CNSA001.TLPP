@@ -3375,7 +3375,8 @@ Static Function CH_CRIARCHAMADOEMAIL()
         EndIf
 
         // Anti-loop: nunca responde a si mesmo, a remetente de sistema nem a resposta automatica.
-        If "apia@apia.com.br" $ Lower(cEmail) .Or. "postmaster" $ Lower(cEmail) .Or. ;
+        // chamado@apia.com.br e alias (sinonimo) da caixa apia@apia.com.br: os dois sao a propria caixa.
+        If "apia@apia.com.br" $ Lower(cEmail) .Or. "chamado@apia.com.br" $ Lower(cEmail) .Or. "postmaster" $ Lower(cEmail) .Or. ;
                 "mailer-daemon" $ Lower(cEmail) .Or. "noreply" $ Lower(cEmail) .Or. "no-reply" $ Lower(cEmail) .Or. ;
                 "microsoftexchange" $ Lower(cEmail) .Or. ;
                 CH_EHRESPOSTAAUTO(cAssunto)
