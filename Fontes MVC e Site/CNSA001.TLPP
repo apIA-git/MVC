@@ -3246,6 +3246,31 @@ Static Function CH_MARCARAVISOENVIADO(cEmail)
 
 Return
 
+/*/{Protheus.doc} CH_PARACHAMADO
+.T. se o e-mail (mensagem do Graph) foi enviado para chamado@apia.com.br (Para ou Cc).
+/*/
+Static Function CH_PARACHAMADO(oMsg)
+    Local aCampos := {"toRecipients", "ccRecipients"}
+    Local oLista  := Nil
+    Local oEnd    := Nil
+    Local nI      := 0
+    Local nJ      := 0
+
+    For nI := 1 To Len(aCampos)
+        oLista := oMsg:GetJsonObject(aCampos[nI])
+        If ValType(oLista) == "A"
+            For nJ := 1 To Len(oLista)
+                oEnd := oLista[nJ]:GetJsonObject("emailAddress")
+                If ValType(oEnd) $ "O|J" .And. ValType(oEnd:GetJsonObject("address")) == "C" .And. ;
+                        Lower(AllTrim(oEnd:GetJsonObject("address"))) == "chamado@apia.com.br"
+                    Return .T.
+                EndIf
+            Next nJ
+        EndIf
+    Next nI
+
+Return .F.
+
 /*/{Protheus.doc} CH_CRIARCHAMADOEMAIL
 Le os e-mails nao lidos de apia@ (Graph) e cria um chamado por e-mail novo (dedup por ZA1_MAILID); marca
 como lido o que tratou. Chamado pelo job, pelo Recarregar do portal e pela tela (CH_TRAVAREMAIL: um por vez).
@@ -3284,9 +3309,9 @@ Static Function CH_CRIARCHAMADOEMAIL()
 
     cPath := "/v1.0/users/apia@apia.com.br/mailFolders/inbox/messages"
     cPath += "?$filter=isRead%20eq%20false"
-    cPath += "&$select=id,subject,from,receivedDateTime,body"
+    cPath += "&$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,body"
     cPath += "&$orderby=receivedDateTime%20desc"
-    cPath += "&$top=50"
+    cPath += "&$top=100"
 
     oRest := FWRest():New("https://graph.microsoft.com")
     oRest:setPath(cPath)
@@ -3324,6 +3349,12 @@ Static Function CH_CRIARCHAMADOEMAIL()
 
         If ValType(oMsg:GetJsonObject("id")) == "C"
             cId := oMsg:GetJsonObject("id")
+        EndIf
+
+        // So vira chamado o e-mail enviado para chamado@apia.com.br (sinonimo da caixa apia@): o resto da
+        // caixa fica como esta (nem chamado, nem marcado como lido).
+        If !CH_PARACHAMADO(oMsg)
+            Loop
         EndIf
 
         If ValType(oMsg:GetJsonObject("subject")) == "C"
