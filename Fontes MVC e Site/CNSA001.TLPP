@@ -1766,7 +1766,7 @@ User Function CH_APIASSUMIR() As Logical
 Return oRest:setStatusResponse(aResultado[1], CH_ERRO(aResultado[2]))
 
 /*/{Protheus.doc} CH_NUCLEOEXCLUIR
-Exclui o chamado e as agendas (RecLock direto, sem model, numa transacao) e avisa por e-mail.
+Exclui o chamado (RecLock) e as agendas pelo model do CNSA003 (Outlook e aviso ao tecnico no evento dele), numa transacao, e avisa por e-mail.
 @param  cIdCh     Id do chamado (ZA1_IDCH)
 @param  cMotivo   Motivo do cancelamento (usado no e-mail de notificacao)
 @return Array {nStatusHTTP, cMensagem}
@@ -1780,10 +1780,10 @@ Static Function CH_NUCLEOEXCLUIR(cIdCh, cMotivo, lNotificarCliente, lNotificarTe
     Local cEmailCli   := ""
     Local cExclPor    := ""
     Local aAgenda     := {}
-    Local aOutlook    := {}
+    Local oModelAg    := Nil
+    Local cErroAg     := ""
     Local cAlias      := ""
     Local nCham       := 0
-    Local nI          := 0
     Local lOk         := .T.
     Local aRet        := {500, "Erro desconhecido."}
     Local oErro       := Nil
@@ -1826,30 +1826,31 @@ Static Function CH_NUCLEOEXCLUIR(cIdCh, cMotivo, lNotificarCliente, lNotificarTe
               AND %NotDel%
         EndSql
 
-        // Chamado e agendas na mesma transacao: registro travado ou erro desfaz tudo.
+        // Chamado e agendas na mesma transacao: agenda recusada, registro travado ou erro desfaz tudo.
         Begin Transaction
             Begin Sequence
-                lOk := RecLock("ZA1", .F.)
-                If lOk
-                    ZA1->(DbDelete())
-                    ZA1->(MsUnlock())
-                EndIf
+                // Agendas pelo model do CNSA003: o evento dele tira do Outlook e avisa o tecnico.
                 dbSelectArea("SZ6")
                 While lOk .And. !(cAlias)->(Eof())
                     SZ6->(DbGoto((cAlias)->RECNO))
                     If !SZ6->(Eof())
-                        lOk := RecLock("SZ6", .F.)
-                        If lOk
-                            // Evento do Outlook sai depois da transacao (esta exclusao nao passa pelo model do CNSA003).
-                            If !Empty(AllTrim(SZ6->Z6_IDOUTL))
-                                AAdd(aOutlook, {U_CNSOUTL("EMAIL", SZ6->Z6_TECNICO), SZ6->Z6_IDOUTL})
-                            EndIf
-                            SZ6->(DbDelete())
-                            SZ6->(MsUnlock())
+                        oModelAg := FWLoadModel("CNSA003")
+                        oModelAg:SetOperation(MODEL_OPERATION_DELETE)
+                        lOk := oModelAg:Activate() .And. oModelAg:VldData() .And. oModelAg:CommitData()
+                        If !lOk
+                            cErroAg := "Agenda de " + DToC(SZ6->Z6_DTAGE) + " nao excluida: " + FwJsonSerialize(oModelAg:GetErrorMessage())
                         EndIf
+                        oModelAg:DeActivate()
                     EndIf
                     (cAlias)->(DbSkip())
                 EndDo
+                If lOk
+                    lOk := RecLock("ZA1", .F.)
+                    If lOk
+                        ZA1->(DbDelete())
+                        ZA1->(MsUnlock())
+                    EndIf
+                EndIf
             Recover Using oErro
                 lOk := .F.
             End Sequence
@@ -1862,6 +1863,8 @@ Static Function CH_NUCLEOEXCLUIR(cIdCh, cMotivo, lNotificarCliente, lNotificarTe
         Do Case
         Case oErro != Nil
             aRet := {500, "Erro interno: " + oErro:Description}
+        Case !Empty(cErroAg)
+            aRet := {400, cErroAg}
         Case !lOk
             aRet := {409, "Chamado ou agenda em uso por outro usuario. Tente novamente."}
         OtherWise
@@ -1878,9 +1881,6 @@ Static Function CH_NUCLEOEXCLUIR(cIdCh, cMotivo, lNotificarCliente, lNotificarTe
 
     // Depois de excluir: eventos do Outlook e e-mails (analista e cliente independentes, cada um so se o usuario escolheu).
     If aRet[1] == 200
-        For nI := 1 To Len(aOutlook)
-            U_CNSOUTL("EXCLUIR", aOutlook[nI][1], aOutlook[nI][2])
-        Next nI
         If lNotificarTecnico .And. !Empty(cConsulAnt)
             cEmailTec := U_CNSOUTL("EMAIL", cConsulAnt)
             If !Empty(cEmailTec)
@@ -3074,6 +3074,14 @@ Static Function CH_EMAIL(cTipo, cPara, cIdCh, x1, x2, x3, x4)
 
     Case cTipo == "CHAMADOCRIADO"
         AAdd(aLinhas, {"N&uacute;mero", cNumero})
+        // Titulo e descricao do chamado (ZA1_ASSUNT / ZA1_ANOT).
+        ZA1->(DbSetOrder(1))
+        If ZA1->(DbSeek(xFilial("ZA1") + PadR(AllTrim(cIdCh), TamSX3("ZA1_IDCH")[1])))
+            AAdd(aLinhas, {"Assunto", Eval(bHtml, U_CNSOUTL("UTF8", AllTrim(ZA1->ZA1_ASSUNT)))})
+            If !Empty(ZA1->ZA1_ANOT)
+                AAdd(aLinhas, {"Descri&ccedil;&atilde;o", Eval(bHtml, U_CNSOUTL("UTF8", AllTrim(ZA1->ZA1_ANOT)))})
+            EndIf
+        EndIf
         cAssMail := "Chamado Aberto " + cIdCh
         cHtml    := CH_HTMLEMAIL(cIdCh, "Seu chamado foi aberto com sucesso", "", ;
             "Seu chamado foi aberto a partir do seu e-mail. Em breve nossa equipe entrar&aacute; em contato.", ;
@@ -3335,7 +3343,8 @@ Static Function CH_CRIARCHAMADOEMAIL()
         oBody := oMsg:GetJsonObject("body")
         If ValType(oBody) $ "O|J" .And. ValType(oBody:GetJsonObject("content")) == "C"
             cCorpo := U_CNSOUTL("UTF8", oBody:GetJsonObject("content"))
-            cCorpo := AllTrim(cCorpo)
+            // Descricao do chamado: sem a assinatura e sem a resposta citada.
+            cCorpo := U_CNSOUTL("SEMASSINATURA", AllTrim(cCorpo))
         EndIf
 
         oFrom := Nil
@@ -3386,10 +3395,10 @@ Static Function CH_CRIARCHAMADOEMAIL()
             Loop
         EndIf
 
-        // Mesmo nucleo do Incluir; nasce sem tipo/projeto/tarefa e sem tecnico.
+        // Mesmo nucleo do Incluir; nasce sem tipo/projeto/tarefa e sem tecnico. Corpo do e-mail = Descricao (ZA1_ANOT).
         aResultado := CH_NUCLEOINCLUIR(cAssunto, DTOS(Date()), "", ;
             cCodCli, cLojaCli, ;
-            cEmail, "", "", "", cId, .F.)
+            cEmail, "", "", "", cId, .F., .T., cCorpo)
 
         If aResultado[1] != 200
             ConOut("CH_CRIARCHAMADOEMAIL: falha ao criar chamado do e-mail " + cId + ": " + aResultado[2])
@@ -3397,11 +3406,6 @@ Static Function CH_CRIARCHAMADOEMAIL()
         EndIf
 
         cNewId := aResultado[3]
-
-        // ZA2_DESCRI e Memo (TamSX3 = 10 e o ponteiro): texto completo.
-        If !Empty(cCorpo)
-            CH_GRAVARINTERACAO(cNewId, "", cCorpo)
-        EndIf
 
         // Confirma ao cliente o numero do chamado aberto.
         If !Empty(cEmail)
