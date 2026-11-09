@@ -3203,29 +3203,36 @@ Static Function CH_EMAILNALISTA(cEmail, cLista)
 Return .F.
 
 /*/{Protheus.doc} CH_AVISOJAENVIADO
-Aviso de "e-mail nao cadastrado" ja enviado ao endereco nos ultimos 7 dias? (\system\cnsa_email_semcontato.dat)
+Aviso de "e-mail nao cadastrado" ja enviado ao endereco na ultima hora? (\system\cnsa_email_semcontato.dat)
 @param  cEmail   Endereco do remetente
-@return .T. se ja avisou ha menos de 7 dias, .F. caso contrario
+@return .T. se ja avisou ha menos de 1 hora, .F. caso contrario
 /*/
 Static Function CH_AVISOJAENVIADO(cEmail)
-    Local cArq   := "\system\cnsa_email_semcontato.dat"
-    Local cChave := "|" + Lower(AllTrim(cEmail)) + "|"
-    Local cTexto := ""
-    Local nPos   := 0
-    Local dUlt   := CToD("")
+    Local cArq    := "\system\cnsa_email_semcontato.dat"
+    Local cChave  := "|" + Lower(AllTrim(cEmail)) + "|"
+    Local cTexto  := ""
+    Local cQuando := ""
+    Local nPos    := 0
 
     If !File(cArq)
         Return .F.
     EndIf
 
-    // Ultimo aviso = ultima ocorrencia do endereco no arquivo (gravado em ordem).
+    // Ultimo aviso = ultima ocorrencia do endereco no arquivo (gravado em ordem): AAAAMMDDHHMMSS.
     cTexto := MemoRead(cArq)
     nPos   := RAt(cChave, cTexto)
-    If nPos > 0
-        dUlt := SToD(SubStr(cTexto, nPos + Len(cChave), 8))
+    If nPos == 0
+        Return .F.
+    EndIf
+    cQuando := SubStr(cTexto, nPos + Len(cChave), 14)
+    // Linha antiga so com a data (AAAAMMDD|): conta como meia-noite.
+    If !IsDigit(SubStr(cQuando, 9, 1))
+        cQuando := Left(cQuando, 8) + "000000"
     EndIf
 
-Return !Empty(dUlt) .And. Date() - dUlt < 7
+    // Janela de 1 hora: protege de loop com resposta automatica sem deixar sem resposta quem escreve de novo.
+Return (Date() - SToD(Left(cQuando, 8))) * 86400 + Seconds() - ;
+    (Val(SubStr(cQuando, 9, 2)) * 3600 + Val(SubStr(cQuando, 11, 2)) * 60 + Val(SubStr(cQuando, 13, 2))) < 3600
 
 /*/{Protheus.doc} CH_MARCARAVISOENVIADO
 Registra o aviso de hoje no arquivo do CH_AVISOJAENVIADO.
@@ -3237,7 +3244,7 @@ Static Function CH_MARCARAVISOENVIADO(cEmail)
     Local cTexto  := ""
     Local nI      := 0
 
-    AAdd(aLinhas, "|" + Lower(AllTrim(cEmail)) + "|" + DToS(Date()) + "|")
+    AAdd(aLinhas, "|" + Lower(AllTrim(cEmail)) + "|" + DToS(Date()) + StrTran(Time(), ":", "") + "|")
     // So as ultimas 500 linhas (o arquivo crescia sem fim e e lido inteiro no CH_AVISOJAENVIADO).
     For nI := Max(1, Len(aLinhas) - 499) To Len(aLinhas)
         cTexto += aLinhas[nI] + CRLF
@@ -3375,7 +3382,8 @@ Static Function CH_CRIARCHAMADOEMAIL()
         EndIf
 
         // Anti-loop: nunca responde a si mesmo, a remetente de sistema nem a resposta automatica.
-        If "apia@apia.com.br" $ Lower(cEmail) .Or. "postmaster" $ Lower(cEmail) .Or. ;
+        // chamado@apia.com.br e alias (sinonimo) da caixa apia@apia.com.br: os dois sao a propria caixa.
+        If "apia@apia.com.br" $ Lower(cEmail) .Or. "chamado@apia.com.br" $ Lower(cEmail) .Or. "postmaster" $ Lower(cEmail) .Or. ;
                 "mailer-daemon" $ Lower(cEmail) .Or. "noreply" $ Lower(cEmail) .Or. "no-reply" $ Lower(cEmail) .Or. ;
                 "microsoftexchange" $ Lower(cEmail) .Or. ;
                 CH_EHRESPOSTAAUTO(cAssunto)
@@ -3384,7 +3392,7 @@ Static Function CH_CRIARCHAMADOEMAIL()
             Loop
         EndIf
 
-        // Sem contato cadastrado (SU5): nao abre chamado - avisa o remetente no maximo 1 vez a cada 7 dias.
+        // Sem contato cadastrado (SU5): nao abre chamado - avisa o remetente no maximo 1 vez por hora.
         If Empty(cCodCli)
             If !Empty(cEmail) .And. !CH_AVISOJAENVIADO(cEmail)
                 CH_EMAIL("SEMCONTATO", cEmail, "")
