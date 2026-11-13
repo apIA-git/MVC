@@ -834,7 +834,8 @@ Static Function AP_GRAVASZA(cOs, aSZA)
 
     If !(oModel:VldData() .And. oModel:CommitData())
         xErro := oModel:GetErrorMessage()
-        aRet  := {.F., "Historico (SZA): " + If(ValType(xErro) == "A", FwJsonSerialize(xErro), cValToChar(xErro))}
+        // So a frase do erro ([6]), sem a lista tecnica do model.
+        aRet  := {.F., "Historico (SZA): " + If(ValType(xErro) == "A", If(Len(xErro) >= 6 .And. !Empty(xErro[6]), AllTrim(cValToChar(xErro[6])), "erro nao informado pelo sistema."), cValToChar(xErro))}
     EndIf
     oModel:DeActivate()
     If oAtivo != Nil

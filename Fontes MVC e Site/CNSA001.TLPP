@@ -1411,7 +1411,7 @@ Static Function CH_NUCLEOINCLUIR(cAssunto, cDtAbertura, cTipo, cCodCliente, cLoj
         Else
             oErroModel := oModel:GetErrorMessage()
             RollBackSX8()
-            aRet := {400, CH_ERRO(FwJsonSerialize(oErroModel)), ""}
+            aRet := {400, CH_ERRO(CH_MSGMODEL(oErroModel, "Falha ao incluir o chamado.")), ""}
         EndIf
 
     Recover Using oErro
@@ -1615,7 +1615,7 @@ Static Function CH_NUCLEOALTERAR(cIdCh, cAssunto, cDtAbertura, cTipo, cCodClient
             aRet := {200, oJson:ToJson()}
         Else
             oErroModel := oModel:GetErrorMessage()
-            aRet := {400, CH_ERRO(FwJsonSerialize(oErroModel))}
+            aRet := {400, CH_ERRO(CH_MSGMODEL(oErroModel, "Falha ao alterar o chamado."))}
         EndIf
 
     Recover Using oErro
@@ -1709,7 +1709,7 @@ Static Function CH_NUCLEOASSUMIR(cIdCh, lNotificarCliente, lNotificarTecnico)
 
         If !lOk
             oErroModel := oModel:GetErrorMessage()
-            cErro := FwJsonSerialize(oErroModel)
+            cErro := CH_MSGMODEL(oErroModel, "motivo nao informado pelo sistema.")
         EndIf
 
         oModel:DeActivate(lOk)
@@ -1792,6 +1792,11 @@ Static Function CH_NUCLEOEXCLUIR(cIdCh, cMotivo, lNotificarCliente, lNotificarTe
     Default lNotificarCliente := .F.
     Default lNotificarTecnico := .T.
 
+    // Excluir chamado so administrador (tela e portal passam por aqui).
+    If !CH_TEMACESSOGRUPO()
+        Return {403, "Somente administradores podem excluir chamados."}
+    EndIf
+
     // Sem model (RecLock direto, de proposito): obrigatorios ficam no front.
     If !CH_ACHARZA1(cIdCh)
         Return {404, "Chamado nao encontrado."}
@@ -1838,7 +1843,7 @@ Static Function CH_NUCLEOEXCLUIR(cIdCh, cMotivo, lNotificarCliente, lNotificarTe
                         oModelAg:SetOperation(MODEL_OPERATION_DELETE)
                         lOk := oModelAg:Activate() .And. oModelAg:VldData() .And. oModelAg:CommitData()
                         If !lOk
-                            cErroAg := "Agenda de " + DToC(SZ6->Z6_DTAGE) + " nao excluida: " + FwJsonSerialize(oModelAg:GetErrorMessage())
+                            cErroAg := "Agenda de " + DToC(SZ6->Z6_DTAGE) + " nao excluida: " + CH_MSGMODEL(oModelAg:GetErrorMessage(), "motivo nao informado pelo sistema.")
                         EndIf
                         oModelAg:DeActivate()
                     EndIf
@@ -2652,6 +2657,21 @@ JSON de erro: {"erro": cMsg}.
 Static Function CH_ERRO(cMsg)
 Return '{"erro":"' + CH_ESCAPARJSON(cMsg) + '"}'
 
+/*/{Protheus.doc} CH_MSGMODEL
+Mensagem do erro do model para o usuario (GetErrorMessage): so a frase [6] e a solucao [7], sem a lista tecnica.
+@param  xErro    Retorno do oModel:GetErrorMessage()
+@param  cPadrao  Mensagem quando o model nao informa nada
+@return cMsg
+/*/
+Static Function CH_MSGMODEL(xErro, cPadrao)
+    Do Case
+    Case ValType(xErro) == "A" .And. Len(xErro) >= 6 .And. !Empty(xErro[6])
+        Return AllTrim(cValToChar(xErro[6])) + If(Len(xErro) >= 7 .And. !Empty(xErro[7]), " Solucao: " + AllTrim(cValToChar(xErro[7])), "")
+    Case ValType(xErro) == "C" .And. !Empty(xErro)
+        Return AllTrim(xErro)
+    EndCase
+Return cPadrao
+
 /*/{Protheus.doc} CH_ESCAPARJSON
 Escapa caracteres especiais (barra invertida, aspas, quebras de linha,
 tabulacao) de um texto para uso seguro dentro de uma string JSON.
@@ -3381,8 +3401,6 @@ Static Function CH_CRIARCHAMADOEMAIL()
         oBody := oMsg:GetJsonObject("body")
         If ValType(oBody) $ "O|J" .And. ValType(oBody:GetJsonObject("content")) == "C"
             cCorpo := U_CNSOUTL("UTF8", oBody:GetJsonObject("content"))
-            // Descricao do chamado: sem a assinatura e sem a resposta citada.
-            cCorpo := U_CNSOUTL("SEMASSINATURA", AllTrim(cCorpo))
         EndIf
 
         oFrom := Nil
@@ -3434,8 +3452,11 @@ Static Function CH_CRIARCHAMADOEMAIL()
             Loop
         EndIf
 
-        // Mesmo nucleo do Incluir; nasce sem tipo/projeto/tarefa e sem tecnico. Corpo do e-mail = Descricao (ZA1_ANOT).
-        aResultado := CH_NUCLEOINCLUIR(cAssunto, DTOS(Date()), "", ;
+        // Descricao do chamado: sem a assinatura (tambem a que comeca no nome do remetente) e sem a resposta citada.
+        cCorpo := U_CNSOUTL("SEMASSINATURA", AllTrim(cCorpo), U_CNSOUTL("UTF8", cNome))
+
+        // Mesmo nucleo do Incluir; nasce com tipo S - Suporte, sem projeto/tarefa e sem tecnico. Corpo do e-mail = Descricao (ZA1_ANOT).
+        aResultado := CH_NUCLEOINCLUIR(cAssunto, DTOS(Date()), "S", ;
             cCodCli, cLojaCli, ;
             cEmail, "", "", "", cId, .F., .T., cCorpo)
 
