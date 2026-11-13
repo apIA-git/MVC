@@ -1352,7 +1352,7 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4, x5, x6)
     //--- Texto do e-mail sem a assinatura nem a resposta citada --------------
     // (cTexto, cRemetente) Corta na 1a linha de assinatura ("--", "Atenciosamente", "Att"...), de resposta
     // ("De:", "From:", "Em ... escreveu:"), de imagem ([cid:]) ou no nome do remetente (assinatura sem
-    // fecho). Linha de contato (Tel/Cel/Fone... com numero) corta no bloco de linhas curtas logo acima
+    // fecho). Imagem ([cid:]) corta tambem as linhas grudadas acima. Linha de contato (Tel/Cel/Fone... com numero) corta no bloco de linhas curtas logo acima
     // (nome, cargo, empresa). Saudacao e nome so contam em linha curta. Sem texto antes, nao corta.
     Case cAcao == "SEMASSINATURA"
         aLin   := StrTokArr2(StrTran(cValToChar(x1), Chr(13), ""), Chr(10), .T.)
@@ -1374,6 +1374,12 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4, x5, x6)
                 (Len(cPrim) >= 3 .And. cValor == cPrim)))
             If lMarca
                 nCorte := nI
+                // Imagem da assinatura ([cid:]): corta tambem as linhas grudadas acima (nome, cargo, empresa) ate a linha em branco.
+                If "[CID:" $ cValor
+                    While nCorte > 1 .And. !Empty(AllTrim(aLin[nCorte - 1]))
+                        nCorte--
+                    EndDo
+                EndIf
             ElseIf Len(cValor) <= 60
                 // Linha de contato: 1a palavra Tel/Telefone/Cel/Celular/Fone/Fax/WhatsApp ou +55, ou so numero - com 8+ digitos.
                 cPal := ""
