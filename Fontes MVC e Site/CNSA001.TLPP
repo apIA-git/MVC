@@ -440,7 +440,7 @@ Static Function CH_POSGRAVACAO(p_oModel)
                 lNotificarTecnico := (Type("lCnsaNotificarTecnico") <> "L" .Or. lCnsaNotificarTecnico)
             EndIf
         ElseIf lOfereceCli .Or. lOfereceTec
-            aEnvio := CH_PERGUNTAEMAIL("Alteracao do Chamado " + cIdCh, lOfereceCli, lOfereceTec)
+            aEnvio := CH_PERGUNTAEMAIL("Alteracao do Chamado " + cIdCh, lOfereceCli, lOfereceTec, .F.)
             lNotificarCliente := aEnvio[1]
             If lOfereceTec
                 lNotificarTecnico := aEnvio[2]
@@ -695,9 +695,10 @@ Janela com checkbox: enviar e-mail ao analista e/ou ao cliente (fechar = nao env
 @param  cTitulo      Titulo da janela (ex: "Alteracao do Chamado 000250")
 @param  lOfereceCli  .T. mostra a opcao "Cliente"
 @param  lOfereceTec  .T. mostra a opcao "Analista (tecnico)"
+@param  lPadrao      Opcoes ja marcadas (.F. na alteracao: comecam com Nao)
 @return aRet         {lEnviarCliente, lEnviarTecnico}
 /*/
-Static Function CH_PERGUNTAEMAIL(cTitulo, lOfereceCli, lOfereceTec)
+Static Function CH_PERGUNTAEMAIL(cTitulo, lOfereceCli, lOfereceTec, lPadrao)
     Local oDlg     := Nil
     Local oChkTec  := Nil
     Local oChkCli  := Nil
@@ -710,6 +711,10 @@ Static Function CH_PERGUNTAEMAIL(cTitulo, lOfereceCli, lOfereceTec)
 
     Default lOfereceCli := .F.
     Default lOfereceTec := .F.
+    Default lPadrao     := .T.
+
+    lChkTec := lPadrao
+    lChkCli := lPadrao
 
     If !lOfereceCli .And. !lOfereceTec
         Return {.F., .F.}
