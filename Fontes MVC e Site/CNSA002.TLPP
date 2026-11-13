@@ -210,8 +210,10 @@ Chamado Cliente ou Chamado Apia (incluir e alterar).
 /*/
 Static Function OS_PREVALIDA(p_oModel)
     Local oModelSZ1 := p_oModel:GetModel("SZ1MASTER")
+    // Projeto: nao cria OS sem projeto.
     Local aCampos   := {{"Z1_MODULO", "Informe o modulo."}, {"Z1_MOTIV", "Informe o motivo."}, ;
-                        {"Z1_TIPO", "Informe o codigo do servico."}, {"Z1_DTOS", "Informe a data da OS."}}
+                        {"Z1_TIPO", "Informe o codigo do servico."}, {"Z1_DTOS", "Informe a data da OS."}, ;
+                        {"Z1_PROJET", "Informe o projeto."}}
     Local nI        := 0
 
     // Chamado TOTVS so com Chamado Cliente ou Chamado Apia (gravacao da aprovacao nao barra).
