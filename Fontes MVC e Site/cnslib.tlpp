@@ -916,6 +916,13 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4, x5, x6)
     Local nIni     := 0
     Local nFim     := 0
     Local nAgora   := 0
+    Local nCorte   := 0
+    Local nJ       := 0
+    Local nDig     := 0
+    Local nLet     := 0
+    Local cRemet   := ""
+    Local cPrim    := ""
+    Local cPal     := ""
     // Linha {rotulo, valor} pro e-mail (aLin) e, com lCartao, pro cartao do evento (aCli).
     // Na alteracao (lMarca) o valor dos campos aCpos que mudaram vem destacado no e-mail.
     Local bLinha   := {|lCartao, cRot, cVal, aCpos| If(Empty(cVal), Nil, ;
@@ -1343,24 +1350,71 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4, x5, x6)
         EndDo
 
     //--- Texto do e-mail sem a assinatura nem a resposta citada --------------
-    // Corta na 1a linha de assinatura ("--", "Atenciosamente", "Att"...) ou de resposta
-    // ("De:", "From:", "Em ... escreveu:"). Saudacao so conta em linha curta (fecho).
+    // (cTexto, cRemetente) Corta na 1a linha de assinatura ("--", "Atenciosamente", "Att"...), de resposta
+    // ("De:", "From:", "Em ... escreveu:"), de imagem ([cid:]) ou no nome do remetente (assinatura sem
+    // fecho). Linha de contato (Tel/Cel/Fone... com numero) corta no bloco de linhas curtas logo acima
+    // (nome, cargo, empresa). Saudacao e nome so contam em linha curta. Sem texto antes, nao corta.
     Case cAcao == "SEMASSINATURA"
-        aLin := StrTokArr2(StrTran(cValToChar(x1), Chr(13), ""), Chr(10), .T.)
-        xRet := ""
+        aLin   := StrTokArr2(StrTran(cValToChar(x1), Chr(13), ""), Chr(10), .T.)
+        // Nome do remetente (Graph): completo e so o primeiro nome; e-mail no lugar do nome nao conta.
+        cRemet := Upper(AllTrim(FwNoAccent(StrTran(cValToChar(x2), '"', ""))))
+        cRemet := If("@" $ cRemet, "", cRemet)
+        cPrim  := If(" " $ cRemet, Left(cRemet, At(" ", cRemet) - 1), cRemet)
+        xRet   := ""
+        nCorte := 0
         For nI := 1 To Len(aLin)
             cValor := Upper(AllTrim(FwNoAccent(aLin[nI])))
             lMarca := Left(cValor, 2) == "--" .Or. Left(cValor, 2) == "__" .Or. ;
                 Left(cValor, 3) == "DE:" .Or. Left(cValor, 5) == "FROM:" .Or. "ESCREVEU:" $ cValor .Or. ;
-                Left(cValor, 14) == "ENVIADO DO MEU" .Or. Left(cValor, 9) == "SENT FROM" .Or. ;
+                Left(cValor, 14) == "ENVIADO DO MEU" .Or. Left(cValor, 9) == "SENT FROM" .Or. "[CID:" $ cValor .Or. ;
                 (Len(cValor) <= 40 .And. (Left(cValor, 14) == "ATENCIOSAMENTE" .Or. Left(cValor, 12) == "CORDIALMENTE" .Or. ;
                 Left(cValor, 6) == "ABRACO" .Or. Left(cValor, 7) == "OBRIGAD" .Or. ;
-                (Left(cValor, 3) == "ATT" .And. (Len(cValor) == 3 .Or. !IsAlpha(SubStr(cValor, 4, 1))))))
-            If lMarca .And. !Empty(AllTrim(xRet))
-                Exit
+                (Left(cValor, 3) == "ATT" .And. (Len(cValor) == 3 .Or. !IsAlpha(SubStr(cValor, 4, 1)))))) .Or. ;
+                (Len(cValor) <= 60 .And. ((Len(cRemet) >= 5 .And. Left(cValor, Len(cRemet)) == cRemet) .Or. ;
+                (Len(cPrim) >= 3 .And. cValor == cPrim)))
+            If lMarca
+                nCorte := nI
+            ElseIf Len(cValor) <= 60
+                // Linha de contato: 1a palavra Tel/Telefone/Cel/Celular/Fone/Fax/WhatsApp ou +55, ou so numero - com 8+ digitos.
+                cPal := ""
+                nDig := 0
+                nLet := 0
+                For nJ := 1 To Len(cValor)
+                    If IsDigit(SubStr(cValor, nJ, 1))
+                        nDig++
+                    ElseIf IsAlpha(SubStr(cValor, nJ, 1))
+                        nLet++
+                        If nLet == nJ
+                            cPal += SubStr(cValor, nJ, 1)
+                        EndIf
+                    EndIf
+                Next nJ
+                If nDig >= 8 .And. ("|" + cPal + "|" $ "|TEL|TELEFONE|CEL|CELULAR|FONE|FAX|WHATSAPP|" .Or. ;
+                        Left(cValor, 3) == "+55" .Or. (nLet == 0 .And. Len(cValor) <= 30))
+                    // Volta pelo bloco de linhas curtas acima (nome, cargo, empresa) ate a linha em branco.
+                    nCorte := nI
+                    While nCorte > 1 .And. !Empty(AllTrim(aLin[nCorte - 1])) .And. Len(AllTrim(aLin[nCorte - 1])) <= 40
+                        nCorte--
+                    EndDo
+                EndIf
             EndIf
-            xRet += If(nI > 1, CRLF, "") + aLin[nI]
+            If nCorte > 0
+                xRet := ""
+                For nJ := 1 To nCorte - 1
+                    xRet += If(nJ > 1, CRLF, "") + aLin[nJ]
+                Next nJ
+                If !Empty(AllTrim(xRet))
+                    Exit
+                EndIf
+                nCorte := 0
+            EndIf
         Next nI
+        If nCorte == 0
+            xRet := ""
+            For nJ := 1 To Len(aLin)
+                xRet += If(nJ > 1, CRLF, "") + aLin[nJ]
+            Next nJ
+        EndIf
         xRet := AllTrim(xRet)
         If Empty(xRet)
             xRet := AllTrim(cValToChar(x1))
