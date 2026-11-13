@@ -225,15 +225,7 @@ Static Function CH_PREVALIDA(p_oModel)
                     Return .F.
                 EndIf
 
-                If Empty(AllTrim(oModelZA1:GetValue("ZA1_PROJ")))
-                    p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_PROJ", "ZA1", "ZA1_PROJ", "CNSA001", "Informe o projeto.")
-                    Return .F.
-                EndIf
-
-                If Empty(AllTrim(oModelZA1:GetValue("ZA1_TAREFA")))
-                    p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_TAREFA", "ZA1", "ZA1_TAREFA", "CNSA001", "Informe a tarefa.")
-                    Return .F.
-                EndIf
+                // Projeto e tarefa sao opcionais no chamado (so Agenda e OS exigem projeto).
 
             EndIf
 
