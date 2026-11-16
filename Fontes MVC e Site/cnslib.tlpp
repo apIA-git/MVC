@@ -10,6 +10,7 @@ Static nOutlExpira := 0
 
 @Get(endpoint="/CNSLIBCOMPONENTES")
 User Function CNS001_COMPONENTES_LISTAR() As Logical
+    Local cErroBlk := ""  // descricao do erro (o objeto do Recover pode vir sem texto)
     Local jQuery        := oRest:getQueryRequest() As Json
     Local cTipoParam    := ""
     Local cFiltroParam  := ""
@@ -32,7 +33,7 @@ User Function CNS001_COMPONENTES_LISTAR() As Logical
     EndIf
 
     // Sem o ErrorBlock o erro nao cai no Recover. Restaurado em toda saida.
-    bErro := ErrorBlock({|e| Break(e)})
+    bErro := ErrorBlock({|e| cErroBlk := cValToChar(e:Description), Break(e)})
     Begin Sequence
 
         // Busca por nome acentuado (ex "Joao") - DecodeUTF8 no filtro digitado
@@ -116,12 +117,12 @@ User Function CNS001_COMPONENTES_LISTAR() As Logical
     Recover Using oErro
         ErrorBlock(bErro)
         If oErro != Nil
-            Return oRest:setStatusResponse(500, '{"resultado":false,"erro":"' + CNS001_LUPA_JSONESC(oErro:Description) + '"}')
+            Return oRest:setStatusResponse(500, '{"resultado":false,"erro":"' + CNS001_LUPA_JSONESC(If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk)) + '"}')
         EndIf
     End Sequence
     ErrorBlock(bErro)
 
-Return oRest:setStatusResponse(500, '{"resultado":false,"erro":"Erro desconhecido."}')
+Return oRest:setStatusResponse(500, '{"resultado":false,"erro":"' + CNS001_LUPA_JSONESC("Falha ao carregar a lupa: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk)) + '"}')
 
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
@@ -202,7 +203,7 @@ Static Function CNS001_CLILUPA(cFiltro)
     Local cFiltroUp2 := cFiltroUp
 
     BeginSql Alias cAlias
-        SELECT A1_COD, A1_LOJA, A1_NOME, A1_NREDUZ, A1_CONTATO, A1_EMAIL
+        SELECT A1_COD, A1_LOJA, A1_NOME, A1_NREDUZ, A1_CONTATO, A1_EMAIL, A1_CTRANS, A1_CALMOCO
         FROM %Table:SA1% SA1
         WHERE A1_FILIAL = %xFilial:SA1%
           AND %NotDel%
@@ -221,6 +222,10 @@ Static Function CNS001_CLILUPA(cFiltro)
         oLinha['contato']      := CNS001_LUPA_COMPSTR((cAlias)->A1_CONTATO)
         // E-mail do cliente (A1_EMAIL) - pre-preenche o Email Cliente (ZA1_EMAIL) do chamado.
         oLinha['email']        := CNS001_LUPA_COMPSTR((cAlias)->A1_EMAIL)
+        // Cobra translado (A1_CTRANS S/N) - "N" trava o Translado da OS em Nao.
+        oLinha['cobraTranslado'] := CNS001_LUPA_COMPSTR((cAlias)->A1_CTRANS)
+        // Aceita almoco (A1_CALMOCO S/N) - "N" trava o Almoco da OS em branco.
+        oLinha['cobraAlmoco']    := CNS001_LUPA_COMPSTR((cAlias)->A1_CALMOCO)
         AAdd(aRet, oLinha)
         (cAlias)->(DbSkip())
     EndDo
@@ -881,6 +886,7 @@ Agenda no Outlook do tecnico - uma funcao, varias opcoes:
 /*/
 //-------------------------------------------------------------------
 User Function CNSOUTL(cAcao, x1, x2, x3, x4, x5, x6)
+    Local cErroBlk := ""  // descricao do erro (o objeto do Recover pode vir sem texto)
     Local xRet     := Nil
     Local oModel   := Nil
     Local oSZ6     := Nil
@@ -937,7 +943,7 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4, x5, x6)
     //--- Sincroniza o agendamento gravado (chamado pelo CNSA003) --------------
     Case cAcao == "AGENDA"
         oModel := x1
-        bErro  := ErrorBlock({|e| Break(e)})
+        bErro  := ErrorBlock({|e| cErroBlk := cValToChar(e:Description), Break(e)})
         Begin Sequence
             nOper  := oModel:GetOperation()
             oSZ6   := oModel:GetModel("ModelSZ6_Main")
@@ -975,7 +981,7 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4, x5, x6)
             EndIf
         Recover Using oErro
             If oErro != Nil
-                ConOut("CNSOUTLOOK: erro ao sincronizar a agenda: " + oErro:Description)
+                ConOut("CNSOUTLOOK: erro ao sincronizar a agenda: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))
             EndIf
         End Sequence
         ErrorBlock(bErro)

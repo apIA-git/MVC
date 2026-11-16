@@ -340,6 +340,7 @@ Copia a OS (tela e REST): todos os campos menos chave, digitacao, aprovacao e fa
 @return aRet        Array {lOk, cErro, cOsNova}
 /*/
 Static Function OS_NUCLEOCOPIAR(cOsOrigem)
+    Local cErroBlk := ""  // descricao do erro (o objeto do Recover pode vir sem texto)
     Local aFields    := {}
     Local nI         := 0
     Local cOsNova    := ""
@@ -350,7 +351,6 @@ Static Function OS_NUCLEOCOPIAR(cOsOrigem)
     Local oModelSZ1  := Nil
     Local lOk        := .F.
     Local cErro      := ""
-    Local oErroExcpt := Nil
     Local bErro      := Nil
     Local jFase      := JsonObject():New()
     Local cIdCh      := ""
@@ -373,7 +373,7 @@ Static Function OS_NUCLEOCOPIAR(cOsOrigem)
     Next nI
 
     // Sem o ErrorBlock o erro nao cai no Recover.
-    bErro := ErrorBlock({|e| Break(e)})
+    bErro := ErrorBlock({|e| cErroBlk := cValToChar(e:Description), Break(e)})
     Begin Sequence
 
         cOsNova := OS_PROXIMONUM()
@@ -418,9 +418,9 @@ Static Function OS_NUCLEOCOPIAR(cOsOrigem)
             OS_ZA3("DESCRICAO", cOsNova)
         EndIf
 
-    Recover Using oErroExcpt
+    Recover
         lOk   := .F.
-        cErro := "Erro interno: " + oErroExcpt:Description
+        cErro := "Erro interno: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk)
         If oModel <> Nil
             // Erro no meio do commit nao passa pelo AfterTTS: solta a trava da aprovacao e descarta o aviso.
             jFase["fase"]   := "DEP"
@@ -563,7 +563,6 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
     Local oModelSZ1  := Nil
     Local lOk        := .F.
     Local cErro      := ""
-    Local oErroExcpt := Nil
     Local cOs        := ""
     Local cVal       := ""
     Local cDtDigit   := AllTrim(OS_LERJSONTXT(jQuery, "dtDigitacao"))
@@ -583,7 +582,7 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
 
     // Sem o ErrorBlock o erro nao cai no Recover.
     // Guarda a descricao: erro dentro do framework (ex: inicializador do SX3) nao chega ao Recover.
-    bErro := ErrorBlock({|e| cErroBlk := cValToChar(e:Description) + " | " + OS_PILHA(cValToChar(e:ErrorStack)), ConOut("CNSA002 erro: " + cErroBlk), Break(e)})
+    bErro := ErrorBlock({|e| cErroBlk := cValToChar(e:Description), Break(e)})
     Begin Sequence
 
         oModel    := OS_MODELLEVE(MODEL_OPERATION_INSERT)
@@ -628,6 +627,10 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
         cVal := AllTrim(OS_LERJSONTXT(jQuery,"osEnviada"))
         oModelSZ1:SetValue("Z1_OSENVCL", If(Empty(cVal), "N", cVal))
         OS_SETOPC(oModelSZ1, jQuery, {{"linhaPv", "Z1_LIN"}, {"valorHora", "Z1_VLRHR", .T.}})
+        // Regras do cliente: A1_CTRANS = N zera o translado; A1_CALMOCO = N zera o almoco, S abate o almoco.
+        OS_REGRACLIENTE(oModelSZ1, 0)
+        // Total tambem em formato hora (Z1_HRTOT HHMM), a partir do decimal (Z1_TOTAL).
+        oModelSZ1:LoadValue("Z1_HRTOT", OS_HORACAMPO(oModelSZ1:GetValue("Z1_TOTAL"), "Z1_HRTOT"))
 
         If oModel:VldData()
             lOk := oModel:CommitData()
@@ -647,9 +650,9 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
             OS_ZA3("DESCRICAO", cOs)
         EndIf
 
-    Recover Using oErroExcpt
+    Recover
         lOk   := .F.
-        cErro := "Erro interno: " + If(ValType(oErroExcpt) == "O", cValToChar(oErroExcpt:Description), cErroBlk)
+        cErro := "Erro interno: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk)
         If oModel <> Nil
             // Erro no meio do commit nao passa pelo AfterTTS: solta a trava da aprovacao e descarta o aviso.
             jFase["fase"]   := "DEP"
@@ -705,7 +708,6 @@ Static Function OS_NUCLEOALTERAR(jQuery)
     Local oModelSZ1  := Nil
     Local lOk        := .F.
     Local cErro      := ""
-    Local oErroExcpt := Nil
     Local cOs        := AllTrim(OS_LERJSONTXT(jQuery,"os"))
     Local cVal       := ""
     Local aHrIni     := OS_LERHORA(jQuery, "horaInicial", "horaInicialDec")
@@ -714,6 +716,7 @@ Static Function OS_NUCLEOALTERAR(jQuery)
     Local cMsgCh     := ""
     Local bErro      := Nil
     Local cErroBlk   := ""
+    Local nAlmAnt    := 0
     Local jFase      := JsonObject():New()
 
     If Empty(cOs)
@@ -739,11 +742,13 @@ Static Function OS_NUCLEOALTERAR(jQuery)
 
     // Sem o ErrorBlock o erro nao cai no Recover.
     // Guarda a descricao: erro dentro do framework (ex: inicializador do SX3) nao chega ao Recover.
-    bErro := ErrorBlock({|e| cErroBlk := cValToChar(e:Description) + " | " + OS_PILHA(cValToChar(e:ErrorStack)), ConOut("CNSA002 erro: " + cErroBlk), Break(e)})
+    bErro := ErrorBlock({|e| cErroBlk := cValToChar(e:Description), Break(e)})
     Begin Sequence
 
         oModel    := OS_MODELLEVE(MODEL_OPERATION_UPDATE)
         oModelSZ1 := oModel:GetModel("SZ1MASTER")
+        // Almoco ja gravado: o fim gravado ja esta abatido dele (abate so a diferenca).
+        nAlmAnt   := oModelSZ1:GetValue("Z1_ALMOCO")
 
         cVal := AllTrim(OS_LERJSONTXT(jQuery,"codCliente"))
         If !Empty(cVal)
@@ -769,10 +774,17 @@ Static Function OS_NUCLEOALTERAR(jQuery)
         If OS_LERJSONNUM(jQuery,"horasTiDec") == 0 .And. !Empty(aHrIni[2]) .And. !Empty(aHrFim[2])
             oModelSZ1:SetValue("Z1_TOTAL", Round(aHrFim[1] - aHrIni[1], 2))
         EndIf
-        OS_SETOPC(oModelSZ1, jQuery, {{"horasTranDec", "Z1_TRANS", .T.}, {"horasTiDec", "Z1_TOTAL", .T.}, ;
+        OS_SETOPC(oModelSZ1, jQuery, {{"horasTiDec", "Z1_TOTAL", .T.}, ;
             {"codAnalista", "Z1_TEC"}, {"osInterna", "Z1_INTERNO"}, {"local", "Z1_LOCAL"}, {"prevPmt", "Z1_PREVIST"}, ;
-            {"numProposta", "Z1_NUMPRO"}, {"pedVenda", "Z1_PV"}, {"hrAlmoco", "Z1_ALMOCO", .T.}, {"projeto", "Z1_PROJET"}, ;
+            {"numProposta", "Z1_NUMPRO"}, {"pedVenda", "Z1_PV"}, {"projeto", "Z1_PROJET"}, ;
             {"revisao", "Z1_REVISA"}, {"tarefa", "Z1_TAREFA"}})
+        // Translado (1 = Sim / 0 = Nao) e Almoco (decimal): chave presente (mesmo 0) grava - permite desmarcar/zerar.
+        If jQuery["horasTranDec"] != Nil
+            oModelSZ1:SetValue("Z1_TRANS", OS_LERJSONNUM(jQuery, "horasTranDec"))
+        EndIf
+        If jQuery["hrAlmoco"] != Nil
+            oModelSZ1:SetValue("Z1_ALMOCO", OS_LERJSONNUM(jQuery, "hrAlmoco"))
+        EndIf
         // Chamado Cliente/TOTVS: chave presente (mesmo vazia) grava - permite limpar.
         If jQuery["chamadoHpsd"] != Nil
             oModelSZ1:SetValue("Z1_CHPSD", AllTrim(OS_LERJSONTXT(jQuery, "chamadoHpsd")))
@@ -793,6 +805,10 @@ Static Function OS_NUCLEOALTERAR(jQuery)
             oModelSZ1:SetValue("Z1_OSENVCL", "N")
         EndIf
         OS_SETOPC(oModelSZ1, jQuery, {{"linhaPv", "Z1_LIN"}, {"valorHora", "Z1_VLRHR", .T.}})
+        // Regras do cliente: A1_CTRANS = N zera o translado; A1_CALMOCO = N zera o almoco, S abate so o que mudou no almoco.
+        OS_REGRACLIENTE(oModelSZ1, nAlmAnt)
+        // Total tambem em formato hora (Z1_HRTOT HHMM), a partir do decimal (Z1_TOTAL).
+        oModelSZ1:LoadValue("Z1_HRTOT", OS_HORACAMPO(oModelSZ1:GetValue("Z1_TOTAL"), "Z1_HRTOT"))
 
         If oModel:VldData()
             lOk := oModel:CommitData()
@@ -814,9 +830,9 @@ Static Function OS_NUCLEOALTERAR(jQuery)
             OS_ZA3("DESCRICAO", cOs)
         EndIf
 
-    Recover Using oErroExcpt
+    Recover
         lOk   := .F.
-        cErro := "Erro interno: " + If(ValType(oErroExcpt) == "O", cValToChar(oErroExcpt:Description), cErroBlk)
+        cErro := "Erro interno: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk)
         If oModel <> Nil
             // Erro no meio do commit nao passa pelo AfterTTS: solta a trava da aprovacao e descarta o aviso.
             jFase["fase"]   := "DEP"
@@ -910,6 +926,54 @@ Static Function OS_LERHORA(jQuery, cTexto, cDec)
 
 Return {nDec, StrZero(nHora, 2) + ":" + StrZero(nMin, 2)}
 
+/*/{Protheus.doc} OS_REGRACLIENTE
+Regras do cadastro do cliente (SA1) na OS:
+- A1_CTRANS = "N" (nao cobra translado): Translado sempre Nao (Z1_TRANS 0).
+- A1_CALMOCO = "N" (nao aceita almoco): Almoco sempre 0, horarios nao mudam (8h-17h, total 9h).
+- A1_CALMOCO = "S" (aceita almoco): abate o almoco do fim (Z1_FIM/Z1_HRFIM) e do total (Z1_TOTAL) -
+  8h-17h com 1h de almoco vira 8h-16h, total 8h.
+@param  oModelSZ1  Submodelo SZ1MASTER
+@param  nAlmAnt    Almoco ja gravado (alterar: o fim gravado ja esta abatido dele); 0 no incluir
+/*/
+Static Function OS_REGRACLIENTE(oModelSZ1, nAlmAnt)
+    Local nAbate  := oModelSZ1:GetValue("Z1_ALMOCO") - nAlmAnt
+    Local cHrFim  := ""
+    Local nMinFim := 0
+
+    SA1->(DbSetOrder(1))
+    If !SA1->(DbSeek(xFilial("SA1") + oModelSZ1:GetValue("Z1_CLI") + oModelSZ1:GetValue("Z1_LOJA")))
+        Return
+    EndIf
+
+    If SA1->(FieldPos("A1_CTRANS")) > 0 .And. AllTrim(SA1->A1_CTRANS) == "N" .And. oModelSZ1:GetValue("Z1_TRANS") <> 0
+        oModelSZ1:SetValue("Z1_TRANS", 0)
+    EndIf
+
+    If SA1->(FieldPos("A1_CALMOCO")) == 0
+        Return
+    EndIf
+    If AllTrim(SA1->A1_CALMOCO) == "N"
+        If oModelSZ1:GetValue("Z1_ALMOCO") <> 0
+            oModelSZ1:SetValue("Z1_ALMOCO", 0)
+        EndIf
+        Return
+    EndIf
+    If nAbate == 0
+        Return
+    EndIf
+
+    // Em minutos (o decimal arredondado perderia minuto no "HH:MM").
+    cHrFim  := StrTran(AllTrim(oModelSZ1:GetValue("Z1_HRFIM")), ":", "")
+    nMinFim := Val(Left(cHrFim, 2)) * 60 + Val(SubStr(cHrFim, 3, 2)) - Round(nAbate * 60, 0)
+    If nMinFim < 0
+        Return
+    EndIf
+
+    oModelSZ1:SetValue("Z1_FIM", Round(nMinFim / 60, 2))
+    oModelSZ1:LoadValue("Z1_HRFIM", OS_HORACAMPO(StrZero(Int(nMinFim / 60), 2) + ":" + StrZero(Mod(nMinFim, 60), 2), "Z1_HRFIM"))
+    oModelSZ1:SetValue("Z1_TOTAL", Round(oModelSZ1:GetValue("Z1_TOTAL") - nAbate, 2))
+Return
+
 /*/{Protheus.doc} OS_HHMM
 Hora para exibir: "0900" -> "09:00".
 /*/
@@ -921,23 +985,16 @@ Static Function OS_HHMM(cHora)
 Return cRet
 
 // "HH:MM" no tamanho do campo (sem ":" se couber menos de 5) - senao FWNOWIDTH.
-// Linhas "on FUNCAO(FONTE) line : N" da pilha de erro, para a mensagem.
-Static Function OS_PILHA(cStack)
-    Local aLin := StrTokArr2(StrTran(cStack, Chr(13), ""), Chr(10), .F.)
-    Local cRet := ""
-    Local nI   := 0
-
-    For nI := 1 To Len(aLin)
-        If " line : " $ aLin[nI] .And. Len(cRet) < 700
-            cRet += AllTrim(aLin[nI]) + " ; "
-        EndIf
-    Next nI
-
-Return cRet
-
+// Numero (horas decimais, ex.: 5.25) vira HHMM como o legado grava (ex.: Z1_HRTOT "0515").
 Static Function OS_HORACAMPO(cHora, cCampo)
     Local nTam := TamSX3(cCampo)[1]
     Local cRet := cHora
+    Local nMin := 0
+
+    If ValType(cHora) == "N"
+        nMin := Round(cHora * 60, 0)
+        Return PadR(If(Int(nMin / 60) < 100, StrZero(Int(nMin / 60), 2), cValToChar(Int(nMin / 60))) + StrZero(Mod(nMin, 60), 2), nTam)
+    EndIf
 
     If nTam < 5
         cRet := StrTran(cRet, ":", "")
@@ -1245,6 +1302,7 @@ GET /CNSAOS - lista paginada (ROWNUM). Filtros: texto, tecnico, cliente, dataDe,
 /*/
 @Get(endpoint="/CNSAOS")
 User Function OS_APILISTAR() As Logical
+    Local cErroBlk := ""  // descricao do erro (o objeto do Recover pode vir sem texto)
     Local jQuery     := oRest:getQueryRequest() As Json
     Local oJson      := JsonObject():New()
     Local aRetorno   := {}
@@ -1282,7 +1340,7 @@ User Function OS_APILISTAR() As Logical
     EndIf
 
     // Sem o ErrorBlock o erro nao cai no Recover. Restaurado em toda saida.
-    bErro := ErrorBlock({|e| Break(e)})
+    bErro := ErrorBlock({|e| cErroBlk := cValToChar(e:Description), Break(e)})
     Begin Sequence
 
         nPagina   := OS_LERJSONNUM(jQuery, "pagina")
@@ -1429,12 +1487,12 @@ User Function OS_APILISTAR() As Logical
     Recover Using oErro
         ErrorBlock(bErro)
         If oErro != Nil
-            Return OS_ERRO(500, oErro:Description)
+            Return OS_ERRO(500, If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))
         EndIf
     End Sequence
     ErrorBlock(bErro)
 
-Return OS_ERRO(500, "Erro desconhecido.")
+Return OS_ERRO(500, "Falha ao listar as OS: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))
 
 /*/{Protheus.doc} OS_APIEXCLUIR
 POST /CNSAOSEXCLUIR - exclui a OS.
@@ -1442,9 +1500,9 @@ POST /CNSAOSEXCLUIR - exclui a OS.
 /*/
 @Post(endpoint="/CNSAOSEXCLUIR")
 User Function OS_APIEXCLUIR() As Logical
+    Local cErroBlk := ""  // descricao do erro (o objeto do Recover pode vir sem texto)
     Local jQuery     := OS_PARAMS() As Json
     Local cOs        := AllTrim(OS_LERJSONTXT(jQuery,"os")) As Character
-    Local oErro      := Nil
     Local oModel     := Nil
     Local lOk        := .F.
     Local cErro      := ""
@@ -1459,7 +1517,7 @@ User Function OS_APIEXCLUIR() As Logical
     EndIf
 
     // Sem o ErrorBlock o erro nao cai no Recover. Restaurado em toda saida.
-    bErro := ErrorBlock({|e| Break(e)})
+    bErro := ErrorBlock({|e| cErroBlk := cValToChar(e:Description), Break(e)})
     Begin Sequence
 
         If Empty(cOs)
@@ -1498,18 +1556,18 @@ User Function OS_APIEXCLUIR() As Logical
         ErrorBlock(bErro)
         Return oRest:setStatusResponse(200, OS_RESPOSTAOK(cOs, "OS excluida com sucesso."))
 
-    Recover Using oErro
+    Recover
         ErrorBlock(bErro)
         If oModel <> Nil
             jFase["fase"]   := "DEP"
             jFase["falhou"] := "S"
             apia.cnsa004.U_CNSAPR("OS", oModel, "", jFase)
         EndIf
-        Return OS_ERRO(500, oErro:Description)
+        Return OS_ERRO(500, If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))
     End Sequence
     ErrorBlock(bErro)
 
-Return OS_ERRO(500, "Erro desconhecido.")
+Return OS_ERRO(500, "Falha ao excluir a OS: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))
 
 /*/{Protheus.doc} OS_APICOPIAR
 POST /CNSAOSCOPIAR - copia a OS.
@@ -1517,10 +1575,10 @@ POST /CNSAOSCOPIAR - copia a OS.
 /*/
 @Post(endpoint="/CNSAOSCOPIAR")
 User Function OS_APICOPIAR() As Logical
+    Local cErroBlk := ""  // descricao do erro (o objeto do Recover pode vir sem texto)
     Local jQuery    := OS_PARAMS() As Json
     Local cOsOrigem := AllTrim(OS_LERJSONTXT(jQuery,"os")) As Character
     Local oJson     := JsonObject():New()
-    Local oErro     := Nil
     Local aResultado := {}
     Local bErro      := Nil
 
@@ -1532,7 +1590,7 @@ User Function OS_APICOPIAR() As Logical
     EndIf
 
     // Sem o ErrorBlock o erro nao cai no Recover. Restaurado em toda saida.
-    bErro := ErrorBlock({|e| Break(e)})
+    bErro := ErrorBlock({|e| cErroBlk := cValToChar(e:Description), Break(e)})
     Begin Sequence
 
         aResultado := OS_NUCLEOCOPIAR(cOsOrigem)
@@ -1550,13 +1608,13 @@ User Function OS_APICOPIAR() As Logical
         ErrorBlock(bErro)
         Return oRest:setStatusResponse(200, oJson:ToJson())
 
-    Recover Using oErro
+    Recover
         ErrorBlock(bErro)
-        Return OS_ERRO(500, oErro:Description)
+        Return OS_ERRO(500, If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))
     End Sequence
     ErrorBlock(bErro)
 
-Return OS_ERRO(500, "Erro desconhecido.")
+Return OS_ERRO(500, "Falha ao copiar a OS: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))
 
 // Interacao de OS sem chamado: bloco no fim do Memo Z1_SERV (antes do 1o bloco = descricao):
 //   === INTERACAO 24/09/2026 10:30 | 000123 | NOME DO CONSULTOR ===
@@ -1720,6 +1778,7 @@ GET /CNSAOSINTERACOES - interacoes da OS (Memo e ZA2 com ZA2_OS) e os chamados d
 /*/
 @Get(endpoint="/CNSAOSINTERACOES")
 User Function OS_APILISTAINTERACOES() As Logical
+    Local cErroBlk := ""  // descricao do erro (o objeto do Recover pode vir sem texto)
     Local jQuery  := oRest:getQueryRequest() As Json
     Local cOs     := AllTrim(OS_LERJSONTXT(jQuery,"os"))
     Local oJson   := JsonObject():New()
@@ -1729,7 +1788,6 @@ User Function OS_APILISTAINTERACOES() As Logical
     Local aBloco  := {}
     Local aOrdem  := {}
     Local nI      := 0
-    Local oErro   := Nil
     Local cAlias  := ""
     Local cData   := ""
     Local aCh     := {}
@@ -1746,7 +1804,7 @@ User Function OS_APILISTAINTERACOES() As Logical
     EndIf
 
     // Sem o ErrorBlock o erro nao cai no Recover. Restaurado em toda saida.
-    bErro := ErrorBlock({|e| Break(e)})
+    bErro := ErrorBlock({|e| cErroBlk := cValToChar(e:Description), Break(e)})
     Begin Sequence
 
         If Empty(cOs)
@@ -1864,13 +1922,13 @@ User Function OS_APILISTAINTERACOES() As Logical
         ErrorBlock(bErro)
         Return oRest:setStatusResponse(200, oJson:ToJson())
 
-    Recover Using oErro
+    Recover
         ErrorBlock(bErro)
-        Return OS_ERRO(500, oErro:Description)
+        Return OS_ERRO(500, If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))
     End Sequence
     ErrorBlock(bErro)
 
-Return OS_ERRO(500, "Erro desconhecido.")
+Return OS_ERRO(500, "Falha ao listar as interacoes da OS: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))
 
 /*/{Protheus.doc} OS_APINOVAINTERACAO
 POST /CNSAOSINTERACOESINCLUIR - OS sem chamado: interacao nova na ZA2 (ZA2_IDCH vazio, ZA2_OS = a OS).
@@ -1879,11 +1937,11 @@ A 1a interacao vira a descricao (Z1_SERV vazio). OS aprovada/recusada: so o admi
 /*/
 @Post(endpoint="/CNSAOSINTERACOESINCLUIR")
 User Function OS_APINOVAINTERACAO() As Logical
+    Local cErroBlk := ""  // descricao do erro (o objeto do Recover pode vir sem texto)
     Local jQuery     := OS_PARAMS() As Json
     Local cOs        := AllTrim(OS_LERJSONTXT(jQuery,"os"))
     Local cTexto     := U_CNSOUTL("TEXTOPURO", OS_LERJSONTXT(jQuery,"texto"))
     Local oJson      := JsonObject():New()
-    Local oErro      := Nil
     Local jMot       := JsonObject():New()
     Local aInv       := {}
     Local cAlias     := ""
@@ -1900,7 +1958,7 @@ User Function OS_APINOVAINTERACAO() As Logical
     EndIf
 
     // Sem o ErrorBlock o erro nao cai no Recover. Restaurado em toda saida.
-    bErro := ErrorBlock({|e| Break(e)})
+    bErro := ErrorBlock({|e| cErroBlk := cValToChar(e:Description), Break(e)})
     Begin Sequence
 
         If Empty(cOs)
@@ -1991,16 +2049,16 @@ User Function OS_APINOVAINTERACAO() As Logical
         ErrorBlock(bErro)
         Return oRest:setStatusResponse(200, oJson:ToJson())
 
-    Recover Using oErro
+    Recover
         ErrorBlock(bErro)
         If lTrava
             UnLockByName("CNSAZA2_OS", .T., .F.)
         EndIf
-        Return OS_ERRO(500, oErro:Description)
+        Return OS_ERRO(500, If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))
     End Sequence
     ErrorBlock(bErro)
 
-Return OS_ERRO(500, "Erro desconhecido.")
+Return OS_ERRO(500, "Falha ao incluir a interacao da OS: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))
 
 /*/{Protheus.doc} OS_APIEXCLUIRINTERACAO
 POST /CNSAOSINTERACOESEXCLUIR - exclui interacao da OS sem chamado (ZA2_IDCH vazio): so o autor ou o admin
@@ -2009,11 +2067,11 @@ POST /CNSAOSINTERACOESEXCLUIR - exclui interacao da OS sem chamado (ZA2_IDCH vaz
 /*/
 @Post(endpoint="/CNSAOSINTERACOESEXCLUIR")
 User Function OS_APIEXCLUIRINTERACAO() As Logical
+    Local cErroBlk := ""  // descricao do erro (o objeto do Recover pode vir sem texto)
     Local jQuery     := OS_PARAMS() As Json
     Local cOs        := AllTrim(OS_LERJSONTXT(jQuery,"os"))
     Local cSeq       := AllTrim(OS_LERJSONTXT(jQuery,"seq"))
     Local oJson      := JsonObject():New()
-    Local oErro      := Nil
     Local jMot       := JsonObject():New()
     Local aInv       := {}
     Local cAlias     := ""
@@ -2029,7 +2087,7 @@ User Function OS_APIEXCLUIRINTERACAO() As Logical
     EndIf
 
     // Sem o ErrorBlock o erro nao cai no Recover. Restaurado em toda saida.
-    bErro := ErrorBlock({|e| Break(e)})
+    bErro := ErrorBlock({|e| cErroBlk := cValToChar(e:Description), Break(e)})
     Begin Sequence
 
         If Empty(cOs) .Or. Empty(cSeq)
@@ -2093,13 +2151,13 @@ User Function OS_APIEXCLUIRINTERACAO() As Logical
         ErrorBlock(bErro)
         Return oRest:setStatusResponse(200, oJson:ToJson())
 
-    Recover Using oErro
+    Recover
         ErrorBlock(bErro)
-        Return OS_ERRO(500, oErro:Description)
+        Return OS_ERRO(500, If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))
     End Sequence
     ErrorBlock(bErro)
 
-Return OS_ERRO(500, "Erro desconhecido.")
+Return OS_ERRO(500, "Falha ao excluir a interacao da OS: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))
 
 /*/{Protheus.doc} OS_ZA3
 Chamados da OS - um por vez (Z1_IDCH = o atual); os anteriores saem das interacoes da OS (ZA2_OS):

@@ -787,8 +787,9 @@ Grava SZA (evento) e SZ1 (estado) na MESMA transacao - falhou uma, desfaz as dua
 @return aRet   {lOk, cErro}
 /*/
 Static Function AP_GRAVAR(cOs, aSZ1, aSZA)
+    Local cErroBlk := ""  // descricao do erro (o objeto do Recover pode vir sem texto)
     Local aRet   := {.F., ""}
-    Local bErro  := ErrorBlock({|e| Break(e)})
+    Local bErro  := ErrorBlock({|e| cErroBlk := cValToChar(e:Description), Break(e)})
     Local oErro  := Nil
     Private __lA02Interno := .T.
 
@@ -800,7 +801,7 @@ Static Function AP_GRAVAR(cOs, aSZ1, aSZA)
                 aRet := apia.cnsa002.U_OS_APRPUB("GRAVAR", cOs, AP_VALORES(aSZ1))
             EndIf
         Recover Using oErro
-            aRet := {.F., "Erro ao gravar a aprovacao: " + If(oErro != Nil, oErro:Description, "")}
+            aRet := {.F., "Erro ao gravar a aprovacao: " + If(oErro != Nil, If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk), "")}
         End Sequence
         If !aRet[1]
             DisarmTransaction()
