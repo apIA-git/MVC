@@ -361,6 +361,10 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
             If !Empty(aReg)
                 oSZ1:LoadValue("Z1_APROVAD", aReg[1])
                 oSZ1:LoadValue("Z1_APVTIPO", AP_VAL("Z1_APVTIPO", aReg[2]))
+                // Aprovacao manual (legado): S na pre-aprovacao interna (M), N nas demais.
+                If SZ1->(FieldPos("Z1_APVMAN")) > 0
+                    oSZ1:LoadValue("Z1_APVMAN", If(!Empty(aReg[2]) .And. aReg[2] $ "IM", "S", "N"))
+                EndIf
                 aCampos := AP_ZERAR()
                 For nI := 1 To Len(aCampos)
                     oSZ1:LoadValue(aCampos[nI], AP_VAL(aCampos[nI], ""))
@@ -791,7 +795,14 @@ Static Function AP_GRAVAR(cOs, aSZ1, aSZA)
     Local aRet   := {.F., ""}
     Local bErro  := ErrorBlock({|e| cErroBlk := cValToChar(e:Description), Break(e)})
     Local oErro  := Nil
+    Local nPos   := AScan(aSZ1, {|x| x[1] == "Z1_APVTIPO"})
     Private __lA02Interno := .T.
+
+    // Aprovacao manual (Z1_APVMAN, como o legado): S se manual (I) ou pre-aprovacao interna (M), N nas demais
+    // (link W, prazo D, reaberta/aguardando).
+    If nPos > 0 .And. SZ1->(FieldPos("Z1_APVMAN")) > 0
+        AAdd(aSZ1, {"Z1_APVMAN", If(!Empty(AllTrim(aSZ1[nPos][2])) .And. AllTrim(aSZ1[nPos][2]) $ "IM", "S", "N")})
+    EndIf
 
     // Erro de execucao vira retorno (transacao desfeita; quem chamou destrava a OS).
     Begin Transaction

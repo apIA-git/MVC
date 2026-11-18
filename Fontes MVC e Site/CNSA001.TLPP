@@ -151,6 +151,9 @@ Static Function CH_MONTARMODEL(nOperAtivar, bTela)
     l_oStrZA1:SetProperty("ZA1_CLIENT", MODEL_FIELD_OBRIGAT, .F.)
     l_oStrZA1:SetProperty("ZA1_LOJA",   MODEL_FIELD_OBRIGAT, .F.)
     l_oStrZA1:SetProperty("ZA1_CONSUL", MODEL_FIELD_OBRIGAT, .F.)
+    // Projeto/tarefa opcionais no chamado (Assumir, troca de tecnico) - mesmo se o dicionario marcar obrigatorio.
+    l_oStrZA1:SetProperty("ZA1_PROJ",   MODEL_FIELD_OBRIGAT, .F.)
+    l_oStrZA1:SetProperty("ZA1_TAREFA", MODEL_FIELD_OBRIGAT, .F.)
 
     // CH_PREVALIDA na pos-validacao (VldData), nao no bPre: o bPre roda a cada SetValue e recusava o proprio campo.
     l_oModel := MPFormModel():New(;
@@ -225,6 +228,12 @@ Static Function CH_PREVALIDA(p_oModel)
                     Return .F.
                 EndIf
 
+                // Abertura manual exige cliente (tecnico pode ficar em branco); so o e-mail passa sem.
+                If Empty(AllTrim(oModelZA1:GetValue("ZA1_CLIENT")))
+                    p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_CLIENT", "ZA1", "ZA1_CLIENT", "CNSA001", "Informe o cliente do chamado.")
+                    Return .F.
+                EndIf
+
                 // Projeto e tarefa sao opcionais no chamado (so Agenda e OS exigem projeto).
 
             EndIf
@@ -250,8 +259,9 @@ Static Function CH_PREVALIDA(p_oModel)
             Return .F.
         EndIf
         If oModelZA1 <> Nil
-            If AllTrim(oModelZA1:GetValue("ZA1_STATUS")) <> AllTrim(ZA1->ZA1_STATUS)
-                p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_STATUS", "ZA1", "ZA1_STATUS", "CNSA001", "Somente administradores podem alterar o status do chamado.")
+            // Analista troca o status do proprio chamado, menos reabrir chamado fechado (so admin).
+            If AllTrim(ZA1->ZA1_STATUS) == "4" .And. AllTrim(oModelZA1:GetValue("ZA1_STATUS")) <> "4"
+                p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_STATUS", "ZA1", "ZA1_STATUS", "CNSA001", "Somente administradores podem reabrir chamado fechado.")
                 Return .F.
             EndIf
             If AllTrim(oModelZA1:GetValue("ZA1_ANOT")) <> AllTrim(ZA1->ZA1_ANOT)
@@ -288,6 +298,24 @@ Static Function CH_PREVALIDA(p_oModel)
             AllTrim(oModelZA1:GetValue("ZA1_STATUS")) == "4" .And. ;
             !(Type("lCnsaAlterandoStatus") == "L" .And. lCnsaAlterandoStatus)
             p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_STATUS", "ZA1", "ZA1_STATUS", "CNSA001", "Chamado fechado nao pode ser alterado.")
+            Return .F.
+        EndIf
+
+        // Nenhum status volta para Aberto (so Incompleto -> Aberto); Aberto com consultor vira Pendente Apia.
+        If oModelZA1 <> Nil .And. AllTrim(oModelZA1:GetValue("ZA1_STATUS")) == "1"
+            If !(AllTrim(ZA1->ZA1_STATUS) $ "1|5")
+                p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_STATUS", "ZA1", "ZA1_STATUS", "CNSA001", "Chamado que ja saiu de Aberto nao pode voltar para Aberto.")
+                Return .F.
+            ElseIf !Empty(AllTrim(oModelZA1:GetValue("ZA1_CONSUL")))
+                oModelZA1:LoadValue("ZA1_STATUS", "2")
+            EndIf
+        EndIf
+
+        // Sem tecnico o status nao muda (Incompleto -> Aberto ao ganhar cliente pode).
+        If oModelZA1 <> Nil .And. Empty(AllTrim(oModelZA1:GetValue("ZA1_CONSUL"))) .And. ;
+                AllTrim(oModelZA1:GetValue("ZA1_STATUS")) <> AllTrim(ZA1->ZA1_STATUS) .And. ;
+                !(AllTrim(ZA1->ZA1_STATUS) == "5" .And. AllTrim(oModelZA1:GetValue("ZA1_STATUS")) == "1")
+            p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_STATUS", "ZA1", "ZA1_STATUS", "CNSA001", "Defina o tecnico antes de alterar o status do chamado.")
             Return .F.
         EndIf
 
@@ -1422,6 +1450,8 @@ Static Function CH_NUCLEOINCLUIR(cAssunto, cDtAbertura, cTipo, cCodCliente, cLoj
         EndIf
 
         lOk := oModel:VldData() .And. oModel:CommitData()
+        // Mensagem do erro antes do DeActivate (depois ele ja nao tem).
+        oErroModel := If(lOk, Nil, oModel:GetErrorMessage())
 
         oModel:DeActivate(lOk)
         CH_LIMPAFLAGS()
@@ -1433,7 +1463,6 @@ Static Function CH_NUCLEOINCLUIR(cAssunto, cDtAbertura, cTipo, cCodCliente, cLoj
             oJson['mensagem'] := "Chamado incluido com sucesso."
             aRet := {200, oJson:ToJson(), cIdCh}
         Else
-            oErroModel := oModel:GetErrorMessage()
             RollBackSX8()
             aRet := {400, CH_ERRO(CH_MSGMODEL(oErroModel, "Falha ao incluir o chamado.")), ""}
         EndIf
@@ -1627,6 +1656,8 @@ Static Function CH_NUCLEOALTERAR(cIdCh, cAssunto, cDtAbertura, cTipo, cCodClient
         oModelZA1:LoadValue("ZA1_MOD", Date())
 
         lOk := oModel:VldData() .And. oModel:CommitData()
+        // Mensagem do erro antes do DeActivate (depois ele ja nao tem).
+        oErroModel := If(lOk, Nil, oModel:GetErrorMessage())
 
         oModel:DeActivate(lOk)
         CH_LIMPAFLAGS()
@@ -1638,7 +1669,6 @@ Static Function CH_NUCLEOALTERAR(cIdCh, cAssunto, cDtAbertura, cTipo, cCodClient
             oJson['mensagem'] := "Chamado alterado com sucesso."
             aRet := {200, oJson:ToJson()}
         Else
-            oErroModel := oModel:GetErrorMessage()
             aRet := {400, CH_ERRO(CH_MSGMODEL(oErroModel, "Falha ao alterar o chamado."))}
         EndIf
 

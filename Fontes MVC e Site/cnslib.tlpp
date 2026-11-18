@@ -203,7 +203,7 @@ Static Function CNS001_CLILUPA(cFiltro)
     Local cFiltroUp2 := cFiltroUp
 
     BeginSql Alias cAlias
-        SELECT A1_COD, A1_LOJA, A1_NOME, A1_NREDUZ, A1_CONTATO, A1_EMAIL, A1_CTRANS, A1_CALMOCO
+        SELECT A1_COD, A1_LOJA, A1_NOME, A1_NREDUZ, A1_CONTATO, A1_EMAIL, A1_CTRANS, A1_HRTRANS
         FROM %Table:SA1% SA1
         WHERE A1_FILIAL = %xFilial:SA1%
           AND %NotDel%
@@ -224,8 +224,10 @@ Static Function CNS001_CLILUPA(cFiltro)
         oLinha['email']        := CNS001_LUPA_COMPSTR((cAlias)->A1_EMAIL)
         // Cobra translado (A1_CTRANS S/N) - "N" trava o Translado da OS em Nao.
         oLinha['cobraTranslado'] := CNS001_LUPA_COMPSTR((cAlias)->A1_CTRANS)
-        // Aceita almoco (A1_CALMOCO S/N) - "N" trava o Almoco da OS em branco.
-        oLinha['cobraAlmoco']    := CNS001_LUPA_COMPSTR((cAlias)->A1_CALMOCO)
+        // Horas de translado do cliente (A1_HRTRANS, sexagesimal 1.30 ou "0130") em "HH:MM" - mostradas no Translado da OS.
+        oLinha['hrsTranslado']   := If(ValType((cAlias)->A1_HRTRANS) == "N", ;
+            StrZero(Int((cAlias)->A1_HRTRANS), 2) + ":" + StrZero(Round(((cAlias)->A1_HRTRANS - Int((cAlias)->A1_HRTRANS)) * 100, 0), 2), ;
+            Transform(PadL(AllTrim(StrTran((cAlias)->A1_HRTRANS, ":", "")), 4, "0"), "@R 99:99"))
         AAdd(aRet, oLinha)
         (cAlias)->(DbSkip())
     EndDo
