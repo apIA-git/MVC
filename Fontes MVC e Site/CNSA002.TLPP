@@ -214,6 +214,9 @@ Static Function OS_PREVALIDA(p_oModel)
     Local aCampos   := {{"Z1_MODULO", "Informe o modulo."}, {"Z1_MOTIV", "Informe o motivo."}, ;
                         {"Z1_TIPO", "Informe o codigo do servico."}, {"Z1_DTOS", "Informe a data da OS."}, ;
                         {"Z1_PROJET", "Informe o projeto."}}
+    Local aHoras    := {{"Z1_HRINI", "Hora inicial"}, {"Z1_HRFIM", "Hora final"}}
+    Local cHora     := ""
+    Local nMin      := 0
     Local nI        := 0
 
     // Chamado TOTVS so com Chamado Cliente ou Chamado Apia (gravacao da aprovacao nao barra).
@@ -222,6 +225,41 @@ Static Function OS_PREVALIDA(p_oModel)
             Empty(oModelSZ1:GetValue("Z1_IDCH")) .And. Empty(oModelSZ1:GetValue("Z1_CHPSD"))
         p_oModel:SetErrorMessage("SZ1MASTER", "Z1_CHTOTVS", "SZ1", "Z1_CHTOTVS", "CNSA002", "Chamado TOTVS exige Chamado Cliente ou Chamado Apia.")
         Return .F.
+    EndIf
+    // Horario valido: hora 00 a 23 e minuto 00 a 59 (ex.: 09:69 nao passa).
+    If (p_oModel:GetOperation() == 3 .Or. p_oModel:GetOperation() == 4) .And. !(Type("__lA02Interno") == "L" .And. __lA02Interno)
+        For nI := 1 To Len(aHoras)
+            cHora := StrTran(AllTrim(oModelSZ1:GetValue(aHoras[nI][1])), ":", "")
+            If !Empty(cHora) .And. (Len(cHora) != 4 .Or. !(cHora == StrZero(Val(cHora), 4)) .Or. Val(Left(cHora, 2)) > 23 .Or. Val(Right(cHora, 2)) > 59)
+                p_oModel:SetErrorMessage("SZ1MASTER", aHoras[nI][1], "SZ1", aHoras[nI][1], "CNSA002", ;
+                    aHoras[nI][2] + " invalida: " + AllTrim(oModelSZ1:GetValue(aHoras[nI][1])) + " (hora de 00 a 23 e minuto de 00 a 59).")
+                Return .F.
+            EndIf
+        Next nI
+        // Hora final depois da inicial e almoco menor que o tempo trabalhado (qualquer cliente).
+        nMin := OS_MINUTOS(oModelSZ1:GetValue("Z1_HRFIM")) - OS_MINUTOS(oModelSZ1:GetValue("Z1_HRINI"))
+        If !Empty(oModelSZ1:GetValue("Z1_HRINI")) .And. !Empty(oModelSZ1:GetValue("Z1_HRFIM"))
+            If nMin <= 0
+                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_HRFIM", "SZ1", "Z1_HRFIM", "CNSA002", "Hora final deve ser maior que a hora inicial.")
+                Return .F.
+            EndIf
+            If Round(oModelSZ1:GetValue("Z1_ALMOCO") * 60, 0) >= nMin
+                p_oModel:SetErrorMessage("SZ1MASTER", "Z1_ALMOCO", "SZ1", "Z1_ALMOCO", "CNSA002", "Almoco maior ou igual ao tempo trabalhado.")
+                Return .F.
+            EndIf
+        EndIf
+        // Translado so para cliente que paga translado (A1_CTRANS diferente de N).
+        If oModelSZ1:GetValue("Z1_TRANS") <> 0 .And. SA1->(FieldPos("A1_CTRANS")) > 0 .And. ;
+                AllTrim(Posicione("SA1", 1, xFilial("SA1") + oModelSZ1:GetValue("Z1_CLI") + oModelSZ1:GetValue("Z1_LOJA"), "A1_CTRANS")) == "N"
+            p_oModel:SetErrorMessage("SZ1MASTER", "Z1_TRANS", "SZ1", "Z1_TRANS", "CNSA002", "Cliente nao paga translado: marque Translado = Nao.")
+            Return .F.
+        EndIf
+        // OS criada nao muda de cliente.
+        If p_oModel:GetOperation() == 4 .And. ;
+                oModelSZ1:GetValue("Z1_CLI") + oModelSZ1:GetValue("Z1_LOJA") <> SZ1->Z1_CLI + SZ1->Z1_LOJA
+            p_oModel:SetErrorMessage("SZ1MASTER", "Z1_CLI", "SZ1", "Z1_CLI", "CNSA002", "O cliente da OS nao pode ser alterado.")
+            Return .F.
+        EndIf
     EndIf
     If p_oModel:GetOperation() != 3
         Return .T.
@@ -615,9 +653,17 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
         cVal := AllTrim(OS_LERJSONTXT(jQuery,"osInterna"))
         oModelSZ1:SetValue("Z1_INTERNO", If(Empty(cVal), "N", cVal))
         // Opcionais: so se vierem preenchidos.
-        OS_SETOPC(oModelSZ1, jQuery, {{"local", "Z1_LOCAL"}, {"horasTranDec", "Z1_TRANS", .T.}, {"prevPmt", "Z1_PREVIST"}, ;
-            {"numProposta", "Z1_NUMPRO"}, {"pedVenda", "Z1_PV"}, {"hrAlmoco", "Z1_ALMOCO", .T.}, {"projeto", "Z1_PROJET"}, ;
+        OS_SETOPC(oModelSZ1, jQuery, {{"local", "Z1_LOCAL"}, {"prevPmt", "Z1_PREVIST"}, ;
+            {"numProposta", "Z1_NUMPRO"}, {"pedVenda", "Z1_PV"}, {"projeto", "Z1_PROJET"}, ;
             {"revisao", "Z1_REVISA"}, {"tarefa", "Z1_TAREFA"}, {"chamadoHpsd", "Z1_CHPSD"}, {"chamadoTotvs", "Z1_CHTOTVS"}})
+        // Translado/Almoco depois do Local e mesmo com 0: o Nao do analista vale sobre o que o
+        // dicionario preencher pelo Local (Presencial).
+        If jQuery["horasTranDec"] != Nil
+            oModelSZ1:SetValue("Z1_TRANS", OS_LERJSONNUM(jQuery, "horasTranDec"))
+        EndIf
+        If jQuery["hrAlmoco"] != Nil
+            oModelSZ1:SetValue("Z1_ALMOCO", OS_LERJSONNUM(jQuery, "hrAlmoco"))
+        EndIf
         // Z1_IDCH = o chamado da OS.
         If Len(aParCh[2]) > 0
             oModelSZ1:LoadValue("Z1_IDCH", aParCh[2][1])
@@ -627,8 +673,8 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
         cVal := AllTrim(OS_LERJSONTXT(jQuery,"osEnviada"))
         oModelSZ1:SetValue("Z1_OSENVCL", If(Empty(cVal), "N", cVal))
         OS_SETOPC(oModelSZ1, jQuery, {{"linhaPv", "Z1_LIN"}, {"valorHora", "Z1_VLRHR", .T.}})
-        // Regras do cliente: A1_CTRANS = N zera o translado; A1_CALMOCO = N zera o almoco, S abate o almoco.
-        OS_REGRACLIENTE(oModelSZ1, 0)
+        // Total pela planilha "Almoco e Translado" (SA1: A1_CALMOCO / A1_CTRANS / A1_HRTRANS).
+        OS_REGRACLIENTE(oModelSZ1)
         // Total tambem em formato hora (Z1_HRTOT HHMM), a partir do decimal (Z1_TOTAL).
         oModelSZ1:LoadValue("Z1_HRTOT", OS_HORACAMPO(oModelSZ1:GetValue("Z1_TOTAL"), "Z1_HRTOT"))
 
@@ -716,7 +762,6 @@ Static Function OS_NUCLEOALTERAR(jQuery)
     Local cMsgCh     := ""
     Local bErro      := Nil
     Local cErroBlk   := ""
-    Local nAlmAnt    := 0
     Local jFase      := JsonObject():New()
 
     If Empty(cOs)
@@ -747,8 +792,6 @@ Static Function OS_NUCLEOALTERAR(jQuery)
 
         oModel    := OS_MODELLEVE(MODEL_OPERATION_UPDATE)
         oModelSZ1 := oModel:GetModel("SZ1MASTER")
-        // Almoco ja gravado: o fim gravado ja esta abatido dele (abate so a diferenca).
-        nAlmAnt   := oModelSZ1:GetValue("Z1_ALMOCO")
 
         cVal := AllTrim(OS_LERJSONTXT(jQuery,"codCliente"))
         If !Empty(cVal)
@@ -805,8 +848,8 @@ Static Function OS_NUCLEOALTERAR(jQuery)
             oModelSZ1:SetValue("Z1_OSENVCL", "N")
         EndIf
         OS_SETOPC(oModelSZ1, jQuery, {{"linhaPv", "Z1_LIN"}, {"valorHora", "Z1_VLRHR", .T.}})
-        // Regras do cliente: A1_CTRANS = N zera o translado; A1_CALMOCO = N zera o almoco, S abate so o que mudou no almoco.
-        OS_REGRACLIENTE(oModelSZ1, nAlmAnt)
+        // Total recalculado a cada gravacao pela planilha "Almoco e Translado".
+        OS_REGRACLIENTE(oModelSZ1)
         // Total tambem em formato hora (Z1_HRTOT HHMM), a partir do decimal (Z1_TOTAL).
         oModelSZ1:LoadValue("Z1_HRTOT", OS_HORACAMPO(oModelSZ1:GetValue("Z1_TOTAL"), "Z1_HRTOT"))
 
@@ -927,52 +970,88 @@ Static Function OS_LERHORA(jQuery, cTexto, cDec)
 Return {nDec, StrZero(nHora, 2) + ":" + StrZero(nMin, 2)}
 
 /*/{Protheus.doc} OS_REGRACLIENTE
-Regras do cadastro do cliente (SA1) na OS:
-- A1_CTRANS = "N" (nao cobra translado): Translado sempre Nao (Z1_TRANS 0).
-- A1_CALMOCO = "N" (nao aceita almoco): Almoco sempre 0, horarios nao mudam (8h-17h, total 9h).
-- A1_CALMOCO = "S" (aceita almoco): abate o almoco do fim (Z1_FIM/Z1_HRFIM) e do total (Z1_TOTAL) -
-  8h-17h com 1h de almoco vira 8h-16h, total 8h.
+Total da OS (Z1_TOTAL) pela planilha "Almoco e Translado", com o que o cliente paga no SA1:
+- Almoco (padrao 1h): A1_CALMOCO = "N" subtrai o almoco informado de FIM - INI; paga (S/vazio) e almocou
+  menos que o padrao soma o que faltou (trabalhou no horario de almoco); igual ou mais, nada.
+- Translado = Sim (so cliente que paga - A1_CTRANS, critica no OS_PREVALIDA): soma as horas do A1_HRTRANS.
+Horarios (Z1_HRINI/Z1_HRFIM) nunca mudam; grava tambem Z1_HRALMOC e Z1_HRTRANS em hora.
 @param  oModelSZ1  Submodelo SZ1MASTER
-@param  nAlmAnt    Almoco ja gravado (alterar: o fim gravado ja esta abatido dele); 0 no incluir
 /*/
-Static Function OS_REGRACLIENTE(oModelSZ1, nAlmAnt)
-    Local nAbate  := oModelSZ1:GetValue("Z1_ALMOCO") - nAlmAnt
-    Local cHrFim  := ""
-    Local nMinFim := 0
+Static Function OS_REGRACLIENTE(oModelSZ1)
+    Local nMin     := OS_MINUTOS(oModelSZ1:GetValue("Z1_HRFIM")) - OS_MINUTOS(oModelSZ1:GetValue("Z1_HRINI"))
+    Local nAlm     := Round(oModelSZ1:GetValue("Z1_ALMOCO") * 60, 0)
+    Local nTrans   := 0
+    Local lPagaAlm := .T.
 
     SA1->(DbSetOrder(1))
-    If !SA1->(DbSeek(xFilial("SA1") + oModelSZ1:GetValue("Z1_CLI") + oModelSZ1:GetValue("Z1_LOJA")))
-        Return
-    EndIf
-
-    If SA1->(FieldPos("A1_CTRANS")) > 0 .And. AllTrim(SA1->A1_CTRANS) == "N" .And. oModelSZ1:GetValue("Z1_TRANS") <> 0
-        oModelSZ1:SetValue("Z1_TRANS", 0)
-    EndIf
-
-    If SA1->(FieldPos("A1_CALMOCO")) == 0
-        Return
-    EndIf
-    If AllTrim(SA1->A1_CALMOCO) == "N"
-        If oModelSZ1:GetValue("Z1_ALMOCO") <> 0
-            oModelSZ1:SetValue("Z1_ALMOCO", 0)
+    If SA1->(DbSeek(xFilial("SA1") + oModelSZ1:GetValue("Z1_CLI") + oModelSZ1:GetValue("Z1_LOJA")))
+        lPagaAlm := !(SA1->(FieldPos("A1_CALMOCO")) > 0 .And. AllTrim(SA1->A1_CALMOCO) == "N")
+        If oModelSZ1:GetValue("Z1_TRANS") <> 0 .And. SA1->(FieldPos("A1_HRTRANS")) > 0
+            // A1_HRTRANS e sexagesimal (1.30 ou "0130" = 1h30).
+            nTrans := Round(OS_SEXADEC(SA1->A1_HRTRANS) * 60, 0)
         EndIf
-        Return
     EndIf
-    If nAbate == 0
-        Return
-    EndIf
+    OS_HORASEXA(oModelSZ1, "Z1_HRALMOC", oModelSZ1:GetValue("Z1_ALMOCO"))
+    OS_HORASEXA(oModelSZ1, "Z1_HRTRANS", nTrans / 60)
 
-    // Em minutos (o decimal arredondado perderia minuto no "HH:MM").
-    cHrFim  := StrTran(AllTrim(oModelSZ1:GetValue("Z1_HRFIM")), ":", "")
-    nMinFim := Val(Left(cHrFim, 2)) * 60 + Val(SubStr(cHrFim, 3, 2)) - Round(nAbate * 60, 0)
-    If nMinFim < 0
+    // Sem horario valido o total fica como veio (fim > inicio e criticado no OS_PREVALIDA).
+    If nMin <= 0
         Return
     EndIf
-
-    oModelSZ1:SetValue("Z1_FIM", Round(nMinFim / 60, 2))
-    oModelSZ1:LoadValue("Z1_HRFIM", OS_HORACAMPO(StrZero(Int(nMinFim / 60), 2) + ":" + StrZero(Mod(nMinFim, 60), 2), "Z1_HRFIM"))
-    oModelSZ1:SetValue("Z1_TOTAL", Round(oModelSZ1:GetValue("Z1_TOTAL") - nAbate, 2))
+    // shortcut: almoco padrao fixo em 1h (60 min), virar parametro se algum cliente tiver outro padrao.
+    nMin += If(lPagaAlm, Max(60 - nAlm, 0), -nAlm) + nTrans
+    oModelSZ1:SetValue("Z1_TOTAL", Round(nMin / 60, 2))
 Return
+
+/*/{Protheus.doc} OS_MINUTOS
+Hora "HH:MM" ou "HHMM" em minutos do dia (vazio = 0).
+/*/
+Static Function OS_MINUTOS(cHora)
+    Local cDig := StrTran(AllTrim(cHora), ":", "")
+Return Val(Left(cDig, 2)) * 60 + Val(SubStr(cDig, 3, 2))
+
+/*/{Protheus.doc} OS_HORASEXA
+Horas decimais (1.5) gravadas em hora (sexagesimal) no campo, conforme o tipo no dicionario:
+numerico -> 1.30 (1h30); caractere -> "0130" ou "01:30" (cabendo o ":"). Campo inexistente: nada.
+@param  oModelSZ1  Submodelo SZ1MASTER
+@param  cCampo     Campo de destino (Z1_HRALMOC, Z1_HRTRANS)
+@param  nDec       Horas em decimal
+/*/
+Static Function OS_HORASEXA(oModelSZ1, cCampo, nDec)
+    Local nMin  := Round(If(ValType(nDec) == "N", nDec, 0) * 60, 0)
+    Local cTipo := ""
+
+    If SZ1->(FieldPos(cCampo)) == 0
+        Return
+    EndIf
+    // Tipo do campo no proprio model (o que o LoadValue exige).
+    cTipo := ValType(oModelSZ1:GetValue(cCampo))
+    If cTipo == "N"
+        oModelSZ1:LoadValue(cCampo, Int(nMin / 60) + Mod(nMin, 60) / 100)
+    ElseIf cTipo != "C"
+        Return
+    ElseIf nMin == 0
+        oModelSZ1:LoadValue(cCampo, Space(TamSX3(cCampo)[1]))
+    Else
+        oModelSZ1:LoadValue(cCampo, OS_HORACAMPO(StrZero(Int(nMin / 60), 2) + ":" + StrZero(Mod(nMin, 60), 2), cCampo))
+    EndIf
+Return
+
+/*/{Protheus.doc} OS_SEXADEC
+Hora sexagesimal -> decimal: 1.30 (numerico) ou "0130"/"01:30" (caractere) = 1h30 -> 1.5.
+/*/
+Static Function OS_SEXADEC(xHora)
+    Local cDig := ""
+
+    If ValType(xHora) == "N"
+        Return Int(xHora) + Round((xHora - Int(xHora)) * 100, 0) / 60
+    EndIf
+    cDig := StrTran(AllTrim(cValToChar(xHora)), ":", "")
+    If Empty(cDig)
+        Return 0
+    EndIf
+    cDig := PadL(cDig, 4, "0")
+Return Val(Left(cDig, Len(cDig) - 2)) + Val(Right(cDig, 2)) / 60
 
 /*/{Protheus.doc} OS_HHMM
 Hora para exibir: "0900" -> "09:00".
