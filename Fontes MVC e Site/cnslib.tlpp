@@ -192,6 +192,12 @@ Static Function CNS001_TECLUPA(cFiltro, lTodos)
 
 Return aRet
 
+/*/{Protheus.doc} OUTL_CPO
+Valor do campo da agenda no modelo; campo que a versao do CNSA003 nao tem (ex.: Z6_IDCH) = vazio.
+/*/
+Static Function OUTL_CPO(oSZ6, cCampo)
+Return If(oSZ6:GetStruct():HasField(cCampo), oSZ6:GetValue(cCampo), "")
+
 ////////////////////////////////////////////////////////////////////////////////
 Static Function CNS001_CLILUPA(cFiltro)
     Local aRet    := {}
@@ -934,7 +940,7 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4, x5, x6)
     // Linha {rotulo, valor} pro e-mail (aLin) e, com lCartao, pro cartao do evento (aCli).
     // Na alteracao (lMarca) o valor dos campos aCpos que mudaram vem destacado no e-mail.
     Local bLinha   := {|lCartao, cRot, cVal, aCpos| If(Empty(cVal), Nil, ;
-                         (AAdd(aLin, {cRot, If(lMarca .And. AScan(aCpos, {|c| oSZ6:IsFieldUpdated(c)}) > 0, ;
+                         (AAdd(aLin, {cRot, If(lMarca .And. AScan(aCpos, {|c| oSZ6:GetStruct():HasField(c) .And. oSZ6:IsFieldUpdated(c)}) > 0, ;
                              '<span style="background-color:#fff3b0;color:#c62828;font-weight:bold">' + cVal + ' (alterado)</span>', cVal)}), ;
                           If(lCartao, AAdd(aCli, {cRot, cVal}), Nil)))}
 
@@ -953,38 +959,38 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4, x5, x6)
             cEmail := U_CNSOUTL("EMAIL", aAg[AG_TECNICO])
             cId    := U_CNSOUTL("LERID", oSZ6)               // vazio = ainda nao tem evento
 
-            If nOper == OUTL_EXCLUIR
+            // Sem Break no fluxo normal: o Recover fica so para erro de verdade.
+            Do Case
+            Case nOper == OUTL_EXCLUIR
                 U_CNSOUTL("EXCLUIR", cEmail, cId)
                 U_CNSOUTL("AVISO", aAg[AG_TECNICO], aAg, "Cancelado", ;
                     "O agendamento abaixo foi cancelado e removido do seu calend&aacute;rio.")
-                Break
-            EndIf
 
             // A Agenda exclui em 2 passos: grava o motivo (Z6_MOTCANC) e depois apaga.
             // Alteracao com motivo de cancelamento = passo antes da exclusao: nem e-mail
             // de "alterado" nem Outlook (o cancelamento vem na exclusao).
-            If nOper == OUTL_ALTERAR .And. oSZ6:GetStruct():HasField("Z6_MOTCANC") .And. !Empty(oSZ6:GetValue("Z6_MOTCANC"))
-                Break
-            EndIf
+            Case nOper == OUTL_ALTERAR .And. oSZ6:GetStruct():HasField("Z6_MOTCANC") .And. !Empty(OUTL_CPO(oSZ6, "Z6_MOTCANC"))
 
-            // Incluir cria, Alterar atualiza. Vinculo gravado ANTES do e-mail.
-            xRet := U_CNSOUTL("SALVAR", cEmail, cId, aAg)
-            If xRet != cId
-                U_CNSOUTL("GRAVAID", oSZ6, xRet)
-            EndIf
+            Otherwise
+                // Incluir cria, Alterar atualiza. Vinculo gravado ANTES do e-mail.
+                xRet := U_CNSOUTL("SALVAR", cEmail, cId, aAg)
+                If xRet != cId
+                    U_CNSOUTL("GRAVAID", oSZ6, xRet)
+                EndIf
 
-            // Data e tecnico sao chave (nao mudam): alteracao fica no mesmo calendario.
-            If nOper == OUTL_ALTERAR
-                U_CNSOUTL("AVISO", aAg[AG_TECNICO], aAg, "Alterado", ;
-                    "Um agendamento seu foi alterado - o que mudou est&aacute; destacado abaixo. O seu calend&aacute;rio j&aacute; foi atualizado.")
-            Else
-                U_CNSOUTL("AVISO", aAg[AG_TECNICO], aAg, "Novo", ;
-                    "Um atendimento foi agendado para voc&ecirc; e j&aacute; est&aacute; no seu calend&aacute;rio.")
-            EndIf
+                // Data e tecnico sao chave (nao mudam): alteracao fica no mesmo calendario.
+                If nOper == OUTL_ALTERAR
+                    U_CNSOUTL("AVISO", aAg[AG_TECNICO], aAg, "Alterado", ;
+                        "Um agendamento seu foi alterado - o que mudou est&aacute; destacado abaixo. O seu calend&aacute;rio j&aacute; foi atualizado.")
+                Else
+                    U_CNSOUTL("AVISO", aAg[AG_TECNICO], aAg, "Novo", ;
+                        "Um atendimento foi agendado para voc&ecirc; e j&aacute; est&aacute; no seu calend&aacute;rio.")
+                EndIf
+            EndCase
         Recover Using oErro
-            If oErro != Nil
-                ConOut("CNSOUTLOOK: erro ao sincronizar a agenda: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))
-            EndIf
+            // Erro do framework (ex.: campo fora do modelo) chega como objeto, sem passar pelo bErro.
+            ConOut("CNSOUTLOOK: erro ao sincronizar a agenda: " + If(!Empty(cErroBlk), cErroBlk, ;
+                If(ValType(oErro) == "O", cValToChar(oErro:Description), "erro sem descricao do sistema.")))
         End Sequence
         ErrorBlock(bErro)
         xRet := Nil
@@ -1043,17 +1049,17 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4, x5, x6)
     Case cAcao == "DADOS"
         oSZ6   := x1
         lMarca := ValType(x2) == "L" .And. x2 .And. MethIsMemberOf(oSZ6, "ISFIELDUPDATED")
-        cTec   := AllTrim(oSZ6:GetValue("Z6_TECNICO"))
-        cCli  := AllTrim(oSZ6:GetValue("Z6_CLIENTE"))
-        cLoja := AllTrim(oSZ6:GetValue("Z6_LOJA"))
-        cProj := AllTrim(oSZ6:GetValue("Z6_PROJET"))
-        cRevisa := AllTrim(oSZ6:GetValue("Z6_REVISA"))
-        cTaf  := AllTrim(oSZ6:GetValue("Z6_TAREFA"))
+        cTec   := AllTrim(OUTL_CPO(oSZ6, "Z6_TECNICO"))
+        cCli  := AllTrim(OUTL_CPO(oSZ6, "Z6_CLIENTE"))
+        cLoja := AllTrim(OUTL_CPO(oSZ6, "Z6_LOJA"))
+        cProj := AllTrim(OUTL_CPO(oSZ6, "Z6_PROJET"))
+        cRevisa := AllTrim(OUTL_CPO(oSZ6, "Z6_REVISA"))
+        cTaf  := AllTrim(OUTL_CPO(oSZ6, "Z6_TAREFA"))
 
         // Chamado: Z6_IDCH (portal) ou Z6_CHAMADO (numerico, Agendar do chamado).
-        cIdCh := AllTrim(oSZ6:GetValue("Z6_IDCH"))
-        If Empty(cIdCh) .And. ValType(oSZ6:GetValue("Z6_CHAMADO")) == "N" .And. oSZ6:GetValue("Z6_CHAMADO") > 0
-            cIdCh := StrZero(oSZ6:GetValue("Z6_CHAMADO"), 6)
+        cIdCh := AllTrim(OUTL_CPO(oSZ6, "Z6_IDCH"))
+        If Empty(cIdCh) .And. ValType(OUTL_CPO(oSZ6, "Z6_CHAMADO")) == "N" .And. OUTL_CPO(oSZ6, "Z6_CHAMADO") > 0
+            cIdCh := StrZero(OUTL_CPO(oSZ6, "Z6_CHAMADO"), 6)
         EndIf
 
         // Textos do banco podem vir em UTF-8 (assunto do chamado) - DECODESAFE volta pra CP1252.
@@ -1061,14 +1067,14 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4, x5, x6)
         // Assunto: o do chamado; sem chamado, o servico da agenda.
         cAssunto := If(Empty(cIdCh), "", AllTrim(Posicione("ZA1", 1, xFilial("ZA1") + cIdCh, "ZA1_ASSUNT")))
         If Empty(cAssunto)
-            cAssunto := AllTrim(oSZ6:GetValue("Z6_SERVICO"))
+            cAssunto := AllTrim(OUTL_CPO(oSZ6, "Z6_SERVICO"))
         EndIf
         cAssunto := CNS001_LUPA_DECODESAFE(cAssunto)
 
         // Linhas do e-mail (valores ja em HTML, opcao TEXTO); .T. = tambem no cartao do evento.
         // Data/hora o Outlook ja mostra no evento.
-        Eval(bLinha, .F., "Data",            DToC(oSZ6:GetValue("Z6_DTAGE")), {"Z6_DTAGE"})
-        Eval(bLinha, .F., "Hor&aacute;rio",  AllTrim(oSZ6:GetValue("Z6_HMINI")) + " &agrave;s " + AllTrim(oSZ6:GetValue("Z6_HMFIM")), {"Z6_HMINI", "Z6_HMFIM"})
+        Eval(bLinha, .F., "Data",            DToC(OUTL_CPO(oSZ6, "Z6_DTAGE")), {"Z6_DTAGE"})
+        Eval(bLinha, .F., "Hor&aacute;rio",  AllTrim(OUTL_CPO(oSZ6, "Z6_HMINI")) + " &agrave;s " + AllTrim(OUTL_CPO(oSZ6, "Z6_HMFIM")), {"Z6_HMINI", "Z6_HMFIM"})
         Eval(bLinha, .F., "T&eacute;cnico",  U_CNSOUTL("TEXTO", Posicione("AA1", 1, xFilial("AA1") + cTec, "AA1_NOMTEC")), {"Z6_TECNICO"})
         Eval(bLinha, .T., "Chamado",         If(Empty(cIdCh), "", "#" + cIdCh), {"Z6_IDCH", "Z6_CHAMADO"})
         Eval(bLinha, .T., "Assunto",         U_CNSOUTL("TEXTO", cAssunto), {"Z6_IDCH", "Z6_CHAMADO", "Z6_SERVICO"})
@@ -1084,10 +1090,10 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4, x5, x6)
         // Campos de lista da agenda (so no e-mail): titulo e descricao da opcao no dicionario.
         aCampos := {"Z6_TIPOAG", "Z6_LOCAL", "Z6_CONFIRM", "Z6_INTERNO", "Z6_COBRAR"}
         For nI := 1 To Len(aCampos)
-            cValor := AllTrim(cValToChar(oSZ6:GetValue(aCampos[nI])))
+            cValor := AllTrim(cValToChar(OUTL_CPO(oSZ6, aCampos[nI])))
             Eval(bLinha, .F., U_CNSOUTL("TEXTO", RetTitle(aCampos[nI])), U_CNSOUTL("TEXTO", U_CNSOUTL("OPCAO", aCampos[nI], cValor)), {aCampos[nI]})
         Next nI
-        Eval(bLinha, .T., "Agendado por", U_CNSOUTL("TEXTO", oSZ6:GetValue("Z6_QGRAVOU")), {"Z6_QGRAVOU"})
+        Eval(bLinha, .T., "Agendado por", U_CNSOUTL("TEXTO", OUTL_CPO(oSZ6, "Z6_QGRAVOU")), {"Z6_QGRAVOU"})
 
         For nI := 1 To Len(aCli)
             cCartao += "<p><b>" + aCli[nI][1] + ":</b> " + aCli[nI][2] + "</p>"
@@ -1097,7 +1103,7 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4, x5, x6)
         // agenda) -> todos os e-mails do chamado (ZA1_EMAIL) e do cadastro (A1_EMAIL), sem repetir.
         // Trava a mais: Private __lA03ConvCli (portal, criada no SaveData do CNSA003) = .F.
         // nao convida; sem ela (tela do Protheus, agenda pelo chamado) segue convidando.
-        If Upper(AllTrim(oSZ6:GetValue("Z6_INTERNO"))) == "NAO" .And. If(Type("__lA03ConvCli") == "L", __lA03ConvCli, .T.)
+        If Upper(AllTrim(OUTL_CPO(oSZ6, "Z6_INTERNO"))) == "NAO" .And. If(Type("__lA03ConvCli") == "L", __lA03ConvCli, .T.)
             cValor := If(Empty(cIdCh), "", Posicione("ZA1", 1, xFilial("ZA1") + cIdCh, "ZA1_EMAIL")) + ";" + ;
                       Posicione("SA1", 1, xFilial("SA1") + cCli + cLoja, "A1_EMAIL")
             aResp := StrTokArr2(StrTran(cValor, ",", ";"), ";", .F.)
@@ -1112,20 +1118,20 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4, x5, x6)
         xRet := Array(AG_RESUMO)
         xRet[AG_TECNICO]    := cTec
         xRet[AG_IDCH]       := cIdCh
-        xRet[AG_QUANDO]     := DToC(oSZ6:GetValue("Z6_DTAGE")) + " " + AllTrim(oSZ6:GetValue("Z6_HMINI")) + "-" + AllTrim(oSZ6:GetValue("Z6_HMFIM"))
+        xRet[AG_QUANDO]     := DToC(OUTL_CPO(oSZ6, "Z6_DTAGE")) + " " + AllTrim(OUTL_CPO(oSZ6, "Z6_HMINI")) + "-" + AllTrim(OUTL_CPO(oSZ6, "Z6_HMFIM"))
         xRet[AG_LINHAS]     := aLin
         xRet[AG_CARTAO]     := cCartao
-        xRet[AG_LOCAL]      := U_CNSOUTL("OPCAO", "Z6_LOCAL", AllTrim(oSZ6:GetValue("Z6_LOCAL")))
+        xRet[AG_LOCAL]      := U_CNSOUTL("OPCAO", "Z6_LOCAL", AllTrim(OUTL_CPO(oSZ6, "Z6_LOCAL")))
         // Sem lista no dicionario volta o codigo - usa as opcoes da agenda (1/2/3).
         If Len(xRet[AG_LOCAL]) == 1 .And. xRet[AG_LOCAL] $ "123"
             aResp          := {"Presencial", "Remoto", "Na Apia"}
             xRet[AG_LOCAL] := aResp[Val(xRet[AG_LOCAL])]
         EndIf
         xRet[AG_CONVIDADOS] := aConv
-        xRet[AG_DATA]       := oSZ6:GetValue("Z6_DTAGE")
-        xRet[AG_HRINI]      := Transform(PadL(StrTran(AllTrim(oSZ6:GetValue("Z6_HMINI")), ":", ""), 4, "0"), "@R 99:99")
-        xRet[AG_HRFIM]      := Transform(PadL(StrTran(AllTrim(oSZ6:GetValue("Z6_HMFIM")), ":", ""), 4, "0"), "@R 99:99")
-        xRet[AG_COBRAR]     := Upper(AllTrim(oSZ6:GetValue("Z6_COBRAR")))
+        xRet[AG_DATA]       := OUTL_CPO(oSZ6, "Z6_DTAGE")
+        xRet[AG_HRINI]      := Transform(PadL(StrTran(AllTrim(OUTL_CPO(oSZ6, "Z6_HMINI")), ":", ""), 4, "0"), "@R 99:99")
+        xRet[AG_HRFIM]      := Transform(PadL(StrTran(AllTrim(OUTL_CPO(oSZ6, "Z6_HMFIM")), ":", ""), 4, "0"), "@R 99:99")
+        xRet[AG_COBRAR]     := Upper(AllTrim(OUTL_CPO(oSZ6, "Z6_COBRAR")))
         // Assunto do e-mail: CLIENTE-LOJA | PROJETO | LOCAL
         xRet[AG_RESUMO]     := cNomCli + If(Empty(cLoja), "", "-" + cLoja) + ;
                                If(Empty(cProjDesc), "", " | " + cProjDesc) + ;
@@ -1195,9 +1201,9 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4, x5, x6)
         oSZ6   := x1
         aResp  := SZ6->(GetArea())
         cAlias := GetNextAlias()
-        cValor := DToS(oSZ6:GetValue("Z6_DTAGE"))
-        cTec   := oSZ6:GetValue("Z6_TECNICO")
-        cId    := oSZ6:GetValue("Z6_SEQ")
+        cValor := DToS(OUTL_CPO(oSZ6, "Z6_DTAGE"))
+        cTec   := OUTL_CPO(oSZ6, "Z6_TECNICO")
+        cId    := OUTL_CPO(oSZ6, "Z6_SEQ")
         BeginSql Alias cAlias
             SELECT SZ6.R_E_C_N_O_ RECNO
             FROM %Table:SZ6% SZ6
@@ -1251,16 +1257,16 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4, x5, x6)
         oSZ6 := x1
         xRet := ""
         // Depois do commit a SZ6 fica no registro gravado (tambem no excluido).
-        If DToS(SZ6->Z6_DTAGE) == DToS(oSZ6:GetValue("Z6_DTAGE")) .And. ;
-                AllTrim(SZ6->Z6_TECNICO) == AllTrim(oSZ6:GetValue("Z6_TECNICO")) .And. ;
-                AllTrim(cValToChar(SZ6->Z6_SEQ)) == AllTrim(cValToChar(oSZ6:GetValue("Z6_SEQ")))
+        If DToS(SZ6->Z6_DTAGE) == DToS(OUTL_CPO(oSZ6, "Z6_DTAGE")) .And. ;
+                AllTrim(SZ6->Z6_TECNICO) == AllTrim(OUTL_CPO(oSZ6, "Z6_TECNICO")) .And. ;
+                AllTrim(cValToChar(SZ6->Z6_SEQ)) == AllTrim(cValToChar(OUTL_CPO(oSZ6, "Z6_SEQ")))
             xRet := AllTrim(SZ6->Z6_IDOUTL)
         Else
             // Nao posicionado: busca pela chave (o mais recente, inclusive excluido).
             cAlias := GetNextAlias()
-            cValor := DToS(oSZ6:GetValue("Z6_DTAGE"))
-            cTec   := oSZ6:GetValue("Z6_TECNICO")
-            cId    := oSZ6:GetValue("Z6_SEQ")
+            cValor := DToS(OUTL_CPO(oSZ6, "Z6_DTAGE"))
+            cTec   := OUTL_CPO(oSZ6, "Z6_TECNICO")
+            cId    := OUTL_CPO(oSZ6, "Z6_SEQ")
             BeginSql Alias cAlias
                 SELECT Z6_IDOUTL
                 FROM %Table:SZ6% SZ6

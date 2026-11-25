@@ -260,6 +260,13 @@ Static Function OS_PREVALIDA(p_oModel)
             p_oModel:SetErrorMessage("SZ1MASTER", "Z1_CLI", "SZ1", "Z1_CLI", "CNSA002", "O cliente da OS nao pode ser alterado.")
             Return .F.
         EndIf
+        // OS de outro analista: so o admin (AA1_RSPMNT = 1) altera - senao gravava a OS e barrava a interacao no chamado.
+        If p_oModel:GetOperation() == 4 .And. ;
+                AllTrim(SZ1->Z1_TEC) <> AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_CODTEC")) .And. ;
+                AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_RSPMNT")) != "1"
+            p_oModel:SetErrorMessage("SZ1MASTER", "Z1_TEC", "SZ1", "Z1_TEC", "CNSA002", "Somente o analista da OS ou um administrador pode altera-la.")
+            Return .F.
+        EndIf
     EndIf
     If p_oModel:GetOperation() != 3
         Return .T.
@@ -1391,7 +1398,6 @@ User Function OS_APILISTAR() As Logical
     Local nTotal     := 0
     Local nMinRow    := 0
     Local nMaxRow    := 0
-    Local oErro      := Nil
     Local cAlias     := GetNextAlias()
     Local cOsAtual   := ""
     Local cCliAtual  := ""
@@ -1560,16 +1566,16 @@ User Function OS_APILISTAR() As Logical
         oJson['tamanho']      := nTamanho
         oJson['items']        := aRetorno
 
-        ErrorBlock(bErro)
+        If ValType(bErro) == "B"
+            ErrorBlock(bErro)
+        EndIf
         Return oRest:setStatusResponse(200, oJson:ToJson())
 
-    Recover Using oErro
-        ErrorBlock(bErro)
-        If oErro != Nil
-            Return OS_ERRO(500, If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))
+    Recover
+        If ValType(bErro) == "B"
+            ErrorBlock(bErro)
         EndIf
     End Sequence
-    ErrorBlock(bErro)
 
 Return OS_ERRO(500, "Falha ao listar as OS: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))
 
