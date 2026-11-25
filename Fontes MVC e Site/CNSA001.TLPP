@@ -345,6 +345,18 @@ Static Function CH_PREVALIDA(p_oModel)
         EndIf
     EndIf
 
+    // Consultor tem que existir na AA1 (o portal aceitava texto livre e o LoadValue nao valida).
+    If (nOper == 3 .Or. nOper == 4)
+        oModelZA1 := p_oModel:GetModel("ZA1MASTER")
+        AA1->(DbSetOrder(1))
+        If oModelZA1 <> Nil .And. !Empty(AllTrim(oModelZA1:GetValue("ZA1_CONSUL"))) .And. ;
+                !AA1->(DbSeek(xFilial("AA1") + PadR(AllTrim(oModelZA1:GetValue("ZA1_CONSUL")), TamSX3("AA1_CODTEC")[1])))
+            p_oModel:SetErrorMessage("ZA1MASTER", "ZA1_CONSUL", "ZA1", "ZA1_CONSUL", "CNSA001", ;
+                "Consultor " + AllTrim(oModelZA1:GetValue("ZA1_CONSUL")) + " nao encontrado. Escolha um consultor da lista.")
+            Return .F.
+        EndIf
+    EndIf
+
     If Type("cConsulAnterior") <> "C"
         Public cConsulAnterior  := ""
     EndIf
@@ -622,7 +634,8 @@ Static Function CH_CONSULTA(cTipo, x1, x2)
     Case cTipo == "AGENDA"
         // Chamado sem numero: -1 (Val("") = 0 casaria com toda agenda sem chamado).
         nCham  := If(x1 > 0, x1, -1)
-        xRet   := {x2, "00:00", "00:00"}
+        // Sem agenda (ou sem hora) o horario fica vazio - o e-mail nao mostra "00:00 as 00:00".
+        xRet   := {x2, "", ""}
         cAlias := GetNextAlias()
         BeginSql Alias cAlias
             SELECT Z6_DTAGE, Z6_HMINI, Z6_HMFIM
@@ -640,8 +653,8 @@ Static Function CH_CONSULTA(cTipo, x1, x2)
                     xRet[1] := SubStr(xRet[1],7,2) + "/" + SubStr(xRet[1],5,2) + "/" + SubStr(xRet[1],1,4)
                 EndIf
             EndIf
-            xRet[2] := If(Empty((cAlias)->Z6_HMINI), "00:00", AllTrim((cAlias)->Z6_HMINI))
-            xRet[3] := If(Empty((cAlias)->Z6_HMFIM), "00:00", AllTrim((cAlias)->Z6_HMFIM))
+            xRet[2] := AllTrim((cAlias)->Z6_HMINI)
+            xRet[3] := AllTrim((cAlias)->Z6_HMFIM)
         EndIf
         (cAlias)->(DbCloseArea())
 
@@ -3045,7 +3058,7 @@ Static Function CH_EMAIL(cTipo, cPara, cIdCh, x1, x2, x3, x4)
         AAdd(aLinhas, {"N&uacute;mero", cNumero})
         AAdd(aLinhas, {"Cliente", Eval(bHtml, cCliente)})
         AAdd(aLinhas, {"Data", aAgenda[1]})
-        AAdd(aLinhas, {"Hor&aacute;rio", aAgenda[2] + " &agrave;s " + aAgenda[3]})
+        If(Empty(aAgenda[2]), Nil, AAdd(aLinhas, {"Hor&aacute;rio", aAgenda[2] + " &agrave;s " + aAgenda[3]}))
         If cTipo == "CANCELA"
             AAdd(aLinhas, {"Alterado por", Eval(bHtml, cPor)})
             cAssMail := "Remocao do Chamado " + cIdCh
@@ -3080,13 +3093,8 @@ Static Function CH_EMAIL(cTipo, cPara, cIdCh, x1, x2, x3, x4)
             cDescricao := AllTrim(ZA1->ZA1_ANOT)
             // Cliente vazio: Posicione cairia no 1o registro da SA1.
             cCliente   := If(Empty(ZA1->ZA1_CLIENT), "", AllTrim(Posicione("SA1", 1, xFilial("SA1") + AllTrim(ZA1->ZA1_CLIENT) + AllTrim(ZA1->ZA1_LOJA), "A1_NREDUZ")))
-            If ValType(ZA1->ZA1_DATA) == "D" .And. !Empty(ZA1->ZA1_DATA)
-                cDataPadrao := DToC(ZA1->ZA1_DATA)
-            ElseIf ValType(ZA1->ZA1_DATA) == "C" .And. Len(AllTrim(ZA1->ZA1_DATA)) == 8
-                cDataPadrao := DToC(STOD(AllTrim(ZA1->ZA1_DATA)))
-            EndIf
         EndIf
-        // Horario do agendamento (SZ6) real do chamado.
+        // Horario do agendamento (SZ6) do chamado; sem agenda, a data da operacao (hoje), nao a da abertura.
         aAgenda := CH_CONSULTA("AGENDA", Val(cIdCh), cDataPadrao)
 
         // Cliente so recebe com ZA1_EMAIL e se pediram notificar.
@@ -3095,7 +3103,7 @@ Static Function CH_EMAIL(cTipo, cPara, cIdCh, x1, x2, x3, x4)
             AAdd(aLinhas, {"T&eacute;cnico", Eval(bHtml, cNomeTec)})
             AAdd(aLinhas, {"Assunto", Eval(bHtml, cAssunto)})
             AAdd(aLinhas, {"Data", aAgenda[1]})
-            AAdd(aLinhas, {"Hor&aacute;rio", aAgenda[2] + " &agrave;s " + aAgenda[3]})
+            If(Empty(aAgenda[2]), Nil, AAdd(aLinhas, {"Hor&aacute;rio", aAgenda[2] + " &agrave;s " + aAgenda[3]}))
             CH_ENVIAREMAIL(cEmailCli, "Tecnico Designado - Chamado " + cIdCh, ;
                 CH_HTMLEMAIL(cIdCh, "Um t&eacute;cnico foi designado para o seu chamado", "", ;
                     "Seu chamado j&aacute; tem um t&eacute;cnico respons&aacute;vel. Confira os dados do atendimento abaixo.", ;
@@ -3112,7 +3120,7 @@ Static Function CH_EMAIL(cTipo, cPara, cIdCh, x1, x2, x3, x4)
             AAdd(aLinhas, {"Cliente", cCliLinha})
             AAdd(aLinhas, {"Assunto", Eval(bHtml, cAssunto)})
             AAdd(aLinhas, {"Data", aAgenda[1]})
-            AAdd(aLinhas, {"Hor&aacute;rio", aAgenda[2] + " &agrave;s " + aAgenda[3]})
+            If(Empty(aAgenda[2]), Nil, AAdd(aLinhas, {"Hor&aacute;rio", aAgenda[2] + " &agrave;s " + aAgenda[3]}))
             AAdd(aLinhas, {"Designado por", Eval(bHtml, cNomeDe)})
             cAssMail := "Chamado Designado " + cIdCh
             cHtml    := CH_HTMLEMAIL(cIdCh, "Voc&ecirc; foi designado para um chamado", Eval(bHtml, cNomeTec), ;
@@ -3330,31 +3338,6 @@ Static Function CH_MARCARAVISOENVIADO(cEmail)
 
 Return
 
-/*/{Protheus.doc} CH_PARACHAMADO
-.T. se o e-mail (mensagem do Graph) foi enviado para chamado@apia.com.br (Para ou Cc).
-/*/
-Static Function CH_PARACHAMADO(oMsg)
-    Local aCampos := {"toRecipients", "ccRecipients"}
-    Local oLista  := Nil
-    Local oEnd    := Nil
-    Local nI      := 0
-    Local nJ      := 0
-
-    For nI := 1 To Len(aCampos)
-        oLista := oMsg:GetJsonObject(aCampos[nI])
-        If ValType(oLista) == "A"
-            For nJ := 1 To Len(oLista)
-                oEnd := oLista[nJ]:GetJsonObject("emailAddress")
-                If ValType(oEnd) $ "O|J" .And. ValType(oEnd:GetJsonObject("address")) == "C" .And. ;
-                        Lower(AllTrim(oEnd:GetJsonObject("address"))) == "chamado@apia.com.br"
-                    Return .T.
-                EndIf
-            Next nJ
-        EndIf
-    Next nI
-
-Return .F.
-
 /*/{Protheus.doc} CH_CRIARCHAMADOEMAIL
 Le os e-mails nao lidos de apia@ (Graph) e cria um chamado por e-mail novo (dedup por ZA1_MAILID); marca
 como lido o que tratou. Chamado pelo job, pelo Recarregar do portal e pela tela (CH_TRAVAREMAIL: um por vez).
@@ -3433,12 +3416,6 @@ Static Function CH_CRIARCHAMADOEMAIL(cTipInc)
 
         If ValType(oMsg:GetJsonObject("id")) == "C"
             cId := oMsg:GetJsonObject("id")
-        EndIf
-
-        // So vira chamado o e-mail enviado para chamado@apia.com.br (sinonimo da caixa apia@): o resto da
-        // caixa fica como esta (nem chamado, nem marcado como lido).
-        If !CH_PARACHAMADO(oMsg)
-            Loop
         EndIf
 
         If ValType(oMsg:GetJsonObject("subject")) == "C"
