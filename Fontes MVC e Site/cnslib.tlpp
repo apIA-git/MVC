@@ -117,12 +117,12 @@ User Function CNS001_COMPONENTES_LISTAR() As Logical
     Recover Using oErro
         ErrorBlock(bErro)
         If oErro != Nil
-            Return oRest:setStatusResponse(500, '{"resultado":false,"erro":"' + CNS001_LUPA_JSONESC(If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk)) + '"}')
+            Return oRest:setStatusResponse(500, '{"resultado":false,"erro":"' + CNS001_LUPA_JSONESC(U_CNSOUTL("ERRO", cErroBlk, oErro)) + '"}')
         EndIf
     End Sequence
     ErrorBlock(bErro)
 
-Return oRest:setStatusResponse(500, '{"resultado":false,"erro":"' + CNS001_LUPA_JSONESC("Falha ao carregar a lupa: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk)) + '"}')
+Return oRest:setStatusResponse(500, '{"resultado":false,"erro":"' + CNS001_LUPA_JSONESC("Falha ao carregar a lupa: " + U_CNSOUTL("ERRO", cErroBlk, oErro)) + '"}')
 
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
@@ -655,7 +655,7 @@ Static Function CNS001_CHAMLUPA(cFiltro, cCliente, cLoja)
             WHERE ZA1_FILIAL = %xFilial:ZA1%
               AND %NotDel%
               AND (UPPER(ZA1_IDCH) LIKE '%' || %Exp:cFiltroUp% || '%' OR UPPER(ZA1_ASSUNT) LIKE '%' || %Exp:cFiltroUp2% || '%')
-            ORDER BY ZA1_DATA DESC
+            ORDER BY ZA1_IDCH DESC
         EndSql
     Else
         BeginSql Alias cAlias
@@ -666,7 +666,7 @@ Static Function CNS001_CHAMLUPA(cFiltro, cCliente, cLoja)
               AND ZA1_CLIENT = %Exp:cCliente%
               AND ZA1_LOJA   = %Exp:cLoja%
               AND (UPPER(ZA1_IDCH) LIKE '%' || %Exp:cFiltroUp% || '%' OR UPPER(ZA1_ASSUNT) LIKE '%' || %Exp:cFiltroUp2% || '%')
-            ORDER BY ZA1_DATA DESC
+            ORDER BY ZA1_IDCH DESC
         EndSql
     EndIf
 
@@ -989,8 +989,7 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4, x5, x6)
             EndCase
         Recover Using oErro
             // Erro do framework (ex.: campo fora do modelo) chega como objeto, sem passar pelo bErro.
-            ConOut("CNSOUTLOOK: erro ao sincronizar a agenda: " + If(!Empty(cErroBlk), cErroBlk, ;
-                If(ValType(oErro) == "O", cValToChar(oErro:Description), "erro sem descricao do sistema.")))
+            ConOut("CNSOUTLOOK: erro ao sincronizar a agenda: " + U_CNSOUTL("ERRO", cErroBlk, oErro))
         End Sequence
         ErrorBlock(bErro)
         xRet := Nil
@@ -1136,6 +1135,34 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4, x5, x6)
         // Titulo do evento no calendario: CLIENTE-LOJA | PROJETO (sem "Agendamento" e sem o local).
         xRet[AG_TITULO]     := cNomCli + If(Empty(cLoja), "", "-" + cLoja) + If(Empty(cProjDesc), "", " | " + cProjDesc)
 
+        // Agenda que nao e Normal (Ferias, Compensacao, Treinamento...): so tem Tipo, Data, Seq, Tecnico e
+        // o texto (servico) - e-mail e evento so com esses campos, evento do dia inteiro e sem convidados.
+        cValor := Upper(AllTrim(OUTL_CPO(oSZ6, "Z6_TIPOAG")))
+        If !Empty(cValor) .And. cValor != "NR"
+            aLin    := {}
+            aCli    := {}
+            cCartao := ""
+            Eval(bLinha, .T., "Tipo",           U_CNSOUTL("TEXTO", U_CNSOUTL("OPCAO", "Z6_TIPOAG", cValor)), {"Z6_TIPOAG"})
+            Eval(bLinha, .F., "Data",           DToC(OUTL_CPO(oSZ6, "Z6_DTAGE")), {"Z6_DTAGE"})
+            Eval(bLinha, .F., "Seq",            AllTrim(cValToChar(OUTL_CPO(oSZ6, "Z6_SEQ"))), {"Z6_SEQ"})
+            Eval(bLinha, .F., "T&eacute;cnico", U_CNSOUTL("TEXTO", Posicione("AA1", 1, xFilial("AA1") + cTec, "AA1_NOMTEC")), {"Z6_TECNICO"})
+            Eval(bLinha, .T., "Descri&ccedil;&atilde;o", U_CNSOUTL("TEXTO", AllTrim(OUTL_CPO(oSZ6, "Z6_SERVICO"))), {"Z6_SERVICO"})
+            For nI := 1 To Len(aCli)
+                cCartao += "<p><b>" + aCli[nI][1] + ":</b> " + aCli[nI][2] + "</p>"
+            Next nI
+            xRet[AG_IDCH]       := ""
+            xRet[AG_QUANDO]     := DToC(OUTL_CPO(oSZ6, "Z6_DTAGE"))
+            xRet[AG_LINHAS]     := aLin
+            xRet[AG_CARTAO]     := cCartao
+            xRet[AG_LOCAL]      := ""
+            xRet[AG_CONVIDADOS] := {}
+            xRet[AG_HRINI]      := ""
+            xRet[AG_HRFIM]      := ""
+            xRet[AG_COBRAR]     := ""
+            xRet[AG_RESUMO]     := U_CNSOUTL("OPCAO", "Z6_TIPOAG", cValor)
+            xRet[AG_TITULO]     := xRet[AG_RESUMO] + If(Empty(OUTL_CPO(oSZ6, "Z6_SERVICO")), "", " | " + AllTrim(OUTL_CPO(oSZ6, "Z6_SERVICO")))
+        EndIf
+
     //--- JSON do evento -------------------------------------------------------
     Case cAcao == "JSON"
         // Titulo, local, categoria (Cobravel/Nao Cobravel) e cartao curto - o mesmo pro
@@ -1148,13 +1175,20 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4, x5, x6)
         oJson["body"]["content"]     := aAg[AG_CARTAO]
         oJson["location"] := JsonObject():New()
         oJson["location"]["displayName"] := aAg[AG_LOCAL]
-        oJson["categories"] := {If(aAg[AG_COBRAR] == "NAO", "N" + Chr(227) + "o Cobr" + Chr(225) + "vel", "Cobr" + Chr(225) + "vel")}
+        oJson["categories"] := If(Empty(aAg[AG_COBRAR]), {}, {If(aAg[AG_COBRAR] == "NAO", "N" + Chr(227) + "o Cobr" + Chr(225) + "vel", "Cobr" + Chr(225) + "vel")})
         oJson["start"]    := JsonObject():New()
-        oJson["start"]["dateTime"]   := Transform(DToS(aAg[AG_DATA]), "@R 9999-99-99") + "T" + aAg[AG_HRINI] + ":00"
         oJson["start"]["timeZone"]   := OUTL_FUSO
         oJson["end"]      := JsonObject():New()
-        oJson["end"]["dateTime"]     := Transform(DToS(aAg[AG_DATA]), "@R 9999-99-99") + "T" + aAg[AG_HRFIM] + ":00"
         oJson["end"]["timeZone"]     := OUTL_FUSO
+        If Empty(aAg[AG_HRINI])
+            // Sem horario (agenda que nao e Normal): evento do dia inteiro.
+            oJson["isAllDay"]           := .T.
+            oJson["start"]["dateTime"]  := Transform(DToS(aAg[AG_DATA]), "@R 9999-99-99") + "T00:00:00"
+            oJson["end"]["dateTime"]    := Transform(DToS(aAg[AG_DATA] + 1), "@R 9999-99-99") + "T00:00:00"
+        Else
+            oJson["start"]["dateTime"]  := Transform(DToS(aAg[AG_DATA]), "@R 9999-99-99") + "T" + aAg[AG_HRINI] + ":00"
+            oJson["end"]["dateTime"]    := Transform(DToS(aAg[AG_DATA]), "@R 9999-99-99") + "T" + aAg[AG_HRFIM] + ":00"
+        EndIf
         oJson["showAs"]   := "busy"
         oJson["isReminderOn"] := .T.
         oJson["reminderMinutesBeforeStart"] := 15
@@ -1251,6 +1285,25 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4, x5, x6)
         // Z6_LOCAL sem lista no dicionario: opcoes da agenda (1 Presencial, 2 Remoto, 3 Na Apia).
         If x1 == "Z6_LOCAL" .And. Len(xRet) == 1 .And. xRet $ "123"
             xRet := {"Presencial", "Remoto", "Na Apia"}[Val(xRet)]
+        EndIf
+
+    //--- Motivo do erro para a mensagem (nunca "erro sem descricao") ---------
+    // x1 = descricao capturada pelo bErro; x2 = objeto do Recover (erro do framework chega so por ele).
+    Case cAcao == "ERRO"
+        xRet := AllTrim(cValToChar(x1))
+        If Empty(xRet) .And. ValType(x2) == "O"
+            bErro := ErrorBlock({|e| Break(e)})
+            Begin Sequence
+                xRet := AllTrim(cValToChar(x2:Description))
+                If Empty(xRet)
+                    xRet := AllTrim(Left(cValToChar(x2:ErrorStack), 300))
+                EndIf
+            Recover
+            End Sequence
+            ErrorBlock(bErro)
+        EndIf
+        If Empty(xRet)
+            xRet := "falha interna sem mensagem do Protheus (detalhe no console.log do REST, neste horario)."
         EndIf
 
     //--- Le o Z6_IDOUTL direto na SZ6 (campo "nao usado": fora do modelo) -----------
