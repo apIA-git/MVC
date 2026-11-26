@@ -1091,7 +1091,9 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4, x5, x6)
         aCampos := {"Z6_TIPOAG", "Z6_LOCAL", "Z6_CONFIRM", "Z6_INTERNO", "Z6_COBRAR"}
         For nI := 1 To Len(aCampos)
             cValor := AllTrim(cValToChar(OUTL_CPO(oSZ6, aCampos[nI])))
-            Eval(bLinha, .F., U_CNSOUTL("TEXTO", RetTitle(aCampos[nI])), U_CNSOUTL("TEXTO", U_CNSOUTL("OPCAO", aCampos[nI], cValor)), {aCampos[nI]})
+            // Local com o codigo junto (ex.: "2-Remoto").
+            Eval(bLinha, .F., U_CNSOUTL("TEXTO", RetTitle(aCampos[nI])), ;
+                U_CNSOUTL("TEXTO", If(aCampos[nI] == "Z6_LOCAL" .And. !Empty(cValor), cValor + "-", "") + U_CNSOUTL("OPCAO", aCampos[nI], cValor)), {aCampos[nI]})
         Next nI
         Eval(bLinha, .T., "Agendado por", U_CNSOUTL("TEXTO", OUTL_CPO(oSZ6, "Z6_QGRAVOU")), {"Z6_QGRAVOU"})
 
@@ -1122,11 +1124,6 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4, x5, x6)
         xRet[AG_LINHAS]     := aLin
         xRet[AG_CARTAO]     := cCartao
         xRet[AG_LOCAL]      := U_CNSOUTL("OPCAO", "Z6_LOCAL", AllTrim(OUTL_CPO(oSZ6, "Z6_LOCAL")))
-        // Sem lista no dicionario volta o codigo - usa as opcoes da agenda (1/2/3).
-        If Len(xRet[AG_LOCAL]) == 1 .And. xRet[AG_LOCAL] $ "123"
-            aResp          := {"Presencial", "Remoto", "Na Apia"}
-            xRet[AG_LOCAL] := aResp[Val(xRet[AG_LOCAL])]
-        EndIf
         xRet[AG_CONVIDADOS] := aConv
         xRet[AG_DATA]       := OUTL_CPO(oSZ6, "Z6_DTAGE")
         xRet[AG_HRINI]      := Transform(PadL(StrTran(AllTrim(OUTL_CPO(oSZ6, "Z6_HMINI")), ":", ""), 4, "0"), "@R 99:99")
@@ -1250,6 +1247,10 @@ User Function CNSOUTL(cAcao, x1, x2, x3, x4, x5, x6)
             If nI > 0
                 xRet := aResp[nI][2]
             EndIf
+        EndIf
+        // Z6_LOCAL sem lista no dicionario: opcoes da agenda (1 Presencial, 2 Remoto, 3 Na Apia).
+        If x1 == "Z6_LOCAL" .And. Len(xRet) == 1 .And. xRet $ "123"
+            xRet := {"Presencial", "Remoto", "Na Apia"}[Val(xRet)]
         EndIf
 
     //--- Le o Z6_IDOUTL direto na SZ6 (campo "nao usado": fora do modelo) -----------
