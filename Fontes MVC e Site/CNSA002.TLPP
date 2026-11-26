@@ -33,7 +33,7 @@ User Function CNS002()
             l_oBrowse:AddLegend("apia.cnsa004.U_CNSAPR('LEG',{SZ1->Z1_APROVAD,SZ1->Z1_APVTIPO,SZ1->Z1_APVDATA,SZ1->Z1_ENVDT,SZ1->Z1_DTDIGIT})[1]=='" + ;
                 aLeg[nI][1] + "'", OS_CORAPR(aLeg[nI][2])[1], aLeg[nI][1])
         Next nI
-        l_oBrowse:AddLegend(".T.", "WHITE", "Sem aprovacao (legado)")
+        l_oBrowse:AddLegend(".T.", "WHITE", "Sem aprovacao")
 
         l_oBrowse:Activate()
 
@@ -254,6 +254,11 @@ Static Function OS_PREVALIDA(p_oModel)
             p_oModel:SetErrorMessage("SZ1MASTER", "Z1_TRANS", "SZ1", "Z1_TRANS", "CNSA002", "Cliente nao paga translado: marque Translado = Nao.")
             Return .F.
         EndIf
+        // OS excluida (Excluir do portal = marca C, a OS fica) nao e alterada.
+        If p_oModel:GetOperation() == 4 .And. AllTrim(SZ1->Z1_APROVAD) == "C"
+            p_oModel:SetErrorMessage("SZ1MASTER", "Z1_APROVAD", "SZ1", "Z1_APROVAD", "CNSA002", "OS excluida nao pode ser alterada.")
+            Return .F.
+        EndIf
         // OS criada nao muda de cliente.
         If p_oModel:GetOperation() == 4 .And. ;
                 oModelSZ1:GetValue("Z1_CLI") + oModelSZ1:GetValue("Z1_LOJA") <> SZ1->Z1_CLI + SZ1->Z1_LOJA
@@ -386,6 +391,7 @@ Copia a OS (tela e REST): todos os campos menos chave, digitacao, aprovacao e fa
 /*/
 Static Function OS_NUCLEOCOPIAR(cOsOrigem)
     Local cErroBlk := ""  // descricao do erro (o objeto do Recover pode vir sem texto)
+    Local oErroRec := Nil  // objeto do erro (erro do framework nao passa pelo bErro)
     Local aFields    := {}
     Local nI         := 0
     Local cOsNova    := ""
@@ -465,7 +471,7 @@ Static Function OS_NUCLEOCOPIAR(cOsOrigem)
 
     Recover
         lOk   := .F.
-        cErro := "Erro interno: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk)
+        cErro := "Erro interno: " + U_CNSOUTL("ERRO", cErroBlk, oErroRec)
         If oModel <> Nil
             // Erro no meio do commit nao passa pelo AfterTTS: solta a trava da aprovacao e descarta o aviso.
             jFase["fase"]   := "DEP"
@@ -574,7 +580,7 @@ User Function OS_LEGENDA()
     For nI := 1 To Len(aLeg)
         AAdd(aCor, {OS_CORAPR(aLeg[nI][2])[2], aLeg[nI][1]})
     Next nI
-    AAdd(aCor, {"BR_BRANCO", "Sem aprovacao (legado)"})
+    AAdd(aCor, {"BR_BRANCO", "Sem aprovacao"})
     BrwLegenda("Legenda de Aprovacao", "Aprovacao da OS", aCor)
 
 Return
@@ -619,6 +625,7 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
     Local cMsgCh     := OS_ZA3("VALIDAR", "", aParCh[2], cCli, If(Empty(cLoja), "01", cLoja))
     Local bErro      := Nil
     Local cErroBlk   := ""
+    Local oErroRec := Nil  // objeto do erro (erro do framework nao passa pelo bErro)
     Local jFase      := JsonObject():New()
 
     If !Empty(cMsgCh)
@@ -705,7 +712,7 @@ Static Function OS_NUCLEOINCLUIR(jQuery)
 
     Recover
         lOk   := .F.
-        cErro := "Erro interno: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk)
+        cErro := "Erro interno: " + U_CNSOUTL("ERRO", cErroBlk, oErroRec)
         If oModel <> Nil
             // Erro no meio do commit nao passa pelo AfterTTS: solta a trava da aprovacao e descarta o aviso.
             jFase["fase"]   := "DEP"
@@ -769,6 +776,7 @@ Static Function OS_NUCLEOALTERAR(jQuery)
     Local cMsgCh     := ""
     Local bErro      := Nil
     Local cErroBlk   := ""
+    Local oErroRec := Nil  // objeto do erro (erro do framework nao passa pelo bErro)
     Local jFase      := JsonObject():New()
 
     If Empty(cOs)
@@ -882,7 +890,7 @@ Static Function OS_NUCLEOALTERAR(jQuery)
 
     Recover
         lOk   := .F.
-        cErro := "Erro interno: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk)
+        cErro := "Erro interno: " + U_CNSOUTL("ERRO", cErroBlk, oErroRec)
         If oModel <> Nil
             // Erro no meio do commit nao passa pelo AfterTTS: solta a trava da aprovacao e descarta o aviso.
             jFase["fase"]   := "DEP"
@@ -1279,7 +1287,7 @@ Proximo numero: ano (2 digitos) + sequencia do ano (26000001...). Conta as exclu
 reserva com MayIUseCode.
 @return cOs   Numero da OS (8 posicoes)
 /*/
-Static Function OS_PROXIMONUM()
+Static Function OS_PROXIMONUM(lPrevia)
     Local cAno   := Right(cValToChar(Year(Date())), 2)
     Local cAlias := GetNextAlias()
     Local nSeq   := 0
@@ -1302,7 +1310,8 @@ Static Function OS_PROXIMONUM()
     Do While .T.
         nSeq++
         cOs := cAno + StrZero(nSeq, 6)
-        If !SZ1->(DbSeek(xFilial("SZ1") + cOs)) .And. MayIUseCode("CNSA002_OS" + xFilial("SZ1") + cOs)
+        // Previa (tela de Incluir): so mostra, nao reserva o numero.
+        If !SZ1->(DbSeek(xFilial("SZ1") + cOs)) .And. (lPrevia == .T. .Or. MayIUseCode("CNSA002_OS" + xFilial("SZ1") + cOs))
             Exit
         EndIf
     EndDo
@@ -1386,9 +1395,25 @@ Return oJson:ToJson()
 GET /CNSAOS - lista paginada (ROWNUM). Filtros: texto, tecnico, cliente, dataDe, dataAte, aprovad.
 @return lOk   JSON via oRest:setStatusResponse (200 com {total,totalPaginas,pagina,tamanho,items}, ou 500 em erro)
 /*/
+/*/{Protheus.doc} OS_APIPROXIMO
+GET /CNSAOSPROXIMO - previa do numero da proxima OS (Incluir do portal). Nao reserva: o numero
+de verdade sai na gravacao e pode ser outro se alguem gravar antes.
+/*/
+@Get(endpoint="/CNSAOSPROXIMO")
+User Function OS_APIPROXIMO() As Logical
+    Local oJson := JsonObject():New()
+
+    oRest:setKeyHeaderResponse("Content-Type", "application/json")
+    If U_CNSSERVICO()
+        Return OS_ERRO(403, "Usuario sem acesso a este recurso.")
+    EndIf
+    oJson["os"] := OS_PROXIMONUM(.T.)
+Return oRest:setStatusResponse(200, oJson:ToJson())
+
 @Get(endpoint="/CNSAOS")
 User Function OS_APILISTAR() As Logical
     Local cErroBlk := ""  // descricao do erro (o objeto do Recover pode vir sem texto)
+    Local oErroRec := Nil  // objeto do erro (erro do framework nao passa pelo bErro)
     Local jQuery     := oRest:getQueryRequest() As Json
     Local oJson      := JsonObject():New()
     Local aRetorno   := {}
@@ -1460,7 +1485,7 @@ User Function OS_APILISTAR() As Logical
                         Z1_DTOS, Z1_INTERNO, Z1_LOCAL, Z1_HRINI, Z1_INI, Z1_HRFIM, Z1_FIM, Z1_TRANS, Z1_PREVIST, ;
                         Z1_HRTOT, Z1_TOTAL, Z1_TEC, Z1_NUMPRO, Z1_PV, Z1_ALMOCO, Z1_PROJET, Z1_REVISA, ;
                         Z1_TAREFA, Z1_CHPSD, Z1_CHTOTVS, Z1_CHHDK, Z1_IDCH, Z1_OSDESE, Z1_OSENVCL, Z1_LIN, Z1_VLRHR, Z1_APROVAD, Z1_FATURAR, ;
-                        Z1_APVTIPO, Z1_APVDATA, Z1_ENVDT, ;
+                        Z1_APVTIPO, Z1_APVDATA, Z1_ENVDT, Z1_APVDOR, ;
                         COUNT(*) OVER() AS SZ1_TOTAL
                     FROM %Table:SZ1% SZ1
                     WHERE Z1_FILIAL = %xFilial:SZ1%
@@ -1552,6 +1577,8 @@ User Function OS_APILISTAR() As Logical
             oLinha['status']         := OS_STATUSCALC(AllTrim((cAlias)->Z1_APROVAD), AllTrim((cAlias)->Z1_FATURAR), cTecAtual)
             oLinha['aprovad']        := AllTrim((cAlias)->Z1_APROVAD)
             oLinha['apvtipo']        := AllTrim((cAlias)->Z1_APVTIPO)
+            // Quem aprovou/recusou - na OS excluida (C), quem excluiu.
+            oLinha['apvdor']         := AllTrim((cAlias)->Z1_APVDOR)
             oLinha['aprovacao']      := apia.cnsa004.U_CNSAPR("LEG", {(cAlias)->Z1_APROVAD, (cAlias)->Z1_APVTIPO, ;
                                             (cAlias)->Z1_APVDATA, (cAlias)->Z1_ENVDT, (cAlias)->Z1_DTDIGIT})[1]
             AAdd(aRetorno, oLinha)
@@ -1577,7 +1604,7 @@ User Function OS_APILISTAR() As Logical
         EndIf
     End Sequence
 
-Return OS_ERRO(500, "Falha ao listar as OS: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))
+Return OS_ERRO(500, "Falha ao listar as OS: " + U_CNSOUTL("ERRO", cErroBlk, oErroRec))
 
 /*/{Protheus.doc} OS_APIEXCLUIR
 POST /CNSAOSEXCLUIR - exclui a OS.
@@ -1586,13 +1613,10 @@ POST /CNSAOSEXCLUIR - exclui a OS.
 @Post(endpoint="/CNSAOSEXCLUIR")
 User Function OS_APIEXCLUIR() As Logical
     Local cErroBlk := ""  // descricao do erro (o objeto do Recover pode vir sem texto)
+    Local oErroRec := Nil  // objeto do erro (erro do framework nao passa pelo bErro)
     Local jQuery     := OS_PARAMS() As Json
     Local cOs        := AllTrim(OS_LERJSONTXT(jQuery,"os")) As Character
-    Local oModel     := Nil
-    Local lOk        := .F.
-    Local cErro      := ""
     Local bErro      := Nil
-    Local jFase      := JsonObject():New()
 
     oRest:setKeyHeaderResponse("Content-Type", "application/json")
 
@@ -1616,43 +1640,35 @@ User Function OS_APIEXCLUIR() As Logical
             ErrorBlock(bErro)
             Return OS_ERRO(404, "OS nao encontrada.")
         EndIf
-
-        oModel := OS_MODELLEVE(MODEL_OPERATION_DELETE)
-
-        If oModel:VldData()
-            lOk := oModel:CommitData()
-        EndIf
-
-        If !lOk
-            cErro := OS_ERROMODEL(oModel, "Falha ao excluir a OS.")
-            // Commit nao gravou (o AfterTTS nao roda): solta a trava da aprovacao e descarta o aviso.
-            jFase["fase"]   := "DEP"
-            jFase["falhou"] := "S"
-            apia.cnsa004.U_CNSAPR("OS", oModel, "", jFase)
-        EndIf
-
-        oModel:DeActivate(lOk)
-
-        If !lOk
+        // So o administrador (AA1_RSPMNT = 1) exclui OS.
+        If AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_RSPMNT")) != "1"
             ErrorBlock(bErro)
-            Return OS_ERRO(400, cErro)
+            Return OS_ERRO(403, "Somente administradores podem excluir OS.")
         EndIf
+        If AllTrim(SZ1->Z1_APROVAD) == "C"
+            ErrorBlock(bErro)
+            Return OS_ERRO(400, "A OS ja esta excluida.")
+        EndIf
+
+        // Excluir nao apaga: a OS fica na base (Z1_APROVAD = "C", riscada no portal com "Excluida por") -
+        // o numero nunca pula e as interacoes/historico continuam presos a ela. Quem e quando: Z1_APVDOR/APVDATA/APVHORA.
+        RecLock("SZ1", .F.)
+        SZ1->Z1_APROVAD := "C"
+        SZ1->Z1_APVDOR  := AllTrim(Posicione("AA1", 4, xFilial("AA1") + __cUserId, "AA1_NOMTEC"))
+        SZ1->Z1_APVDATA := Date()
+        SZ1->Z1_APVHORA := Left(Time(), 5)
+        SZ1->(MsUnlock())
 
         ErrorBlock(bErro)
         Return oRest:setStatusResponse(200, OS_RESPOSTAOK(cOs, "OS excluida com sucesso."))
 
     Recover
         ErrorBlock(bErro)
-        If oModel <> Nil
-            jFase["fase"]   := "DEP"
-            jFase["falhou"] := "S"
-            apia.cnsa004.U_CNSAPR("OS", oModel, "", jFase)
-        EndIf
-        Return OS_ERRO(500, If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))
+        Return OS_ERRO(500, "Falha ao excluir a OS: " + U_CNSOUTL("ERRO", cErroBlk, oErroRec))
     End Sequence
     ErrorBlock(bErro)
 
-Return OS_ERRO(500, "Falha ao excluir a OS: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))
+Return OS_ERRO(500, "Falha ao excluir a OS: " + U_CNSOUTL("ERRO", cErroBlk, oErroRec))
 
 /*/{Protheus.doc} OS_APICOPIAR
 POST /CNSAOSCOPIAR - copia a OS.
@@ -1661,6 +1677,7 @@ POST /CNSAOSCOPIAR - copia a OS.
 @Post(endpoint="/CNSAOSCOPIAR")
 User Function OS_APICOPIAR() As Logical
     Local cErroBlk := ""  // descricao do erro (o objeto do Recover pode vir sem texto)
+    Local oErroRec := Nil  // objeto do erro (erro do framework nao passa pelo bErro)
     Local jQuery    := OS_PARAMS() As Json
     Local cOsOrigem := AllTrim(OS_LERJSONTXT(jQuery,"os")) As Character
     Local oJson     := JsonObject():New()
@@ -1695,11 +1712,11 @@ User Function OS_APICOPIAR() As Logical
 
     Recover
         ErrorBlock(bErro)
-        Return OS_ERRO(500, If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))
+        Return OS_ERRO(500, U_CNSOUTL("ERRO", cErroBlk, oErroRec))
     End Sequence
     ErrorBlock(bErro)
 
-Return OS_ERRO(500, "Falha ao copiar a OS: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))
+Return OS_ERRO(500, "Falha ao copiar a OS: " + U_CNSOUTL("ERRO", cErroBlk, oErroRec))
 
 // Interacao de OS sem chamado: bloco no fim do Memo Z1_SERV (antes do 1o bloco = descricao):
 //   === INTERACAO 24/09/2026 10:30 | 000123 | NOME DO CONSULTOR ===
@@ -1864,6 +1881,7 @@ GET /CNSAOSINTERACOES - interacoes da OS (Memo e ZA2 com ZA2_OS) e os chamados d
 @Get(endpoint="/CNSAOSINTERACOES")
 User Function OS_APILISTAINTERACOES() As Logical
     Local cErroBlk := ""  // descricao do erro (o objeto do Recover pode vir sem texto)
+    Local oErroRec := Nil  // objeto do erro (erro do framework nao passa pelo bErro)
     Local jQuery  := oRest:getQueryRequest() As Json
     Local cOs     := AllTrim(OS_LERJSONTXT(jQuery,"os"))
     Local oJson   := JsonObject():New()
@@ -2009,11 +2027,11 @@ User Function OS_APILISTAINTERACOES() As Logical
 
     Recover
         ErrorBlock(bErro)
-        Return OS_ERRO(500, If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))
+        Return OS_ERRO(500, U_CNSOUTL("ERRO", cErroBlk, oErroRec))
     End Sequence
     ErrorBlock(bErro)
 
-Return OS_ERRO(500, "Falha ao listar as interacoes da OS: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))
+Return OS_ERRO(500, "Falha ao listar as interacoes da OS: " + U_CNSOUTL("ERRO", cErroBlk, oErroRec))
 
 /*/{Protheus.doc} OS_APINOVAINTERACAO
 POST /CNSAOSINTERACOESINCLUIR - OS sem chamado: interacao nova na ZA2 (ZA2_IDCH vazio, ZA2_OS = a OS).
@@ -2023,6 +2041,7 @@ A 1a interacao vira a descricao (Z1_SERV vazio). OS aprovada/recusada: so o admi
 @Post(endpoint="/CNSAOSINTERACOESINCLUIR")
 User Function OS_APINOVAINTERACAO() As Logical
     Local cErroBlk := ""  // descricao do erro (o objeto do Recover pode vir sem texto)
+    Local oErroRec := Nil  // objeto do erro (erro do framework nao passa pelo bErro)
     Local jQuery     := OS_PARAMS() As Json
     Local cOs        := AllTrim(OS_LERJSONTXT(jQuery,"os"))
     Local cTexto     := U_CNSOUTL("TEXTOPURO", OS_LERJSONTXT(jQuery,"texto"))
@@ -2139,11 +2158,11 @@ User Function OS_APINOVAINTERACAO() As Logical
         If lTrava
             UnLockByName("CNSAZA2_OS", .T., .F.)
         EndIf
-        Return OS_ERRO(500, If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))
+        Return OS_ERRO(500, U_CNSOUTL("ERRO", cErroBlk, oErroRec))
     End Sequence
     ErrorBlock(bErro)
 
-Return OS_ERRO(500, "Falha ao incluir a interacao da OS: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))
+Return OS_ERRO(500, "Falha ao incluir a interacao da OS: " + U_CNSOUTL("ERRO", cErroBlk, oErroRec))
 
 /*/{Protheus.doc} OS_APIEXCLUIRINTERACAO
 POST /CNSAOSINTERACOESEXCLUIR - exclui interacao da OS sem chamado (ZA2_IDCH vazio): so o autor ou o admin
@@ -2153,6 +2172,7 @@ POST /CNSAOSINTERACOESEXCLUIR - exclui interacao da OS sem chamado (ZA2_IDCH vaz
 @Post(endpoint="/CNSAOSINTERACOESEXCLUIR")
 User Function OS_APIEXCLUIRINTERACAO() As Logical
     Local cErroBlk := ""  // descricao do erro (o objeto do Recover pode vir sem texto)
+    Local oErroRec := Nil  // objeto do erro (erro do framework nao passa pelo bErro)
     Local jQuery     := OS_PARAMS() As Json
     Local cOs        := AllTrim(OS_LERJSONTXT(jQuery,"os"))
     Local cSeq       := AllTrim(OS_LERJSONTXT(jQuery,"seq"))
@@ -2238,11 +2258,11 @@ User Function OS_APIEXCLUIRINTERACAO() As Logical
 
     Recover
         ErrorBlock(bErro)
-        Return OS_ERRO(500, If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))
+        Return OS_ERRO(500, U_CNSOUTL("ERRO", cErroBlk, oErroRec))
     End Sequence
     ErrorBlock(bErro)
 
-Return OS_ERRO(500, "Falha ao excluir a interacao da OS: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))
+Return OS_ERRO(500, "Falha ao excluir a interacao da OS: " + U_CNSOUTL("ERRO", cErroBlk, oErroRec))
 
 /*/{Protheus.doc} OS_ZA3
 Chamados da OS - um por vez (Z1_IDCH = o atual); os anteriores saem das interacoes da OS (ZA2_OS):

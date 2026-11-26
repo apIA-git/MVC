@@ -1565,6 +1565,7 @@ Altera o chamado pelo model (tela e REST): CH_PREVALIDA e CH_POSGRAVACAO sempre 
 Static Function CH_NUCLEOALTERAR(cIdCh, cAssunto, cDtAbertura, cTipo, cCodCliente, cLojaCliente, ;
     cEmailCliente, cCodConsultor, cProjeto, cTarefa, lLimparCliente, lLimparConsultor, cStatus, lNotificarCliente, lNotificarTecnico, cDescricao, lLimparDescricao)
     Local cErroBlk := ""  // descricao do erro (o objeto do Recover pode vir sem texto)
+    Local oErroRec := Nil  // objeto do erro (erro do framework nao passa pelo bErro)
     Local oJson              := JsonObject():New()
     Local oErroModel         := Nil
     Local oModel             := Nil
@@ -1690,7 +1691,7 @@ Static Function CH_NUCLEOALTERAR(cIdCh, cAssunto, cDtAbertura, cTipo, cCodClient
         If oModel <> Nil .And. oModel:IsActive()
             oModel:DeActivate()
         EndIf
-        aRet := {500, CH_ERRO(If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))}
+        aRet := {500, CH_ERRO(U_CNSOUTL("ERRO", cErroBlk, oErroRec))}
     End Sequence
     ErrorBlock(bErro)
 
@@ -1731,6 +1732,7 @@ Assume o chamado pelo model: tecnico da sessao e status 2. Regras em CH_PREVALID
 /*/
 Static Function CH_NUCLEOASSUMIR(cIdCh, lNotificarCliente, lNotificarTecnico)
     Local cErroBlk := ""  // descricao do erro (o objeto do Recover pode vir sem texto)
+    Local oErroRec := Nil  // objeto do erro (erro do framework nao passa pelo bErro)
     Local cConsultorSessao := ""
     Local cNomeTec         := ""
     Local oModel           := Nil
@@ -1795,7 +1797,7 @@ Static Function CH_NUCLEOASSUMIR(cIdCh, lNotificarCliente, lNotificarTecnico)
         If oModel <> Nil .And. oModel:IsActive()
             oModel:DeActivate()
         EndIf
-        aRet := {500, "Erro interno: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk), ""}
+        aRet := {500, "Erro interno: " + U_CNSOUTL("ERRO", cErroBlk, oErroRec), ""}
     End Sequence
     ErrorBlock(bErro)
 
@@ -1935,7 +1937,7 @@ Static Function CH_NUCLEOEXCLUIR(cIdCh, cMotivo, lNotificarCliente, lNotificarTe
 
         Do Case
         Case oErro != Nil
-            aRet := {500, "Erro interno: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk)}
+            aRet := {500, "Erro interno: " + U_CNSOUTL("ERRO", cErroBlk, oErro)}
         Case !Empty(cErroAg)
             aRet := {400, cErroAg}
         Case !lOk
@@ -1948,7 +1950,7 @@ Static Function CH_NUCLEOEXCLUIR(cIdCh, cMotivo, lNotificarCliente, lNotificarTe
         If !Empty(cAlias) .And. Select(cAlias) > 0
             (cAlias)->(DbCloseArea())
         EndIf
-        aRet := {500, "Erro interno: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk)}
+        aRet := {500, "Erro interno: " + U_CNSOUTL("ERRO", cErroBlk, oErro)}
     End Sequence
     ErrorBlock(bErro)
 
@@ -2030,6 +2032,7 @@ tecnico, cliente e periodo; status e "meus chamados" ficam no portal.
 @Get(endpoint="/CNSACHAMADOS")
 User Function CH_APICHAMADOS() As Logical
     Local cErroBlk := ""  // descricao do erro (o objeto do Recover pode vir sem texto)
+    Local oErroRec := Nil  // objeto do erro (erro do framework nao passa pelo bErro)
     Local jQuery     := oRest:getQueryRequest() As Json
     Local oJson      := JsonObject():New()
     Local aTodos     := {}
@@ -2239,7 +2242,7 @@ User Function CH_APICHAMADOS() As Logical
         aRet := {200, oJson:ToJson()}
 
     Recover
-        aRet := {500, CH_ERRO(If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))}
+        aRet := {500, CH_ERRO(U_CNSOUTL("ERRO", cErroBlk, oErroRec))}
     End Sequence
     ErrorBlock(bErro)
 
@@ -2284,6 +2287,7 @@ Grava uma interacao (ZA2) pelo model CNSAZA2VIEW (o mesmo da tela).
 /*/
 Static Function CH_GRAVARINTERACAO(cIdCh, cConsultor, cTexto, cOs, cErro)
     Local cErroBlk := ""  // descricao do erro (o objeto do Recover pode vir sem texto)
+    Local oErroRec := Nil  // objeto do erro (erro do framework nao passa pelo bErro)
     Local nSeq        := 1
     Local oModel      := Nil
     Local oModelZA2   := Nil
@@ -2353,7 +2357,7 @@ Static Function CH_GRAVARINTERACAO(cIdCh, cConsultor, cTexto, cOs, cErro)
 
     Recover
         If !lOk
-            cErro := "Erro ao gravar a interacao: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk)
+            cErro := "Erro ao gravar a interacao: " + U_CNSOUTL("ERRO", cErroBlk, oErroRec)
         EndIf
         If oModel <> Nil .And. oModel:IsActive()
             oModel:DeActivate()
@@ -2378,6 +2382,7 @@ sequencia, com consultor resolvido por nome.
 /*/
 Static Function CH_LISTARINTERACOES(cIdCh)
     Local cErroBlk := ""  // descricao do erro (o objeto do Recover pode vir sem texto)
+    Local oErroRec := Nil  // objeto do erro (erro do framework nao passa pelo bErro)
     Local oJson     := JsonObject():New()
     Local aItens    := {}
     Local oLinha    := Nil
@@ -2435,7 +2440,7 @@ Static Function CH_LISTARINTERACOES(cIdCh)
         If !Empty(cAlias) .And. Select(cAlias) > 0
             (cAlias)->(DbCloseArea())
         EndIf
-        aRet := {500, CH_ERRO(If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))}
+        aRet := {500, CH_ERRO(U_CNSOUTL("ERRO", cErroBlk, oErroRec))}
     End Sequence
     ErrorBlock(bErro)
 
@@ -2473,6 +2478,7 @@ Inclui interacao pelo REST e avisa o cliente (ZA1_EMAIL) se pedido.
 /*/
 Static Function CH_INCLUIRINTERACAO(cIdCh, cTexto, lNotificarCliente, cOs, lNotificarTecnico)
     Local cErroBlk := ""  // descricao do erro (o objeto do Recover pode vir sem texto)
+    Local oErroRec := Nil  // objeto do erro (erro do framework nao passa pelo bErro)
     Local oJson      := JsonObject():New()
     Local cConsultor := ""
     Local cSeq       := ""
@@ -2538,7 +2544,7 @@ Static Function CH_INCLUIRINTERACAO(cIdCh, cTexto, lNotificarCliente, cOs, lNoti
         EndIf
 
     Recover
-        aRet := {500, CH_ERRO(If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))}
+        aRet := {500, CH_ERRO(U_CNSOUTL("ERRO", cErroBlk, oErroRec))}
     End Sequence
     ErrorBlock(bErro)
 
@@ -2587,6 +2593,7 @@ Exclui uma interacao (RecLock direto): so o autor ou o admin, com o chamado aber
 /*/
 Static Function CH_NUCLEOEXCLUIRINTERACAO(cIdCh, cSeq, lNotificarCliente, lNotificarTecnico)
     Local cErroBlk := ""  // descricao do erro (o objeto do Recover pode vir sem texto)
+    Local oErroRec := Nil  // objeto do erro (erro do framework nao passa pelo bErro)
     Local cAlias     := ""
     Local nRecno     := 0
     Local cConsultor := ""
@@ -2667,7 +2674,7 @@ Static Function CH_NUCLEOEXCLUIRINTERACAO(cIdCh, cSeq, lNotificarCliente, lNotif
         If !Empty(cAlias) .And. Select(cAlias) > 0
             (cAlias)->(DbCloseArea())
         EndIf
-        aRet := {500, "Erro interno: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk)}
+        aRet := {500, "Erro interno: " + U_CNSOUTL("ERRO", cErroBlk, oErroRec)}
     End Sequence
     ErrorBlock(bErro)
 
@@ -2790,6 +2797,7 @@ Schedule: fecha (status 4) chamado aberto (1) sem alteracao (ZA1_MOD) ha 30 dias
 /*/
 User Function CH_JOBFECHA30()
     Local cErroBlk := ""  // descricao do erro (o objeto do Recover pode vir sem texto)
+    Local oErroRec := Nil  // objeto do erro (erro do framework nao passa pelo bErro)
     Local cEmpAnt      := "01"
     Local cFilAnt      := "01"
     Local dLimite      := Date() - 30
@@ -2836,7 +2844,7 @@ User Function CH_JOBFECHA30()
         (cAlias)->(DbCloseArea())
 
     Recover
-        ConOut("CH_JOBFECHA30: erro durante execucao: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))
+        ConOut("CH_JOBFECHA30: erro durante execucao: " + U_CNSOUTL("ERRO", cErroBlk, oErroRec))
         If Select(cAlias) > 0
             (cAlias)->(DbCloseArea())
         EndIf
@@ -3605,6 +3613,7 @@ Schedule: importa os e-mails novos da caixa apia@ (CH_CRIARCHAMADOEMAIL).
 /*/
 User Function CH_JOBEMAIL()
     Local cErroBlk := ""  // descricao do erro (o objeto do Recover pode vir sem texto)
+    Local oErroRec := Nil  // objeto do erro (erro do framework nao passa pelo bErro)
     Local cEmpAnt   := "01"
     Local cFilAnt   := "01"
     Local nCriados  := 0
@@ -3620,7 +3629,7 @@ User Function CH_JOBEMAIL()
     Begin Sequence
         nCriados := CH_CRIARCHAMADOEMAIL("3")
     Recover
-        ConOut("CH_JOBEMAIL: erro durante execucao: " + If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk))
+        ConOut("CH_JOBEMAIL: erro durante execucao: " + U_CNSOUTL("ERRO", cErroBlk, oErroRec))
     End Sequence
     ErrorBlock(bErro)
 

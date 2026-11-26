@@ -719,11 +719,11 @@ User Function CNSAPR(cTrans, xAlvo, cOrigem, jDados)
 
     //--- Todas as legendas, na ordem - mesmos textos do AP_LEGENDA (o browse compara o texto)
     Case cTrans == "LEGS"
-        aRet := {{"Aprovada (sistema antigo)", "verde"}, {"Enviada (sistema antigo)", "amarelo"}, ;
+        aRet := {{"Excluida", "cinza"}, ;
                  {"Nao requer aprovacao", "cinza"}, {"Pre-aprovada (sem aprovacao do cliente)", "azul"}, ;
                  {"Aguardando pre-aprovacao interna", "amarelo"}, {"Pre-recusada (interna)", "cinzaEscuro"}, ;
                  {"Recusada (cliente)", "rosa"}, ;
-                 {"Recusada (manual)", "rosa"}, {"Recusada (legado)", "rosa"}, ;
+                 {"Recusada (manual)", "rosa"}, {"Recusada", "rosa"}, ;
                  {"Pre-aprovada, a enviar", "azul"}, {"A enviar ao cliente", "azul"}, ;
                  {"Aguardando cliente", "amarelo"}, {"Prazo vencido", "rosa"}, ;
                  {"Aprovada (cliente)", "verde"}, {"Aprovada (prazo)", "azul"}, ;
@@ -812,7 +812,7 @@ Static Function AP_GRAVAR(cOs, aSZ1, aSZA)
                 aRet := apia.cnsa002.U_OS_APRPUB("GRAVAR", cOs, AP_VALORES(aSZ1))
             EndIf
         Recover Using oErro
-            aRet := {.F., "Erro ao gravar a aprovacao: " + If(oErro != Nil, If(Empty(cErroBlk), "erro sem descricao do sistema.", cErroBlk), "")}
+            aRet := {.F., "Erro ao gravar a aprovacao: " + If(oErro != Nil, U_CNSOUTL("ERRO", cErroBlk, oErro), "")}
         End Sequence
         If !aRet[1]
             DisarmTransaction()
@@ -1070,10 +1070,12 @@ Static Function AP_LEGENDA(aDados)
     Local lAnt  := !Empty(cDig) .And. cDig < AllTrim(SuperGetMV("MV_CNSAINI", .F., "20261014"))
 
     Do Case
+    Case cAp == "C"   // Excluir do portal: a OS fica marcada (numero nao pula)
+        Return {"Excluida", "cinza"}
     Case lAnt .And. cAp == "A"
-        Return {"Aprovada (sistema antigo)", "verde"}
+        Return {"Aprovada", "verde"}
     Case lAnt .And. cAp == "N" .And. !lApv .And. !Empty(dEnv)
-        Return {"Enviada (sistema antigo)", "amarelo"}
+        Return {"Aguardando cliente", "amarelo"}
     Case cAp == "A" .And. Empty(cTp)
         Return {"Nao requer aprovacao", "cinza"}
     Case cAp == "A" .And. cTp == "M"
@@ -1088,7 +1090,7 @@ Static Function AP_LEGENDA(aDados)
     Case cAp == "R" .And. cTp == "I" .And. lApv
         Return {"Recusada (manual)", "rosa"}
     Case cAp == "N" .And. lApv
-        Return {"Recusada (legado)", "rosa"}
+        Return {"Recusada", "rosa"}
     Case cAp == "N" .And. cTp == "M" .And. Empty(dEnv)
         Return {"Pre-aprovada, a enviar", "azul"}
     Case cAp == "N" .And. Empty(cTp) .And. Empty(dEnv)
